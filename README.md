@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 3 (EPIC-02 Identity, complete) |
+| Engineering Phase | Active — Sprint 4 (EPIC-03 Authorization Platform, in progress) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -29,11 +29,23 @@ no external directory connected). See `services/identity/README.md`,
 `docs/engineering/federation-readiness.md`,
 `docs/engineering/security-limitations.md`, and `SPRINT-3-STATUS.md`.
 
-No business logic beyond Module 4 (Identity), no other API implementations,
-no AI orchestration, no Knowledge Graph implementation, and no frontend code
-exists yet. Those land in later sprints per
-`docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
-Planning). Sprint 4 has not been started.
+**Sprint 4** (EPIC-03 Authorization Platform, FEAT-03-1 + FEAT-03-2 — in
+progress): a library-first Policy Enforcement Point and ABAC policy engine —
+`libs/python/emg-auth-client`'s `PolicyEnforcementPoint` contract and
+`Decision`/`AuthorizationRequest` types, and the new
+`libs/python/emg-policy-engine` package (default-deny, fail-closed,
+deny-overrides evaluation, supporting both human `Principal` and machine
+`ServicePrincipal` callers). `services/identity` wires the PEP as a
+reference integration only (`GET /authz/check`) — there is no live
+`services/authz` HTTP service this sprint; `services/authz` remains
+scaffolded. See `docs/engineering/sprint-4-design.md`,
+`services/identity/README.md`, and `SPRINT-4-STATUS.md`.
+
+No business logic beyond Module 4 (Identity) and Module 5's PEP/ABAC library
+scope above, no other API implementations, no AI orchestration, no Knowledge
+Graph implementation, and no frontend code exists yet. Those land in later
+sprints per `docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6
+(Sprint Planning). Sprint 5 has not been started.
 
 ## Repository Structure
 
@@ -45,10 +57,14 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
                   Scaffolded only; implementation begins EPIC-10 (Sprint 21+).
 /services        One directory per backend module (Modules 4–10).
                   identity/ implemented (Sprint 2 FEAT-02-1/02-2, Sprint 3
-                  FEAT-02-3/02-4); all other services remain scaffolded
-                  until their sprint lands.
-/libs             Shared libraries (Module 3, ADR-012). Implemented this
-                  sprint as empty, versioned packages — FEAT-01-2.
+                  FEAT-02-3/02-4, Sprint 4 FEAT-03-1/03-2 reference PEP
+                  integration); authz/ remains scaffolded by design (Sprint
+                  4 is library-first, no live authorization service); all
+                  other services remain scaffolded until their sprint lands.
+/libs             Shared libraries (Module 3, ADR-012). FEAT-01-2 scaffold,
+                  extended Sprint 4 with the PEP contract
+                  (emg-auth-client) and the ABAC policy engine
+                  (emg-policy-engine).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).

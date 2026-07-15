@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     login_rate_limit_max_attempts: int = 10
     login_rate_limit_window_seconds: float = 60.0
 
+    # --- Sprint 4: Authorization Platform (FEAT-03-1, FEAT-03-2) -----------
+    #
+    # Path to the local ABAC policy configuration (emg_policy_engine.PolicyConfig).
+    # Same safe-default posture as federation_config_path above: a missing
+    # file falls back to an empty, default-deny ruleset (see
+    # emg_policy_engine.loader.load_policy_config) rather than raising.
+    policy_config_path: Path = Path("services/identity/config/policy.example.yaml")
+
 
 def get_settings() -> Settings:
     """Factory (not a singleton) so tests can construct isolated Settings

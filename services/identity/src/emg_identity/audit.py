@@ -21,12 +21,18 @@ Protocol a caller could use to pass a raw secret or token, which is the
 primary control behind "Secret redaction in logs" (Sprint 3 Required
 Security Controls); redact.py is the backstop for free-text error messages
 that reach `reason`.
+
+Sprint 4 (FEAT-03-1/03-2) extends the Protocol again, additively, with
+`record_authorization_decision` — US-03's "denial and allow decisions are
+both logged" acceptance criterion. Every Sprint 2/3 method keeps its exact
+signature and behavior.
 """
 
 from __future__ import annotations
 
 from typing import Protocol
 
+from emg_auth_client import DecisionOutcome
 from emg_telemetry import get_logger
 
 _log = get_logger("identity")
@@ -49,6 +55,17 @@ class AuditEventSink(Protocol):
 
     def record_service_auth_failure(
         self, *, reason: str, correlation_id: str | None
+    ) -> None: ...
+
+    def record_authorization_decision(
+        self,
+        *,
+        subject: str,
+        resource_type: str,
+        action: str,
+        outcome: DecisionOutcome,
+        reason: str,
+        correlation_id: str | None,
     ) -> None: ...
 
 
@@ -115,5 +132,26 @@ class StructuredLogAuditSink:
                 "module": "identity",
                 "action": "service_auth",
                 "outcome": "denied",
+            },
+        )
+
+    def record_authorization_decision(
+        self,
+        *,
+        subject: str,
+        resource_type: str,
+        action: str,
+        outcome: DecisionOutcome,
+        reason: str,
+        correlation_id: str | None,
+    ) -> None:
+        log_method = _log.info if outcome == "allow" else _log.warning
+        log_method(
+            f"authorization {outcome}: {resource_type}/{action}: {reason}",
+            extra={
+                "actor": subject,
+                "module": "identity",
+                "action": f"authorize:{resource_type}:{action}",
+                "outcome": "success" if outcome == "allow" else "denied",
             },
         )

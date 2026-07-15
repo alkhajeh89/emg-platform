@@ -1,9 +1,10 @@
 # Identity Platform — Security Limitations & Deferred Items
 
-Covers Sprint 2 (FEAT-02-1, FEAT-02-2) and Sprint 3 (FEAT-02-3, FEAT-02-4).
-Each item states what the current implementation does, what it does not do,
-and when the gap is expected to close. Nothing here is silently accepted —
-every limitation is a tracked, documented, deliberate scope boundary.
+Covers Sprint 2 (FEAT-02-1, FEAT-02-2), Sprint 3 (FEAT-02-3, FEAT-02-4), and
+Sprint 4 (FEAT-03-1, FEAT-03-2). Each item states what the current
+implementation does, what it does not do, and when the gap is expected to
+close. Nothing here is silently accepted — every limitation is a tracked,
+documented, deliberate scope boundary.
 
 ## Controls implemented (Sprint 3)
 
@@ -52,6 +53,40 @@ every limitation is a tracked, documented, deliberate scope boundary.
   variables / `Settings`, never hardcoded into logic — rotating a secret is
   an environment-variable/secrets-store change, not a code change.
 
+## Controls implemented (Sprint 4)
+
+- **Default-deny, fail-closed authorization.** `emg_policy_engine.PolicyEngine.evaluate()`
+  denies a request with no matching rule and a request whose matching
+  rules' conditions are all unsatisfied — both are the same code path as an
+  explicit deny, not a fallthrough. `PolicyConfig` has no "default effect"
+  field that could flip this; an empty or missing policy file
+  (`load_policy_config`) denies everything, never allows everything.
+- **Deny-overrides combining algorithm.** When a request matches both an
+  allow rule and a deny rule, the deny rule wins — verified both at the
+  `PolicyEngine` unit level
+  (`libs/python/emg-policy-engine/tests/test_engine.py`) and end-to-end over
+  real HTTP (`services/identity/tests/test_authz_router.py`).
+  `PolicyConfig`/loader validation additionally flags any rule with zero
+  conditions (`required_roles`/`required_attributes`/`required_scopes` all
+  empty) as a configuration problem, since such a rule matches every
+  principal unconditionally (`validate_policy_config`).
+- **Structural support for both identity kinds without an import
+  inversion.** `emg_auth_client.ServicePrincipalLike` is a `typing.Protocol`
+  matching `services/identity`'s `ServicePrincipal` field-for-field; the
+  shared PEP contract accepts either a human `Principal` or a machine
+  `ServicePrincipal` (`AuthorizedIdentity = Principal | ServicePrincipalLike`)
+  without `libs/python/emg-auth-client` ever importing from a service.
+- **Allow and deny decisions are both audit-logged.** `AuditEventSink.record_authorization_decision`
+  (extending the same interim, structured-logging-backed sink Sprint 2/3
+  use) is called for every `/authz/check` request regardless of outcome —
+  US-03's "denial and allow decisions are both logged" acceptance
+  criterion.
+- **`/authz/check` is explicitly introspection, not enforcement.** It always
+  returns HTTP 200 with the `Decision` in the body rather than mapping deny
+  to an HTTP error — a deliberate design choice (see `routers/authz.py`'s
+  module docstring) that keeps this reference endpoint from being mistaken
+  for a real enforcement gate on any resource.
+
 ## Known limitations (tracked, carried from Sprint 2 unless noted)
 
 - **No session revocation** (Sprint 2). A compromised EMG refresh token
@@ -88,12 +123,33 @@ every limitation is a tracked, documented, deliberate scope boundary.
   real government or production identity provider** (Sprint 3 — explicit
   scope exclusion, not a gap). `federation.example.yaml` contains
   placeholder values only.
+- **No live, network-reachable authorization service** (Sprint 4 —
+  deliberate library-first design choice, not a gap to close this sprint).
+  `services/authz` remains scaffolded (`service.yaml` only); the PEP and
+  ABAC engine are in-process libraries, consumed directly by whichever
+  service embeds them.
+- **Nothing in this codebase actually enforces a `/authz/check` decision
+  yet** (Sprint 4). No Sprint 2/3 route in `services/identity` (or anywhere
+  else) calls the PEP and rejects a request based on its `Decision` — that
+  is each future adopting service's own responsibility, and has not been
+  done anywhere as of Sprint 4.
+- **No RBAC baseline role catalog or authorization testing harness**
+  (Sprint 4 — FEAT-03-3 and FEAT-03-4, explicitly deferred to a later
+  sprint per the approved Sprint 4 scope). `PolicyRule.required_roles`
+  matches against whatever roles a caller already carries; there is no
+  foundational role-catalog surface, and no standalone automated
+  positive/negative authorization test suite beyond this sprint's own unit
+  and HTTP-level tests.
+- **`policy.example.yaml` is illustrative, local-development-only
+  configuration** (Sprint 4), same status as `federation.example.yaml`. A
+  real deployment authors its own policy file.
 
 ## Deferred to later sprints (not started)
 
-- Module 5 Authorization Platform: ABAC Policy Engine, full RBAC
-  management, user administration portal, organization/tenant management
-  (EPIC-03).
+- Module 5 Authorization Platform: RBAC Baseline Roles (FEAT-03-3),
+  Authorization Testing Harness (FEAT-03-4), and a live network-reachable
+  authorization service, if a future sprint's design calls for one
+  (EPIC-03, remaining scope beyond Sprint 4's FEAT-03-1/03-2).
 - Module 6 Audit Event Pipeline / append-only audit store (EPIC-04).
 - Knowledge Graph, Search, GraphRAG, AI agents, Decision Intelligence
   (EPIC-05 onward).

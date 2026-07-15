@@ -5,8 +5,9 @@ Uses the `Annotated[X, Depends(...)]` style (current FastAPI recommendation)
 rather than `x: X = Depends(...)` default-argument style, which also avoids
 flake8-bugbear's B008 (function-call-in-default-argument) lint warning.
 
-Sprint 3 (FEAT-02-3, FEAT-02-4) additions are grouped below the Sprint 1/2
-dependencies; every existing dependency keeps its exact name and behavior.
+Sprint 3 (FEAT-02-3, FEAT-02-4) and Sprint 4 (FEAT-03-1, FEAT-03-2)
+additions are grouped below the Sprint 1/2 dependencies; every existing
+dependency keeps its exact name and behavior.
 """
 
 from __future__ import annotations
@@ -14,8 +15,9 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from emg_auth_client import Principal
+from emg_auth_client import AuthorizedIdentity, PolicyEnforcementPoint, Principal
 from emg_errors import AuthorizationError
+from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi import Depends, Header
 
 from .audit import AuditEventSink, StructuredLogAuditSink
@@ -135,3 +137,54 @@ def federation_config_dependency() -> FederationConfig:
 
 
 FederationConfigDep = Annotated[FederationConfig, Depends(federation_config_dependency)]
+
+
+# --- Sprint 4: Authorization Platform (FEAT-03-1, FEAT-03-2) ---------------
+
+
+def get_current_identity(
+    auth_client: AuthClientDep,
+    validator: ServiceTokenValidatorDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> AuthorizedIdentity:
+    """Resolve the current caller as EITHER a human `Principal` OR a machine
+    `ServicePrincipal`, trying human-session verification first and falling
+    back to service-token verification. Used only by the `/authz/check`
+    reference endpoint, which by design must accept either identity kind
+    (FEAT-03-1: "support both Principal and ServicePrincipal") — every
+    other route keeps depending on exactly one of `get_current_principal` /
+    `get_current_service_principal`, unchanged, so this composition never
+    weakens the existing structural separation between the two identity
+    kinds (Sprint 3 Required Security Control) elsewhere in the service.
+
+    Fails closed: if the header is missing/malformed, or the token matches
+    neither trust path, the second (service-token) `AuthorizationError`
+    propagates.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise AuthorizationError("Missing or malformed Authorization header")
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        return auth_client.authenticate(token)
+    except AuthorizationError:
+        pass
+    return validator.validate(token)
+
+
+CurrentIdentityDep = Annotated[AuthorizedIdentity, Depends(get_current_identity)]
+
+
+@lru_cache
+def _policy_enforcement_point_singleton() -> PolicyEnforcementPoint:
+    settings = _settings_singleton()
+    config = load_policy_config(settings.policy_config_path)
+    return LocalPolicyEnforcementPoint(config)
+
+
+def policy_enforcement_point_dependency() -> PolicyEnforcementPoint:
+    return _policy_enforcement_point_singleton()
+
+
+PolicyEnforcementPointDep = Annotated[
+    PolicyEnforcementPoint, Depends(policy_enforcement_point_dependency)
+]

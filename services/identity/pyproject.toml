@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emg-identity"
-version = "0.3.0"
-description = "EMG Identity Service — Module 4 (Identity & Authentication). FEAT-02-1..02-4: Identity Provider Integration, Session Management, Service Identity & M2M Authentication, Federation Readiness."
+version = "0.4.0"
+description = "EMG Identity Service — Module 4 (Identity & Authentication) FEAT-02-1..02-4, plus a reference integration of Module 5's Policy Enforcement Point (FEAT-03-1, FEAT-03-2, Sprint 4)."
 requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Proprietary" }
@@ -21,6 +21,7 @@ dependencies = [
   "emg-errors",
   "emg-telemetry",
   "emg-auth-client",
+  "emg-policy-engine",
   "emg-api-contracts",
 ]
 
