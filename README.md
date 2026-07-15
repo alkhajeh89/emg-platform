@@ -9,15 +9,22 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 1 (EPIC-01 Foundation) |
+| Engineering Phase | Active — Sprint 2 (EPIC-02 Identity, partial) |
 
-This repository currently reflects **Sprint 1** scope only: repository
-bootstrap, monorepo structure, local development environment, CI pipeline
-skeleton, branch protection, CODEOWNERS, shared library scaffolding,
-documentation folders, developer tooling, and infrastructure folders.
+**Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
+structure, local development environment, CI pipeline skeleton, branch
+protection, CODEOWNERS, shared library scaffolding, documentation folders,
+developer tooling, and infrastructure folders.
 
-No business logic, API implementations, AI orchestration, Knowledge Graph
-implementation, or frontend code exists yet. Those land in later sprints per
+**Sprint 2** (EPIC-02 Identity, FEAT-02-1 + FEAT-02-2 — complete): the
+`identity` service (Module 4) — Keycloak-backed authentication and EMG
+session issuance/refresh. See `services/identity/README.md` and
+`SPRINT-2-STATUS.md`. FEAT-02-3 (Service Identity & M2M Auth) and FEAT-02-4
+(Identity Federation Readiness) are Sprint 3 scope.
+
+No business logic beyond Module 4 (Identity), no other API implementations,
+no AI orchestration, no Knowledge Graph implementation, and no frontend code
+exists yet. Those land in later sprints per
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
 Planning).
 
@@ -30,7 +37,8 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
 /apps            Deployable applications: web client + BFF layers (ADR-014).
                   Scaffolded only; implementation begins EPIC-10 (Sprint 21+).
 /services        One directory per backend module (Modules 4–10).
-                  Scaffolded only; implementation begins EPIC-02 (Sprint 2+).
+                  identity/ implemented (Sprint 2, FEAT-02-1/02-2); all
+                  other services remain scaffolded until their sprint lands.
 /libs             Shared libraries (Module 3, ADR-012). Implemented this
                   sprint as empty, versioned packages — FEAT-01-2.
 /infra            Infrastructure-as-code, per environment tier. Folder

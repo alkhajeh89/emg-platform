@@ -1,10 +1,11 @@
 # EMG™ Local Development Orchestration (FEAT-01-3)
 #
 # Brings up the datastores and identity provider named in Engineering
-# Master Plan §4 (Technology Stack Selection) for local development. No
-# application/service containers are defined yet — services are added here
-# as they land in their owning sprint (EPIC-02 onward), each depending on
-# these shared containers rather than duplicating them.
+# Master Plan §4 (Technology Stack Selection) for local development, plus
+# application services as they land in their owning sprint — each depending
+# on these shared containers rather than duplicating them. `identity` was
+# added in Sprint 2 (FEAT-02-1/FEAT-02-2); further services are added here
+# as their sprint lands (EPIC-03 onward).
 #
 # Usage: make up / make down  (wraps `docker compose`)
 
@@ -84,6 +85,25 @@ services:
       - "6334:6334"
     volumes:
       - qdrant-data:/qdrant/storage
+
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    container_name: emg-identity
+    restart: unless-stopped
+    depends_on:
+      - keycloak
+    environment:
+      EMG_IDENTITY_KEYCLOAK_BASE_URL: http://keycloak:8080
+      EMG_IDENTITY_KEYCLOAK_REALM: emg
+      EMG_IDENTITY_KEYCLOAK_CLIENT_ID: emg-identity-service
+      EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET: emg_identity_local_dev_secret_do_not_use_in_prod
+      # Local-dev-only signing key; production overrides via the centralized
+      # secrets store (Engineering Master Plan §5), never via this file.
+      EMG_IDENTITY_SESSION_SIGNING_KEY: emg_local_dev_session_signing_key_do_not_use_in_prod
+    ports:
+      - "8001:8000"
 
 volumes:
   postgres-data:
