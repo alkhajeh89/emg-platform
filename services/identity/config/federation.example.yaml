@@ -1,0 +1,82 @@
+# EMG Identity Federation Configuration — EXAMPLE (Sprint 3, FEAT-02-4)
+#
+# This file demonstrates the federation configuration schema
+# (emg_identity.federation.FederationConfig). Every provider below is
+# disabled by default: this is a readiness demonstration, not a real
+# federation connection. Copy this file, set EMG_IDENTITY_FEDERATION_CONFIG_PATH
+# to its path, and set enabled: true / fill in connection_settings only when
+# actually integrating a real external identity provider — a decision made
+# per deployment, outside this repository, per services/identity's
+# "Federation Readiness Guide" (docs/engineering/federation-readiness.md).
+#
+# Air-gapped / disconnected deployments: leave every provider disabled and
+# local_fallback_enabled: true (the default) — no external network access
+# is required.
+
+local_fallback_enabled: true
+
+providers:
+  - name: example-ldap
+    provider_type: ldap
+    enabled: false
+    display_name: "Example LDAP Directory"
+    connection_settings:
+      url: "ldaps://ldap.example.gov:636"
+      bind_dn: "cn=emg-service,ou=service-accounts,dc=example,dc=gov"
+      bind_password: "__set_via_secrets_store__"
+      user_search_base: "ou=people,dc=example,dc=gov"
+    claim_mappings:
+      - external_claim: "department"
+        emg_attribute: "department"
+      - external_claim: "clearanceLevel"
+        emg_attribute: "classification_clearance"
+    group_role_mappings:
+      - external_group: "cn=investigators,ou=groups,dc=example,dc=gov"
+        emg_role: "investigator"
+      - external_group: "cn=decision-makers,ou=groups,dc=example,dc=gov"
+        emg_role: "decision-maker"
+
+  - name: example-active-directory
+    provider_type: active_directory
+    enabled: false
+    display_name: "Example Active Directory"
+    connection_settings:
+      url: "ldaps://ad.example.gov:636"
+      bind_dn: "CN=emg-service,OU=ServiceAccounts,DC=example,DC=gov"
+      bind_password: "__set_via_secrets_store__"
+      user_search_base: "OU=Users,DC=example,DC=gov"
+    claim_mappings:
+      - external_claim: "department"
+        emg_attribute: "department"
+      - external_claim: "employeeClearance"
+        emg_attribute: "classification_clearance"
+    group_role_mappings:
+      - external_group: "EMG-Investigators"
+        emg_role: "investigator"
+
+  - name: example-external-oidc
+    provider_type: oidc_external
+    enabled: false
+    display_name: "Example External OpenID Connect Provider"
+    connection_settings:
+      discovery_url: "https://idp.example.gov/.well-known/openid-configuration"
+      client_id: "emg-platform"
+      client_secret: "__set_via_secrets_store__"
+    claim_mappings:
+      - external_claim: "dept"
+        emg_attribute: "department"
+      - external_claim: "clearance"
+        emg_attribute: "classification_clearance"
+    group_role_mappings: []
+
+  - name: example-saml
+    provider_type: saml
+    enabled: false
+    display_name: "Example SAML Identity Provider"
+    connection_settings:
+      idp_metadata_url: "https://idp.example.gov/saml/metadata"
+      entity_id: "emg-platform"
+    claim_mappings:
+      - external_claim: "Department"
+        emg_attribute: "department"
+    group_role_mappings: []

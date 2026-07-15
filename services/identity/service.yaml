@@ -2,4 +2,11 @@ name: identity
 module: "Module 4 — Identity & Authentication"
 owner: "CISO"                # Accountable Owner — ADR-016 Section 1
 steward: "Identity Platform Team"            # Operational Steward — ADR-016 Section 1
-status: scaffolded
+status: in-progress           # FEAT-02-1 + FEAT-02-2 implemented (Sprint 2); FEAT-02-3 + FEAT-02-4 land Sprint 3
+sprint: 2
+features_implemented:
+  - FEAT-02-1   # Identity Provider Integration
+  - FEAT-02-2   # Authentication Session Management
+features_pending:
+  - FEAT-02-3   # Service Identity & M2M Auth (Sprint 3)
+  - FEAT-02-4   # Identity Federation Readiness (Sprint 3)

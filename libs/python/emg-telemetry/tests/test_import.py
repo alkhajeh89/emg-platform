@@ -14,8 +14,8 @@ def test_logger_emits_json_with_schema_fields():
     log = get_logger("test-module")
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
-    handler.setFormatter(log.handlers[0].formatter)
-    log.handlers = [handler]
+    handler.setFormatter(log.logger.handlers[0].formatter)
+    log.logger.handlers = [handler]
 
     extra = {
         "actor": "tester",
@@ -30,3 +30,16 @@ def test_logger_emits_json_with_schema_fields():
     assert payload["module"] == "test-module"
     assert payload["outcome"] == "success"
     assert "correlation_id" in payload
+
+
+def test_logger_extra_keys_do_not_collide_with_logrecord_reserved_names():
+    """Regression test: extra={"module": ...} previously crashed with
+    `KeyError: Attempt to overwrite 'module' in LogRecord` because "module"
+    is a reserved LogRecord attribute. get_logger() must accept the plain
+    ADR-015 schema field names without raising."""
+    log = get_logger("regression-module")
+    # Must not raise.
+    log.info(
+        "regression check",
+        extra={"actor": "a", "module": "m", "action": "act", "outcome": "success"},
+    )
