@@ -1,0 +1,5 @@
+name: identity
+module: "Module 4 — Identity & Authentication"
+owner: "CISO"                # Accountable Owner — ADR-016 Section 1
+steward: "Identity Platform Team"            # Operational Steward — ADR-016 Section 1
+status: scaffolded

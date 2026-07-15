@@ -1,0 +1,5 @@
+name: decision-intelligence
+module: "Module 10 — Decision Intelligence"
+owner: "Chief AI Officer / Executive Decision Board (joint)"                # Accountable Owner — ADR-016 Section 1
+steward: "Decision Intelligence Team"            # Operational Steward — ADR-016 Section 1
+status: scaffolded

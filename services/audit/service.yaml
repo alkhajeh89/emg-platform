@@ -1,0 +1,5 @@
+name: audit
+module: "Module 6 — Audit, Provenance & Digital Evidence"
+owner: "CISO / Chief Data Officer (joint)"                # Accountable Owner — ADR-016 Section 1
+steward: "Audit Platform Team"            # Operational Steward — ADR-016 Section 1
+status: scaffolded

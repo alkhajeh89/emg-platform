@@ -1,0 +1,5 @@
+name: ai-orchestration
+module: "Module 9 — AI Orchestration & Agents"
+owner: "Chief AI Officer"                # Accountable Owner — ADR-016 Section 1
+steward: "AI Platform Team"            # Operational Steward — ADR-016 Section 1
+status: scaffolded

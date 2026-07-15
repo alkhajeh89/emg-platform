@@ -1,0 +1,16 @@
+{
+  "name": "emg-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "EMG™ Core Platform monorepo root workspace (apps + future TS shared libs).",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "echo 'No TS workspaces implemented yet (frontend lands EPIC-10, Sprint 21+)'",
+    "test": "echo 'No TS workspaces implemented yet (frontend lands EPIC-10, Sprint 21+)'"
+  }
+}

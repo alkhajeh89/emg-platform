@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-errors"
+version = "0.1.0"
+description = "Base exception hierarchy and error-code conventions shared across EMG services."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_errors"]

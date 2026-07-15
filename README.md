@@ -1,0 +1,74 @@
+# EMG™ — Enterprise Memory Graph Core Platform
+
+Monorepo for the EMG™ Core Platform, implementing **Architecture Baseline v1.0**
+(Product Vision through ADR-017, frozen) under the **Engineering Master Plan**
+and **Engineering Backlog v1.0**.
+
+## Status
+
+| Phase | Status |
+| --- | --- |
+| Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
+| Engineering Phase | Active — Sprint 1 (EPIC-01 Foundation) |
+
+This repository currently reflects **Sprint 1** scope only: repository
+bootstrap, monorepo structure, local development environment, CI pipeline
+skeleton, branch protection, CODEOWNERS, shared library scaffolding,
+documentation folders, developer tooling, and infrastructure folders.
+
+No business logic, API implementations, AI orchestration, Knowledge Graph
+implementation, or frontend code exists yet. Those land in later sprints per
+`docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
+Planning).
+
+## Repository Structure
+
+Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
+— Repository Structure (frozen):
+
+```
+/apps            Deployable applications: web client + BFF layers (ADR-014).
+                  Scaffolded only; implementation begins EPIC-10 (Sprint 21+).
+/services        One directory per backend module (Modules 4–10).
+                  Scaffolded only; implementation begins EPIC-02 (Sprint 2+).
+/libs             Shared libraries (Module 3, ADR-012). Implemented this
+                  sprint as empty, versioned packages — FEAT-01-2.
+/infra            Infrastructure-as-code, per environment tier. Folder
+                  structure only this sprint; IaC content lands EPIC-11.
+/observability    Shared dashboards and alerting definitions (ADR-015).
+                  Folder structure only this sprint; content lands EPIC-12.
+/docs             Reference copy of the frozen Architecture Baseline v1.0
+                  document set, plus engineering process documentation.
+/tools            Internal developer tooling: scaffolding generators, local
+                  environment scripts, CI helper scripts.
+```
+
+## Governing Documents
+
+- `docs/architecture/EMG_Architecture_Baseline_v1.0_Final.md` — frozen architecture of record
+- `docs/architecture/EMG_Engineering_Master_Plan.md` — build execution plan
+- `docs/architecture/EMG_Engineering_Backlog_v1.0.md` — sprint-by-sprint backlog
+- `docs/architecture/EMG_ADR-016_Enterprise_Ownership_Registry.md` — ownership registry (source for CODEOWNERS)
+- `docs/architecture/EMG_ADR-015_Unified_Enterprise_Observability.md` — observability model
+- `docs/architecture/EMG_ADR-017_Enterprise_Capacity_Scalability_Model.md` — capacity/HA/DR model
+
+## Getting Started (Local Development)
+
+See `docs/engineering/onboarding.md`. Quick start:
+
+```bash
+make bootstrap   # installs pre-commit hooks, brings up local infra containers
+make up          # start local orchestration (Postgres, Redis, Keycloak, Neo4j, Qdrant)
+make down        # stop local orchestration
+```
+
+## Contributing
+
+See `CONTRIBUTING.md`. All changes are reviewed per `CODEOWNERS`
+(ADR-016-derived) and must pass the CI pipeline (`.github/workflows/ci.yml`)
+before merge. Direct pushes to `main` are blocked (see `.github/settings.yml`).
+
+## Classification
+
+Internal — Engineering Delivery. See `NOTICE.md` for classification-handling
+guidance.

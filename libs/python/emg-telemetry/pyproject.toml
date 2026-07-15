@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-telemetry"
+version = "0.1.0"
+description = "Structured logging and correlation-ID propagation client implementing ADR-015's shared telemetry model."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = ["emg-common-types"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_telemetry"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

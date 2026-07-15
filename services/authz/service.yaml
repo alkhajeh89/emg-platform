@@ -1,0 +1,5 @@
+name: authz
+module: "Module 5 — Authorization & Policy"
+owner: "CISO"                # Accountable Owner — ADR-016 Section 1
+steward: "Policy Platform Team"            # Operational Steward — ADR-016 Section 1
+status: scaffolded

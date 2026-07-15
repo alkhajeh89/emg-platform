@@ -1,0 +1,95 @@
+# Reusable CI workflow template — FEAT-01-4 (CI Pipeline Skeleton).
+#
+# Every backend service under /services and every app under /apps wires its
+# own thin workflow into this reusable template rather than authoring a
+# bespoke pipeline (Engineering Master Plan §6: "no service has a bespoke
+# pipeline outside this shared template").
+#
+# Example caller workflow (added when a service starts real implementation,
+# e.g. .github/workflows/service-identity.yml):
+#
+#   name: identity service CI
+#   on:
+#     pull_request:
+#       paths: ["services/identity/**", "libs/**"]
+#   jobs:
+#     ci:
+#       uses: ./tools/ci-templates/service-ci-template.yml
+#       with:
+#         service-path: services/identity
+#         language: python
+
+name: service-ci-template
+
+on:
+  workflow_call:
+    inputs:
+      service-path:
+        required: true
+        type: string
+      language:
+        required: true
+        type: string
+        description: "python | node"
+
+jobs:
+  lint-and-static-analysis:
+    name: lint-and-static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint (python)
+        if: inputs.language == 'python'
+        run: |
+          pip install ruff mypy
+          ruff check ${{ inputs.service-path }}
+          mypy ${{ inputs.service-path }}
+      - name: Lint (node)
+        if: inputs.language == 'node'
+        run: |
+          npm ci --prefix ${{ inputs.service-path }}
+          npm run lint --prefix ${{ inputs.service-path }}
+
+  unit-tests:
+    name: unit-tests
+    needs: lint-and-static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test (python)
+        if: inputs.language == 'python'
+        run: |
+          pip install pytest
+          pytest ${{ inputs.service-path }}
+      - name: Test (node)
+        if: inputs.language == 'node'
+        run: npm test --prefix ${{ inputs.service-path }}
+
+  build:
+    name: build
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image
+        run: docker build -t emg/${{ inputs.service-path }} ${{ inputs.service-path }}
+
+  security-scan:
+    name: security-scan
+    needs: lint-and-static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Container image scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.service-path }}
+
+  integration-tests:
+    name: integration-tests
+    needs: [build, security-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Service-specific integration suite runs here"

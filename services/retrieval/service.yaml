@@ -1,0 +1,5 @@
+name: retrieval
+module: "Module 8 — Search, GraphRAG & Retrieval"
+owner: "Chief Data Officer / Chief AI Officer (joint)"                # Accountable Owner — ADR-016 Section 1
+steward: "Retrieval Platform Team"            # Operational Steward — ADR-016 Section 1
+status: scaffolded

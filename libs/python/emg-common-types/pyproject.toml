@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-common-types"
+version = "0.1.0"
+description = "Shared value types and enums used across EMG services (classification, correlation ID, generic identifiers)."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_common_types"]

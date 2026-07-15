@@ -1,0 +1,46 @@
+# CODEOWNERS — derived from ADR-016 (Enterprise Ownership Registry)
+#
+# This file is generated to match ADR-016 Section 1 (Modules), Section 7
+# (Services), and Engineering Master Plan §10 (Team Structure) exactly. Do
+# not hand-edit ownership assignments here without updating the registry
+# first — this file is a projection of the registry, not an independent
+# source of truth (ADR-016, Decision).
+#
+# Team handles below are placeholders (@emg/<team>) pending GitHub team
+# provisioning; update once the GitHub org's teams are created.
+
+# Default: Platform & Foundation Team owns anything not matched below
+* @emg/platform-foundation
+
+# --- Root / cross-cutting -----------------------------------------------
+/.github/                  @emg/devsecops @emg/platform-foundation
+/CODEOWNERS                @emg/platform-foundation
+/docs/architecture/        @emg/architecture-board
+
+# --- /libs — Module 3, ADR-012 (CTO) -------------------------------------
+/libs/                      @emg/platform-foundation
+
+# --- /tools — internal developer tooling (CTO) ---------------------------
+/tools/                     @emg/platform-foundation
+
+# --- /infra — infrastructure-as-code (CTO; ADR-017 capacity, joint) ------
+/infra/                     @emg/platform-sre
+
+# --- /observability — ADR-015 (CTO) ---------------------------------------
+/observability/             @emg/platform-sre
+
+# --- /apps — Presentation Layer, ADR-014 (CIO) -----------------------------
+/apps/                       @emg/presentation-team
+
+# --- /services — one entry per Module 4-10, per ADR-016 Section 1 ----------
+/services/identity/                  @emg/identity-security
+/services/authz/                     @emg/identity-security
+/services/audit/                     @emg/audit-provenance
+/services/knowledge-graph/           @emg/knowledge-graph
+/services/retrieval/                 @emg/retrieval-search
+/services/ai-orchestration/          @emg/ai-orchestration
+/services/decision-intelligence/     @emg/decision-intelligence
+
+# --- CI/CD pipeline template — DevSecOps + Platform (joint) ----------------
+/tools/ci-templates/        @emg/devsecops @emg/platform-foundation
+/.github/workflows/         @emg/devsecops @emg/platform-foundation

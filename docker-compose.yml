@@ -1,0 +1,92 @@
+# EMG™ Local Development Orchestration (FEAT-01-3)
+#
+# Brings up the datastores and identity provider named in Engineering
+# Master Plan §4 (Technology Stack Selection) for local development. No
+# application/service containers are defined yet — services are added here
+# as they land in their owning sprint (EPIC-02 onward), each depending on
+# these shared containers rather than duplicating them.
+#
+# Usage: make up / make down  (wraps `docker compose`)
+
+name: emg-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: emg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: emg
+      POSTGRES_PASSWORD: emg_local_dev_only
+      POSTGRES_DB: emg
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./tools/seed-data/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emg -d emg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: emg-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: emg-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_local_dev_only
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tools/seed-data/keycloak:/opt/keycloak/data/import:ro
+      - keycloak-data:/opt/keycloak/data
+
+  neo4j:
+    image: neo4j:5-enterprise
+    container_name: emg-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/emg_local_dev_only
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - ./tools/seed-data/neo4j:/var/lib/neo4j/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: emg-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+volumes:
+  postgres-data:
+  keycloak-data:
+  neo4j-data:
+  qdrant-data:

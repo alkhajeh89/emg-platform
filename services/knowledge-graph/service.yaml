@@ -1,0 +1,5 @@
+name: knowledge-graph
+module: "Module 7 — Knowledge Graph Platform"
+owner: "Chief Data Officer"                # Accountable Owner — ADR-016 Section 1
+steward: "Ontology Steward"            # Operational Steward — ADR-016 Section 1
+status: scaffolded
