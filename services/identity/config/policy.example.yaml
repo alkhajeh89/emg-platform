@@ -1,0 +1,62 @@
+# Example ABAC policy configuration (Sprint 4, FEAT-03-2).
+#
+# Illustrative and local-development-only, same status as
+# federation.example.yaml: a real deployment authors its own policy file and
+# points EMG_IDENTITY_POLICY_CONFIG_PATH at it. There is no "default effect"
+# field here on purpose — PolicyEngine is unconditionally default-deny, so a
+# resource/action pair with no rule below is always denied, and an empty or
+# missing file denies everything (see emg_policy_engine.loader).
+#
+# Every rule below is exercised by services/identity/tests/test_authz_router.py
+# and libs/python/emg-policy-engine/tests/test_engine.py.
+
+rules:
+  # A human platform-user with any internal-or-higher clearance may read
+  # identity diagnostics (the /authz/check reference endpoint's own demo
+  # resource — see routers/authz.py).
+  - rule_id: diagnostics-read-internal
+    resource_type: identity.diagnostics
+    action: read
+    effect: allow
+    description: >-
+      Any authenticated platform user with at least INTERNAL clearance may
+      read identity service diagnostics.
+    required_roles:
+      - platform-user
+    required_attributes:
+      classification_clearance:
+        - INTERNAL
+        - CONFIDENTIAL
+        - SECRET
+
+  # Deny-overrides example: PolicyEngine has no role-negation operator (a
+  # rule can only positively match roles/attributes/scopes it lists), so an
+  # exclusion is expressed as its own deny rule, not as "NOT elevated-role"
+  # on the allow rule above. A knowledge-steward is also a platform-user
+  # (tools/seed-data/keycloak/emg-realm.json), so this deny rule and the
+  # allow rule above both match a knowledge-steward's request — deny wins.
+  - rule_id: diagnostics-read-knowledge-steward-excluded
+    resource_type: identity.diagnostics
+    action: read
+    effect: deny
+    description: >-
+      Knowledge stewards are explicitly excluded from identity diagnostics
+      even though they hold the baseline platform-user role.
+    required_roles:
+      - knowledge-steward
+
+  # Registered service principals (Sprint 3's SERVICE_REGISTRY) may read
+  # identity diagnostics using their own least-privilege role/scope.
+  - rule_id: diagnostics-read-service
+    resource_type: identity.diagnostics
+    action: read
+    effect: allow
+    description: Registered EMG service principals may read identity diagnostics.
+    required_roles:
+      - svc-identity
+      - svc-authorization
+      - svc-audit
+    required_scopes:
+      - svc-identity
+      - svc-authorization
+      - svc-audit

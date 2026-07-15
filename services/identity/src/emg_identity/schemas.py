@@ -69,3 +69,20 @@ class FederationHealthResponse(BaseModel):
     provider_count: int
     enabled_provider_count: int
     local_fallback_enabled: bool
+
+
+# --- Sprint 4: Authorization Platform (FEAT-03-1, FEAT-03-2) ---------------
+
+
+class PolicyCheckResponse(BaseModel):
+    """Reference/introspection response for `GET /authz/check` — see that
+    router's module docstring for why this endpoint always returns 200 with
+    the Decision in the body rather than mapping deny to an HTTP error."""
+
+    subject: str
+    resource_type: str
+    action: str
+    outcome: str
+    allowed: bool
+    reason: str
+    policy_id: str | None

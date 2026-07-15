@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emg-auth-client"
-version = "0.1.0"
-description = "Auth client interface/conventions consumed by every service; implemented against Module 4/5 starting EPIC-02/03."
+version = "0.2.0"
+description = "Auth client + Policy Enforcement Point interfaces consumed by every service; Module 4 implemented EPIC-02, Module 5 PEP contract added Sprint 4 (FEAT-03-1)."
 requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Proprietary" }

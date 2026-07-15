@@ -1,13 +1,19 @@
 # services/identity
 
-Module 4 — Identity & Authentication.
+Module 4 — Identity & Authentication, plus (Sprint 4) a reference
+integration of Module 5's Policy Enforcement Point.
 
 - **Sprint 2:** **FEAT-02-1 (Identity Provider Integration)** and
   **FEAT-02-2 (Authentication Session Management)**.
 - **Sprint 3:** **FEAT-02-3 (Service Identity & Machine-to-Machine
   Authentication)** and **FEAT-02-4 (Identity Federation Readiness)**.
+- **Sprint 4:** reference integration of **FEAT-03-1 (Policy Enforcement
+  Point)** and **FEAT-03-2 (ABAC Policy Engine Integration)** — the PEP and
+  ABAC engine themselves live in `libs/python/emg-auth-client` and
+  `libs/python/emg-policy-engine` (Module 5, EPIC-03); this service wires
+  them behind one new demonstration endpoint. See "Sprint 4" sections below.
 
-Per Engineering Backlog v1.0 §6 (Sprints 2-3) and US-02.
+Per Engineering Backlog v1.0 §6 (Sprints 2-4) and US-02 / US-03.
 
 ## Scope
 
@@ -48,11 +54,36 @@ In scope (Sprint 3):
 - **Secret redaction** utility (`redact.py`), applied to the
   `/federation/providers` response and available as a logging backstop.
 
-Also out of scope, by design, for any sprint in this service: authorization
-decisions (Module 5 / EPIC-03), audit storage (Module 6 / EPIC-04), user
-administration/organization/tenant management, and any Sprint 4+ work — this
-service authenticates and issues sessions/service tokens; it does not decide
-*what* an authenticated principal may do.
+In scope (Sprint 4 — reference integration only, see
+`docs/engineering/sprint-4-design.md` for the full rationale):
+
+- **`GET /authz/check`**, a reference/introspection endpoint proving the PEP
+  end-to-end (identity resolution → ABAC policy evaluation → audit logging)
+  against a real HTTP surface. It accepts a Bearer token for either a human
+  `Principal` or a machine `ServicePrincipal` and always returns HTTP 200
+  with the `Decision` in the body — it is not an enforcement gate, and it is
+  not new product functionality.
+- Wiring of `libs/python/emg-policy-engine`'s `LocalPolicyEnforcementPoint`
+  as a FastAPI dependency (`policy_enforcement_point_dependency`), loading
+  `config/policy.example.yaml` via the same safe-default pattern as Sprint
+  3's `federation_config_path`.
+- `AuditEventSink.record_authorization_decision`, extending the interim
+  audit abstraction to log both allow and deny decisions (US-03 acceptance
+  criterion).
+
+Explicitly out of scope for Sprint 4, by design: FEAT-03-3 (RBAC Baseline
+Roles) and FEAT-03-4 (Authorization Testing Harness) — Sprint 5+; a live,
+network-reachable `services/authz` HTTP service — `services/authz` remains
+scaffolded (`service.yaml` only); any change to `/auth/session`,
+`/auth/service-session`, `/federation/*`, or any other existing Sprint 2/3
+route or its enforcement behavior.
+
+Also out of scope, by design, for any sprint in this service: audit storage
+(Module 6 / EPIC-04), user administration/organization/tenant management,
+and any Sprint 5+ work — this service authenticates, issues
+sessions/service tokens, and (Sprint 4) demonstrates policy evaluation; it
+does not itself enforce authorization on its own routes, and it is not the
+Module 5 authorization platform.
 
 ## API
 
@@ -64,12 +95,16 @@ service authenticates and issues sessions/service tokens; it does not decide
 | `GET` | `/auth/service-session` | Return the authenticated `ServicePrincipal` (client_id, service_name, roles, scopes) for the current Bearer *service* token (Sprint 3) |
 | `GET` | `/federation/providers` | List configured federation providers, with secret-shaped connection settings redacted (Sprint 3) |
 | `GET` | `/federation/health` | Federation configuration validation status (Sprint 3) |
+| `GET` | `/authz/check` | Reference PEP/ABAC decision lookup for the caller's own identity — always HTTP 200, `Decision` in the body (Sprint 4) |
 | `GET` | `/healthz` | Liveness/readiness probe |
 
 All error responses use the shared `emg_api_contracts.ApiResponse` envelope;
 `emg_errors.AuthorizationError` maps to HTTP 401, `ValidationError` to 400,
 `UpstreamServiceError` (Keycloak unreachable) to 502, and (Sprint 3)
-`RateLimitedError` to 429.
+`RateLimitedError` to 429. `/authz/check` is the one deliberate exception to
+the 401-on-deny convention — see its router module docstring
+(`routers/authz.py`) for why an authorization *decision* is not mapped to an
+HTTP error status.
 
 There is no `POST /auth/service-token` issuance endpoint — see "Why the
 identity service does not broker M2M tokens" in
@@ -129,6 +164,35 @@ sprint's concrete choices, and why:
    Federation / Identity Brokering, configured per deployment. See
    `docs/engineering/federation-readiness.md`.
 
+## Design Decisions (Sprint 4)
+
+9. **Library-first: no live authorization HTTP service this sprint.** The
+   PEP contract (`PolicyEnforcementPoint`, `Decision`, `AuthorizationRequest`
+   — `libs/python/emg-auth-client`) and the ABAC engine
+   (`libs/python/emg-policy-engine`) are in-process libraries, not a network
+   service. `services/authz` remains scaffolded. See
+   `docs/engineering/sprint-4-design.md` for the full rationale.
+10. **`ServicePrincipal` is referenced structurally, not imported.**
+    `emg_auth_client.ServicePrincipalLike` is a `typing.Protocol` matching
+    this service's own `ServicePrincipal` dataclass field-for-field, so the
+    shared library can type a PEP request that accepts either identity kind
+    without ever importing from a service (`services/*` depends on
+    `libs/*`, never the reverse). `service_principal.py` itself is
+    unmodified by Sprint 4.
+11. **One new, explicitly-labeled reference endpoint, not a change to any
+    existing route.** `GET /authz/check` exists to prove the PEP end-to-end;
+    it is deliberately not wired into `/auth/session`,
+    `/auth/service-session`, or `/federation/*`, none of which change
+    behavior this sprint. Real enforcement (`if not decision.allowed: raise
+    AuthorizationError(...)`) is left to each calling service, exercised
+    directly in `emg_policy_engine`'s own tests.
+12. **Default-deny, fail-closed, deny-overrides — no configurable "default
+    effect."** `PolicyConfig` has no field that could flip the default from
+    deny to allow; `PolicyEngine.evaluate()` hardcodes default-deny (no
+    matching rule, or no rule's conditions satisfied, both deny), and a
+    deny rule always wins over a matching allow rule for the same request.
+    See `libs/python/emg-policy-engine/README.md`.
+
 ## Known Limitations (tracked, not silently accepted)
 
 - **No session revocation.** Because there is no persistent session store
@@ -152,9 +216,24 @@ sprint's concrete choices, and why:
 - **(Sprint 3) Federation is validation/configuration readiness only** — no
   LDAP/AD/OIDC/SAML client is invoked by this service. See
   `docs/engineering/federation-readiness.md`.
+- **(Sprint 4) `/authz/check` is introspection, not enforcement.** It tells
+  a caller what the PEP would decide; it does not gate anything itself, and
+  no Sprint 2/3 route consults it. Each service that adopts the PEP is
+  responsible for its own `if not decision.allowed: raise
+  AuthorizationError(...)` at its own call sites — not yet done anywhere in
+  this codebase.
+- **(Sprint 4) No RBAC baseline role catalog or authorization testing
+  harness** — FEAT-03-3 and FEAT-03-4 are explicitly deferred to a later
+  sprint per the approved Sprint 4 scope; `PolicyRule.required_roles`
+  matches against whatever roles a `Principal`/`ServicePrincipal` already
+  carries, with no foundational role-catalog surface of its own.
+- **(Sprint 4) `policy.example.yaml` is illustrative, local-development-only
+  configuration** — same status as `federation.example.yaml`; a real
+  deployment authors and points `EMG_IDENTITY_POLICY_CONFIG_PATH` at its own
+  policy file.
 
 See `docs/engineering/security-limitations.md` for the full, consolidated
-list across Sprint 2 and Sprint 3.
+list across Sprint 2, Sprint 3, and Sprint 4.
 
 ## Environment Variables
 
@@ -181,6 +260,7 @@ environment via the centralized secrets store for anything secret-shaped.
 | `EMG_IDENTITY_FEDERATION_CONFIG_PATH` (Sprint 3) | `services/identity/config/federation.example.yaml` | Path to the federation configuration file |
 | `EMG_IDENTITY_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` (Sprint 3) | `10` | `/auth/login` rate-limit budget |
 | `EMG_IDENTITY_LOGIN_RATE_LIMIT_WINDOW_SECONDS` (Sprint 3) | `60.0` | `/auth/login` rate-limit window |
+| `EMG_IDENTITY_POLICY_CONFIG_PATH` (Sprint 4) | `services/identity/config/policy.example.yaml` | Path to the ABAC policy configuration file (`emg_policy_engine.PolicyConfig`) |
 
 `keycloak_issuer` and `jwks_uri` (used for service-token validation) are
 computed from `keycloak_base_url`/`keycloak_realm`, not independently
@@ -192,7 +272,8 @@ configurable — this keeps them from ever drifting out of sync.
 make up                                   # starts Keycloak (with this realm imported), Postgres, etc.
 pip install -e libs/python/emg-common-types -e libs/python/emg-errors \
             -e libs/python/emg-telemetry -e libs/python/emg-auth-client \
-            -e libs/python/emg-api-contracts -e services/identity
+            -e libs/python/emg-api-contracts -e libs/python/emg-policy-engine \
+            -e services/identity
 uvicorn emg_identity.main:app --reload --app-dir services/identity/src
 curl -X POST localhost:8000/auth/login \
   -H "Content-Type: application/json" \
@@ -203,6 +284,10 @@ curl -X POST localhost:8080/realms/emg/protocol/openid-connect/token \
   -d grant_type=client_credentials \
   -d client_id=emg-svc-authorization \
   -d client_secret=emg_svc_authorization_local_dev_secret_do_not_use_in_prod
+
+# Sprint 4: PEP/ABAC reference check (Bearer token from either flow above)
+curl "localhost:8000/authz/check?resource_type=identity.diagnostics&action=read" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ## Testing
@@ -234,3 +319,20 @@ in its module docstring, the exact procedure for running it against a real
 local Keycloak container (`docker compose up -d keycloak`, then
 `EMG_IDENTITY_RUN_LIVE_KEYCLOAK_TESTS=1 pytest
 services/identity/tests/test_integration_live_keycloak.py`).
+
+Sprint 4 additions: `test_authz_router.py` — HTTP-level tests for `GET
+/authz/check`, loading the real `config/policy.example.yaml` through the
+real `emg_policy_engine.load_policy_config` → `LocalPolicyEnforcementPoint`
+path (not a mock policy engine). Covers an allowed human `Principal`, a
+default-denied human `Principal` (no matching rule conditions), deny-
+overrides end-to-end (a caller who matches both an allow rule and a deny
+rule is denied), an allowed registered `ServicePrincipal`, a
+`ServicePrincipal` rejected before ever reaching the PEP (unregistered
+`client_id`, fails at `ServiceTokenValidator`), a `ServicePrincipal` that
+authenticates but is denied by the PEP itself (no matching role), that both
+allow and deny decisions are audit-logged, and that `/authz/check`'s
+acceptance of either identity kind does not weaken `/auth/session` /
+`/auth/service-session`'s existing separation. The ABAC combining logic
+itself (default-deny, deny-overrides, human-attribute vs. service-scope
+conditions) is unit-tested in
+`libs/python/emg-policy-engine/tests/test_engine.py`, not re-tested here.

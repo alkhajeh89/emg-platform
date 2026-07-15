@@ -5,6 +5,52 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
+### Sprint 4 — EPIC-03 Authorization Platform (FEAT-03-1, FEAT-03-2)
+
+- `libs/python/emg-auth-client` (0.2.0): the Policy Enforcement Point
+  contract — `Decision`, `AuthorizationRequest`, `PolicyEnforcementPoint`
+  (a `typing.Protocol`), and `ServicePrincipalLike` (a structural Protocol
+  matching `services/identity`'s `ServicePrincipal` field-for-field, so a
+  shared library can type "either identity kind" without importing from a
+  service).
+- New package `libs/python/emg-policy-engine` (0.1.0): `PolicyEngine` (ABAC
+  evaluation — default-deny, fail-closed, deny-overrides combining),
+  `PolicyConfig`/`PolicyRule` (pydantic schema, no configurable "default
+  effect"), `load_policy_config`/`default_policy_config`/`validate_policy_config`
+  (same safe-default-on-missing-file, hard-error-on-malformed-file pattern
+  as Sprint 3's `federation.py`), and `LocalPolicyEnforcementPoint`.
+- `services/identity` (0.4.0): reference integration only — `GET
+  /authz/check` (always HTTP 200, `Decision` in the body; introspection,
+  not enforcement), `policy_enforcement_point_dependency` (loads
+  `config/policy.example.yaml`), `get_current_identity` (accepts either a
+  human `Principal` or a machine `ServicePrincipal`, used only by this new
+  endpoint), and `AuditEventSink.record_authorization_decision` (both allow
+  and deny decisions are logged — US-03). No existing Sprint 2/3 route,
+  dependency, or behavior changed.
+- `services/identity/config/policy.example.yaml`: illustrative local-dev
+  ABAC rules exercising an allow rule, a deny rule that overrides it for a
+  specific role (deny-overrides), and a service-scope-based allow rule.
+- Explicitly not implemented this sprint (approved scope boundary):
+  FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness),
+  and any live, network-reachable `services/authz` HTTP service —
+  `services/authz` remains scaffolded.
+- Governance file corrections (`CLAUDE_WORKFLOW.md`, `ARCHITECTURE_STATUS.md`,
+  `EMG_PRODUCT_VISION.md`): converted from RTF-content-in-a-`.md`-file to
+  genuine plain UTF-8 Markdown, and `ARCHITECTURE_STATUS.md`/
+  `EMG_PRODUCT_VISION.md` corrected to match the actual repository state
+  (architecture-approved vs. engineering-complete status per module, only
+  ADR-014–017 present, roadmap deferring to the Engineering Backlog instead
+  of restating it).
+- New docs: `docs/engineering/sprint-4-design.md`; extended
+  `docs/engineering/security-limitations.md` with Sprint 4 controls and
+  limitations.
+- New tests: `libs/python/emg-auth-client/tests/test_import.py` extended
+  for the new PEP types; `libs/python/emg-policy-engine/tests/test_import.py`,
+  `test_engine.py` (9 cases covering the full ABAC combining/condition
+  semantics), `test_loader.py`; `services/identity/tests/test_authz_router.py`
+  (HTTP-level, loads the real `policy.example.yaml`, covers both identity
+  kinds, deny-overrides, default-deny, and audit logging).
+
 ### Sprint 3 — EPIC-02 Identity (FEAT-02-3, FEAT-02-4)
 
 - `services/identity`: OAuth 2.0 Client Credentials (M2M) authentication —
