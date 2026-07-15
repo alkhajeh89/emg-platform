@@ -5,11 +5,12 @@ government data fixtures available for Lab Prototype development."
 
 | Path | Loaded into | Content this sprint |
 | --- | --- | --- |
-| `postgres/` | Postgres (`docker-entrypoint-initdb.d`) | Empty — schema/seed SQL lands with Module 4/6 (Sprint 2, Sprint 5-6) |
-| `keycloak/` | Keycloak realm import | Empty — realm export lands with FEAT-02-1 (Sprint 2) |
+| `postgres/` | Postgres (`docker-entrypoint-initdb.d`) | Empty — schema/seed SQL lands with Module 6 (Sprint 5-6); identity session storage is stateless JWT this sprint (see `services/identity/README.md`), so Module 4 needed no Postgres schema |
+| `keycloak/` | Keycloak realm import | `emg-realm.json` (Sprint 2, FEAT-02-1) — local-dev-only realm `emg`, confidential client `emg-identity-service` (Direct Access Grants), baseline roles, two seed users. **Local development credentials only — never used outside `docker-compose.yml`.** |
 | `neo4j/` | Neo4j `import` directory | Empty — mock government entity fixtures (Person, Organization, Investigation, Risk, Policy, Decision) land with FEAT-05-1/05-2 (Sprint 7-8), per Engineering Master Plan §18 (Lab Prototype v1 Scope) |
 
 This directory exists so the containerized orchestration (`docker-compose.yml`)
-has a stable mount point from Sprint 1 onward; no fixture data is authored
-until the owning module's sprint, per Sprint 1's "no business logic"
-constraint.
+has a stable mount point from Sprint 1 onward; fixture data is authored only
+in the owning module's sprint, per each sprint's "no business logic ahead of
+schedule" constraint. `keycloak/emg-realm.json` is imported automatically by
+`docker-compose.yml`'s `keycloak` service (`start-dev --import-realm`).

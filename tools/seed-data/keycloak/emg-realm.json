@@ -1,0 +1,78 @@
+{
+  "realm": "emg",
+  "enabled": true,
+  "displayName": "EMG Core Platform (Local Development)",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      { "name": "platform-user", "description": "Baseline authenticated EMG platform user (RBAC baseline role catalog lands FEAT-03-3)." },
+      { "name": "investigator", "description": "Case investigator — Investigation Agent scope (Module 9 §5), local dev seed only." },
+      { "name": "decision-maker", "description": "Accountable decision-maker — Human Decision Workspace, local dev seed only." },
+      { "name": "knowledge-steward", "description": "Knowledge Graph steward — Knowledge Authoring UI, local dev seed only." }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "emg-identity-service",
+      "name": "EMG Identity Service",
+      "description": "Confidential client used by services/identity to exchange user credentials for tokens (FEAT-02-1). Not exposed to browsers.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "emg_identity_local_dev_secret_do_not_use_in_prod",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": true,
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "dev.investigator",
+      "email": "dev.investigator@emg.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Investigator",
+      "credentials": [
+        { "type": "password", "value": "dev_local_password_only", "temporary": false }
+      ],
+      "realmRoles": ["platform-user", "investigator"],
+      "attributes": {
+        "classification_clearance": ["INTERNAL"],
+        "department": ["Investigations"]
+      }
+    },
+    {
+      "username": "dev.decisionmaker",
+      "email": "dev.decisionmaker@emg.local",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "DecisionMaker",
+      "credentials": [
+        { "type": "password", "value": "dev_local_password_only", "temporary": false }
+      ],
+      "realmRoles": ["platform-user", "decision-maker"],
+      "attributes": {
+        "classification_clearance": ["CONFIDENTIAL"],
+        "department": ["Executive"]
+      }
+    }
+  ]
+}
