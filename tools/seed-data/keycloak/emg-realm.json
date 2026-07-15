@@ -16,9 +16,32 @@
       { "name": "platform-user", "description": "Baseline authenticated EMG platform user (RBAC baseline role catalog lands FEAT-03-3)." },
       { "name": "investigator", "description": "Case investigator — Investigation Agent scope (Module 9 §5), local dev seed only." },
       { "name": "decision-maker", "description": "Accountable decision-maker — Human Decision Workspace, local dev seed only." },
-      { "name": "knowledge-steward", "description": "Knowledge Graph steward — Knowledge Authoring UI, local dev seed only." }
+      { "name": "knowledge-steward", "description": "Knowledge Graph steward — Knowledge Authoring UI, local dev seed only." },
+      { "name": "service-account", "description": "Sprint 3 (FEAT-02-3): baseline realm role granted to every non-human service principal, so a token's realm_access can be used to distinguish machine identities from human ones defense-in-depth (primary separation is the RS256/HS256 algorithm and issuer mismatch — see services/identity/README.md)." },
+      { "name": "svc-identity", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the Identity Service's own service principal." },
+      { "name": "svc-authorization", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the (not-yet-implemented, EPIC-03) Authorization Service's service principal — registered now so downstream services can authenticate service-to-service from day one." },
+      { "name": "svc-audit", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the (not-yet-implemented, EPIC-04) Audit Service's service principal — registered now for the same reason." }
     ]
   },
+  "clientScopes": [
+    {
+      "name": "emg-internal-services-audience",
+      "description": "Sprint 3 (FEAT-02-3): adds the shared 'emg-internal-services' audience to a client-credentials access token, so services/identity's ServiceTokenValidator can enforce audience validation for machine-to-machine calls without per-caller configuration.",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "emg-internal-services-audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "emg-internal-services",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
   "clients": [
     {
       "clientId": "emg-identity-service",
@@ -36,6 +59,69 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": true,
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "emg-svc-identity",
+      "name": "EMG Service Principal — Identity Service",
+      "description": "Sprint 3 (FEAT-02-3): representative development service identity for the Identity Service itself, used for OAuth2 Client Credentials (M2M) calls it makes to other services. directAccessGrantsEnabled is deliberately false — this client is service-account-only, never used for a human login.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "emg_svc_identity_local_dev_secret_do_not_use_in_prod",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["emg-internal-services-audience"],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "emg-svc-authorization",
+      "name": "EMG Service Principal — Authorization Service",
+      "description": "Sprint 3 (FEAT-02-3): representative development service identity for the future Authorization Service (Module 5, EPIC-03). Registered now so service-to-service auth exists from day one; no Authorization Service business logic is implemented in this sprint.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "emg_svc_authorization_local_dev_secret_do_not_use_in_prod",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["emg-internal-services-audience"],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "emg-svc-audit",
+      "name": "EMG Service Principal — Audit Service",
+      "description": "Sprint 3 (FEAT-02-3): representative development service identity for the future Audit Service (Module 6, EPIC-04). Registered now so service-to-service auth exists from day one; no Audit Service business logic is implemented in this sprint.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "emg_svc_audit_local_dev_secret_do_not_use_in_prod",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["emg-internal-services-audience"],
       "attributes": {
         "access.token.lifespan": "300"
       }
@@ -73,6 +159,24 @@
         "classification_clearance": ["CONFIDENTIAL"],
         "department": ["Executive"]
       }
+    },
+    {
+      "username": "service-account-emg-svc-identity",
+      "enabled": true,
+      "serviceAccountClientId": "emg-svc-identity",
+      "realmRoles": ["service-account", "svc-identity"]
+    },
+    {
+      "username": "service-account-emg-svc-authorization",
+      "enabled": true,
+      "serviceAccountClientId": "emg-svc-authorization",
+      "realmRoles": ["service-account", "svc-authorization"]
+    },
+    {
+      "username": "service-account-emg-svc-audit",
+      "enabled": true,
+      "serviceAccountClientId": "emg-svc-audit",
+      "realmRoles": ["service-account", "svc-audit"]
     }
   ]
 }

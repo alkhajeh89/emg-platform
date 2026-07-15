@@ -12,6 +12,15 @@ correlation-id shape Module 6's append-only store will expect (ADR-015
 Section 1), so swapping `StructuredLogAuditSink` for a real
 `AuditPipelineSink` in EPIC-04 is a one-line dependency change in
 `main.py` — no call site in this service needs to change.
+
+Sprint 3 (FEAT-02-3) extends the Protocol with service-authentication
+events, additively: every Sprint 2 method keeps its exact signature and
+behavior. Note every method's parameters are safe, structured fields
+(subject/client_id/reason strings) — there is no parameter anywhere in this
+Protocol a caller could use to pass a raw secret or token, which is the
+primary control behind "Secret redaction in logs" (Sprint 3 Required
+Security Controls); redact.py is the backstop for free-text error messages
+that reach `reason`.
 """
 
 from __future__ import annotations
@@ -31,6 +40,14 @@ class AuditEventSink(Protocol):
     ) -> None: ...
 
     def record_token_refresh_failure(
+        self, *, reason: str, correlation_id: str | None
+    ) -> None: ...
+
+    def record_service_auth_success(
+        self, *, client_id: str, service_name: str, correlation_id: str | None
+    ) -> None: ...
+
+    def record_service_auth_failure(
         self, *, reason: str, correlation_id: str | None
     ) -> None: ...
 
@@ -73,6 +90,30 @@ class StructuredLogAuditSink:
                 "actor": None,
                 "module": "identity",
                 "action": "token_refresh",
+                "outcome": "denied",
+            },
+        )
+
+    def record_service_auth_success(
+        self, *, client_id: str, service_name: str, correlation_id: str | None
+    ) -> None:
+        _log.info(
+            "service authentication succeeded",
+            extra={
+                "actor": client_id,
+                "module": "identity",
+                "action": "service_auth",
+                "outcome": "success",
+            },
+        )
+
+    def record_service_auth_failure(self, *, reason: str, correlation_id: str | None) -> None:
+        _log.warning(
+            f"service authentication failed: {reason}",
+            extra={
+                "actor": None,
+                "module": "identity",
+                "action": "service_auth",
                 "outcome": "denied",
             },
         )

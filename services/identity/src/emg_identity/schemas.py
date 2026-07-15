@@ -32,3 +32,40 @@ class SessionInfoResponse(BaseModel):
     subject: str
     roles: list[str]
     attributes: dict[str, str]
+
+
+# --- Sprint 3: Service Identity & M2M Authentication (FEAT-02-3) ----------
+
+
+class ServiceSessionInfoResponse(BaseModel):
+    client_id: str
+    service_name: str
+    roles: list[str]
+    scopes: list[str]
+
+
+# --- Sprint 3: Identity Federation Readiness (FEAT-02-4) -------------------
+
+
+class FederationProviderSummary(BaseModel):
+    """Redacted view of a configured federation provider — never includes
+    `connection_settings` values that look secret (see redact.py)."""
+
+    name: str
+    provider_type: str
+    enabled: bool
+    display_name: str
+    connection_settings: dict[str, object]
+
+
+class FederationProvidersResponse(BaseModel):
+    local_fallback_enabled: bool
+    providers: list[FederationProviderSummary]
+
+
+class FederationHealthResponse(BaseModel):
+    valid: bool
+    problems: list[str]
+    provider_count: int
+    enabled_provider_count: int
+    local_fallback_enabled: bool

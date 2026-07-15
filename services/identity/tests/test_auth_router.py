@@ -140,3 +140,35 @@ def test_correlation_id_header_echoed(settings):
     client = _make_client(settings, handler)
     response = client.get("/healthz", headers={"X-Correlation-Id": "test-corr-id-123"})
     assert response.headers["x-correlation-id"] == "test-corr-id-123"
+
+
+# --- Sprint 3: login rate-limiting readiness --------------------------------
+
+
+def test_login_rate_limited_after_max_attempts_returns_429(settings):
+    """Required Security Control: "Rate-limiting readiness for token
+    requests." Every attempt fails credentials (Keycloak always returns 401)
+    so the test isolates the rate limiter's own behavior: the Nth+1 attempt
+    for the same username must be rejected with 429 *before* Keycloak is
+    called at all."""
+    from emg_identity.dependencies import login_rate_limiter_dependency
+    from emg_identity.rate_limit import InMemoryRateLimiter
+
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return httpx.Response(401, json={"error": "invalid_grant"})
+
+    client = _make_client(settings, handler)
+    limiter = InMemoryRateLimiter(max_attempts=2, window_seconds=60.0)
+    client.app.dependency_overrides[login_rate_limiter_dependency] = lambda: limiter
+
+    login_body = {"username": "dev.investigator", "password": "wrong-password"}
+    assert client.post("/auth/login", json=login_body).status_code == 401
+    assert client.post("/auth/login", json=login_body).status_code == 401
+
+    response = client.post("/auth/login", json=login_body)
+
+    assert response.status_code == 429
+    assert call_count["n"] == 2  # third attempt never reached Keycloak

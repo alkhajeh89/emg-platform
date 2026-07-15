@@ -44,8 +44,23 @@ def test_verify_rejects_wrong_token_type(manager, principal):
 
 
 def test_verify_rejects_tampered_signature(manager, principal, settings):
+    """Regression-safe tamper test (Sprint 3 fix): flipping only the final
+    base64url character of a JWT is not a reliable tamper, because the last
+    character of a base64url-encoded 32-byte HMAC digest carries 2
+    "don't-care" padding bits — roughly 1 signature in 4 decodes to the
+    identical bytes after that specific character is flipped, making the
+    original test flaky (observed failing during Sprint 3 verification).
+    Corrupting a character in the middle of the signature segment instead
+    is deterministic: any single-character change there always changes the
+    decoded signature bytes.
+    """
     pair = manager.issue(principal)
-    tampered = pair.access_token[:-1] + ("A" if pair.access_token[-1] != "A" else "B")
+    header_b64, payload_b64, signature_b64 = pair.access_token.split(".")
+    mid = len(signature_b64) // 2
+    corrupted_char = "A" if signature_b64[mid] != "A" else "B"
+    tampered_signature = signature_b64[:mid] + corrupted_char + signature_b64[mid + 1 :]
+    tampered = f"{header_b64}.{payload_b64}.{tampered_signature}"
+
     with pytest.raises(AuthorizationError):
         manager.verify(tampered, expected_type="access")
 

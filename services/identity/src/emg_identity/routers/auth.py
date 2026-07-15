@@ -1,5 +1,9 @@
 """Authentication endpoints — FEAT-02-1 (Identity Provider Integration) and
 FEAT-02-2 (Authentication Session Management).
+
+Sprint 3 adds only rate-limiting readiness to `/login` (Required Security
+Controls: "Rate-limiting readiness for token requests"); no Sprint 2 route
+signature, status code, or response shape changed.
 """
 
 from __future__ import annotations
@@ -16,9 +20,11 @@ from ..dependencies import (
     audit_sink_dependency,
     get_current_principal,
     keycloak_client_dependency,
+    login_rate_limiter_dependency,
     session_manager_dependency,
 )
 from ..keycloak_client import KeycloakClient
+from ..rate_limit import RateLimiter
 from ..schemas import LoginRequest, RefreshRequest, SessionInfoResponse, TokenResponse
 from ..session import SessionManager
 
@@ -28,6 +34,7 @@ KeycloakDep = Annotated[KeycloakClient, Depends(keycloak_client_dependency)]
 SessionManagerDep = Annotated[SessionManager, Depends(session_manager_dependency)]
 AuditSinkDep = Annotated[AuditEventSink, Depends(audit_sink_dependency)]
 CurrentPrincipalDep = Annotated[Principal, Depends(get_current_principal)]
+LoginRateLimiterDep = Annotated[RateLimiter, Depends(login_rate_limiter_dependency)]
 
 
 def _claims_to_principal(username: str, raw_claims: dict[str, object]) -> Principal:
@@ -60,8 +67,13 @@ async def login(
     keycloak: KeycloakDep,
     session_manager: SessionManagerDep,
     audit: AuditSinkDep,
+    rate_limiter: LoginRateLimiterDep,
 ) -> TokenResponse:
     correlation_id = get_correlation_id()
+    # Rate-limit by username (Required Security Controls: "Rate-limiting
+    # readiness for token requests"). Raises RateLimitedError -> HTTP 429
+    # (main.py) before any credential is sent to Keycloak.
+    rate_limiter.check(request.username)
     try:
         kc_result = await keycloak.login_with_password(request.username, request.password)
     except AuthorizationError:

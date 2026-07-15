@@ -2,8 +2,10 @@
 
 Wires: correlation-ID propagation middleware (ADR-015 Section 3, via
 emg_telemetry — scaffolded Sprint 1), the emg_errors -> emg_api_contracts
-exception mapping every service shares, and the /auth router (FEAT-02-1,
-FEAT-02-2).
+exception mapping every service shares, and the /auth, /federation routers.
+
+Sprint 3 (FEAT-02-3, FEAT-02-4) additions are called out inline; every
+Sprint 1/2 route, middleware, and exception mapping is unchanged.
 """
 
 from __future__ import annotations
@@ -16,20 +18,28 @@ from emg_telemetry import set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from .rate_limit import RateLimitedError
 from .routers.auth import router as auth_router
+from .routers.federation import router as federation_router
+from .routers.service_auth import router as service_auth_router
 
 _ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     ValidationError: 400,
     AuthorizationError: 401,
     UpstreamServiceError: 502,
+    RateLimitedError: 429,
 }
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="EMG Identity Service",
-        description="Module 4 — Identity & Authentication (Sprint 2: FEAT-02-1, FEAT-02-2)",
-        version="0.2.0",
+        description=(
+            "Module 4 — Identity & Authentication. "
+            "FEAT-02-1..02-4: provider integration, session management, "
+            "service identity & M2M authentication, federation readiness."
+        ),
+        version="0.3.0",
     )
 
     @app.middleware("http")
@@ -54,6 +64,8 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "identity"}
 
     app.include_router(auth_router)
+    app.include_router(service_auth_router)
+    app.include_router(federation_router)
     return app
 
 
