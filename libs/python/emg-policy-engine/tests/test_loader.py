@@ -77,3 +77,72 @@ def test_validate_rejects_empty_attribute_allow_list():
     config = PolicyConfig(rules=[rule])
     problems = validate_policy_config(config)
     assert any("empty allow-list" in problem for problem in problems)
+
+
+# --- Sprint 5 (FEAT-03-3): advisory unknown-role validation ----------------
+
+
+def test_validate_flags_a_role_not_in_the_baseline_catalog():
+    """An advisory problem is produced for a required_role not present in
+    ROLE_CATALOG — but note load_policy_config still would not raise on it
+    (see the advisory-only test below)."""
+    rule = PolicyRule(
+        rule_id="typo-role",
+        resource_type="identity.diagnostics",
+        action="read",
+        required_roles=["platfrom-user"],  # deliberate typo
+    )
+    problems = validate_policy_config(PolicyConfig(rules=[rule]))
+    assert any(
+        "not in the RBAC baseline role catalog" in problem and "platfrom-user" in problem
+        for problem in problems
+    )
+
+
+def test_validate_accepts_known_baseline_roles_without_role_problems():
+    rule = PolicyRule(
+        rule_id="known-roles",
+        resource_type="identity.diagnostics",
+        action="read",
+        required_roles=["platform-user", "svc-identity"],
+    )
+    problems = validate_policy_config(PolicyConfig(rules=[rule]))
+    assert not any("RBAC baseline role catalog" in problem for problem in problems)
+
+
+def test_unknown_role_is_advisory_only_and_does_not_block_loading(tmp_path: Path):
+    """A policy file that references an unknown role still loads successfully
+    (default-deny ABAC is unaffected). The unknown role is surfaced only via
+    validate_policy_config — a documented known limitation."""
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("""
+rules:
+  - rule_id: unknown-role-rule
+    resource_type: identity.diagnostics
+    action: read
+    effect: allow
+    required_roles: [not-a-real-role]
+""")
+    config = load_policy_config(policy_path)  # must not raise
+    assert len(config.rules) == 1
+    problems = validate_policy_config(config)
+    assert any("not-a-real-role" in problem for problem in problems)
+
+
+def test_example_policy_config_references_only_catalogued_roles():
+    """The shipped example config must not itself trip the advisory check —
+    every role it names is in the baseline catalog."""
+    example = (
+        Path(__file__).resolve().parents[4]
+        / "services"
+        / "identity"
+        / "config"
+        / "policy.example.yaml"
+    )
+    config = load_policy_config(example)
+    role_problems = [
+        problem
+        for problem in validate_policy_config(config)
+        if "RBAC baseline role catalog" in problem
+    ]
+    assert role_problems == []

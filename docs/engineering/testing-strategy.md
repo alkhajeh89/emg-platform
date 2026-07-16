@@ -14,3 +14,17 @@ surface. `/services` test directories are scaffolded (`tests/.gitkeep`) with
 no test suites yet, since no service has business logic this sprint.
 Performance/load testing against ADR-017's compounded-load model begins once
 a full request chain exists (EPIC-07 onward).
+
+## Authorization testing harness (Sprint 5, FEAT-03-4)
+
+`emg_policy_engine.testing` is the platform's shared, reusable toolkit for
+authorization testing: `AuthorizationScenario` (a declarative
+principal/resource/action/expected-outcome expectation), `assert_scenario`
+(raises `AssertionError` on mismatch), and `run_scenarios` (batch runner
+returning failure messages). Any service embedding the PEP
+(`emg_policy_engine`) uses this to express positive/negative authorization
+cases declaratively instead of hand-writing engine or HTTP assertions. It has
+no pytest runtime dependency (plain `assert` / returned strings) and no
+YAML/DSL layer. Reference adoption:
+`services/identity/tests/test_authz_scenarios.py`, which runs the harness
+against that service's real `config/policy.example.yaml`.

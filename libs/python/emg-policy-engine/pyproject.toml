@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emg-policy-engine"
-version = "0.1.0"
-description = "Local ABAC policy evaluation engine and default Policy Enforcement Point implementation (Module 5 — Authorization & Policy, FEAT-03-2). Sprint 4."
+version = "0.2.0"
+description = "Local ABAC policy evaluation engine and default Policy Enforcement Point implementation (Module 5 — Authorization & Policy, FEAT-03-2), plus the RBAC baseline role catalog (FEAT-03-3) and authorization testing harness (FEAT-03-4). Sprints 4–5."
 requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Proprietary" }
