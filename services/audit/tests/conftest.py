@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from emg_audit_pipeline import InMemoryAuditEventStore
+from emg_audit_pipeline import InMemoryAuditEventStore, InMemoryCustodyEventStore
 from emg_audit_service.authn import (
     ServiceTokenValidator,
     service_token_validator_dependency,
@@ -19,7 +19,7 @@ from emg_audit_service.authn import (
 )
 from emg_audit_service.config import Settings
 from emg_audit_service.main import create_app
-from emg_audit_service.store import store_dependency
+from emg_audit_service.store import custody_store_dependency, store_dependency
 from fastapi.testclient import TestClient
 
 
@@ -45,7 +45,12 @@ def store() -> InMemoryAuditEventStore:
 
 
 @pytest.fixture
-def client(settings, rsa_keypair, store) -> TestClient:
+def custody_store() -> InMemoryCustodyEventStore:
+    return InMemoryCustodyEventStore()
+
+
+@pytest.fixture
+def client(settings, rsa_keypair, store, custody_store) -> TestClient:
     _, public_key = rsa_keypair
     app = create_app()
     app.dependency_overrides[settings_dependency] = lambda: settings
@@ -53,4 +58,5 @@ def client(settings, rsa_keypair, store) -> TestClient:
         settings, signing_key_resolver=lambda token: public_key
     )
     app.dependency_overrides[store_dependency] = lambda: store
+    app.dependency_overrides[custody_store_dependency] = lambda: custody_store
     return TestClient(app)

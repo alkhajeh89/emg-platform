@@ -5,7 +5,60 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
-### Sprint 6 — EPIC-04 Audit Platform (FEAT-04-1) — complete (pending merge)
+### Sprint 7 — EPIC-04 Audit Platform completion (FEAT-04-2, FEAT-04-3) — complete, pending merge
+
+- `libs/python/emg-audit-client`: **Provenance Record Model (FEAT-04-2)** — a
+  versioned `ProvenanceRecord` (source system, source component, originating
+  actor, originating service principal, correlation id, event timestamp vs.
+  ingestion timestamp, classification, transformation history, parent/source
+  event references, evidence origin, collection method, schema version) added
+  as an **optional** field on `AuditEvent`/`SubmittedAuditEvent`, plus a
+  `schema_version` discriminator. New `CustodyEvent`/`SubmittedCustodyEvent`
+  models and a `CustodyEventStore` protocol for **FEAT-04-3**.
+- `libs/python/emg-audit-pipeline`: **version-aware canonical hashing** — the
+  version-1 canonical payload is byte-identical to Sprint 6 (no provenance
+  keys), so every existing version-1 record re-verifies to its stored hash;
+  version-2 events additionally hash the provenance record. Provenance is
+  validated/redacted with the same bounded-metadata / sensitive-key guards.
+  **Digital Evidence Chain-of-Custody (FEAT-04-3)**: a separate append-only
+  custody ledger (in-memory + PostgreSQL) with a centralized global hash chain,
+  a per-evidence custody sequence, tamper/gap/invalid-schema detection that
+  returns an explicit failure result (never a 500), and
+  `(source_principal, custody_event_id)` idempotency with server-assigned
+  `source_principal`.
+- `services/audit`: additive custody endpoints (`POST /audit/custody/events`,
+  `GET /audit/custody/events`, `GET /audit/custody/integrity`) — least-privilege
+  and service-authenticated, restricted to the existing `svc-audit` role. The
+  FEAT-04-1 ingest/query/integrity surface is unchanged.
+- `tools/seed-data/postgres/002_audit_provenance.sql` (adds `schema_version` +
+  nullable `provenance` columns and provenance indexes — no rewrite of existing
+  rows) and `003_evidence_custody.sql` (new append-only `evidence_custody_events`
+  table, `REVOKE ALL … FROM PUBLIC`, INSERT/SELECT-only application role, no
+  UPDATE/DELETE/TRUNCATE path). Idempotent SQL, no Alembic (Decision B carried
+  forward).
+- Backward compatibility: existing Sprint 6 version-1 audit records remain
+  readable and byte-for-byte verifiable; no published record is rewritten,
+  re-hashed, migrated, or mutated. A **golden Sprint-6 v1 hash-compatibility
+  test** is added as a merge-blocking gate.
+- Scope note: Sprint 7 is an approved **controlled split** — it implements
+  **FEAT-04-2 and FEAT-04-3 only**. **FEAT-04-4 (Audit Query & Reporting
+  Interface) is explicitly deferred** to the immediate next sprint, which must
+  deliver it before EPIC-05 / Module 7 begins. **EPIC-04 remains incomplete
+  until FEAT-04-4 is delivered.** Engineering sequencing only — no Architecture
+  Baseline change, no Module 6 redesign, no new ADR, no new role.
+- Security review: a final security-focused review of Sprint 7 concluded
+  **APPROVE**, with no blocking or high-risk findings. Per the Definition of
+  Done, this audit/provenance change still requires formal organizational
+  Security Reviewer sign-off prior to merge; no such external sign-off is
+  claimed here.
+- Technical debt (carried forward, unchanged this sprint): the duplicated
+  service-token validator (`services/audit` vs. `services/identity`) and
+  PostgreSQL connection pooling / async-safe DB access remain documented
+  production-hardening items in `docs/engineering/security-limitations.md`;
+  neither `emg-service-auth` nor connection pooling was introduced in Sprint 7
+  (no proven Sprint-7 defect required it).
+
+### Sprint 6 — EPIC-04 Audit Platform (FEAT-04-1) — complete (merged, PR #6, `1fe6bc7`)
 
 - New `libs/python/emg-audit-client`: the audit event contract — `AuditEvent`
   model, `AuditSink` and `AuditEventStore` protocols, `AuditQuery`, and

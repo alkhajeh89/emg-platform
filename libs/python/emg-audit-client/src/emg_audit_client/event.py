@@ -29,6 +29,8 @@ from typing import Literal
 from emg_common_types import Classification, CorrelationId
 from pydantic import BaseModel, ConfigDict, Field
 
+from .provenance import ProvenanceRecord
+
 AuditOutcome = Literal["success", "denied", "error"]
 ActorType = Literal["human", "service"]
 
@@ -37,6 +39,21 @@ ActorType = Literal["human", "service"]
 # (validated in emg-audit-pipeline before persistence).
 MAX_METADATA_ENTRIES = 32
 MAX_METADATA_VALUE_LEN = 1024
+
+# Bounds on provenance (FEAT-04-2), validated in emg-audit-pipeline before
+# persistence — same rationale as the metadata bounds: keep the immutable
+# record small and prevent smuggling large payloads through provenance.
+MAX_PROVENANCE_TRANSFORMATIONS = 64
+MAX_PROVENANCE_PARENT_REFS = 64
+MAX_PROVENANCE_VALUE_LEN = 1024
+
+# Event schema versions. Version 1 = a Sprint 6 audit event with no provenance
+# (its canonical hash is byte-for-byte unchanged). Version 2 = an event that
+# carries a ProvenanceRecord (FEAT-04-2), which is included in the canonical
+# hash. The store assigns this centrally from the presence of provenance; a
+# producer never sets it.
+EVENT_SCHEMA_VERSION_V1 = 1
+EVENT_SCHEMA_VERSION_V2 = 2
 
 
 class SubmittedAuditEvent(BaseModel):
@@ -66,6 +83,11 @@ class SubmittedAuditEvent(BaseModel):
     source_component: str | None = None
     reason: str = ""
     metadata: dict[str, str] = Field(default_factory=dict)
+    # Optional provenance (FEAT-04-2). When present, the store persists a
+    # schema-version-2 event whose canonical hash includes this record; when
+    # absent, the event is schema-version-1 and byte-for-byte hash-compatible
+    # with Sprint 6. Producer-supplied; never used to assign chain state.
+    provenance: ProvenanceRecord | None = None
 
 
 class AuditEvent(BaseModel):
@@ -88,6 +110,10 @@ class AuditEvent(BaseModel):
     # event_id (Sprint 6 security-review fix, Priority 5).
     source_principal: str
     sequence_number: int
+    # Event schema version (server-assigned from the presence of provenance):
+    # 1 for a Sprint 6-style event with no provenance (hash byte-for-byte
+    # unchanged), 2 for an event carrying a ProvenanceRecord (FEAT-04-2).
+    schema_version: int = EVENT_SCHEMA_VERSION_V1
     timestamp: datetime
     ingest_time: datetime
     prev_hash: str
@@ -106,3 +132,5 @@ class AuditEvent(BaseModel):
     source_component: str | None = None
     reason: str = ""
     metadata: dict[str, str] = Field(default_factory=dict)
+    # Optional provenance (FEAT-04-2). Present iff schema_version == 2.
+    provenance: ProvenanceRecord | None = None

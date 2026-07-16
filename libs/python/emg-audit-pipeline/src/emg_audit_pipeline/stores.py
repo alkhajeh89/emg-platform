@@ -34,7 +34,13 @@ import threading
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, cast
 
-from emg_audit_client import AuditEvent, AuditQuery, SubmittedAuditEvent
+from emg_audit_client import (
+    EVENT_SCHEMA_VERSION_V1,
+    EVENT_SCHEMA_VERSION_V2,
+    AuditEvent,
+    AuditQuery,
+    SubmittedAuditEvent,
+)
 
 from .hashing import GENESIS_PREV_HASH, compute_hash
 from .integrity import IntegrityReport, verify_chain
@@ -57,10 +63,18 @@ def _build_persisted_event(
     now: datetime | None = None,
 ) -> AuditEvent:
     """Centralized construction of a persisted `AuditEvent` from a producer's
-    `SubmittedAuditEvent`: assigns the server-side `source_principal`, timing,
-    and the hash-chain link. Shared by every store so the chaining logic is
-    identical everywhere."""
+    `SubmittedAuditEvent`: assigns the server-side `source_principal`,
+    `schema_version`, timing, and the hash-chain link. Shared by every store so
+    the chaining logic is identical everywhere.
+
+    `schema_version` is derived *server-side* from the presence of provenance
+    (FEAT-04-2): an event with a `ProvenanceRecord` is version 2 (provenance is
+    hashed), one without is version 1 (byte-for-byte hash-compatible with Sprint
+    6). A producer cannot set the version directly."""
     timestamp = now or _utcnow()
+    schema_version = (
+        EVENT_SCHEMA_VERSION_V2 if submitted.provenance is not None else EVENT_SCHEMA_VERSION_V1
+    )
     event_hash = compute_hash(
         event_id=submitted.event_id,
         source_principal=source_principal,
@@ -69,11 +83,13 @@ def _build_persisted_event(
         ingest_time=timestamp,
         submitted=submitted,
         prev_hash=prev_hash,
+        schema_version=schema_version,
     )
     return AuditEvent(
         event_id=submitted.event_id,
         source_principal=source_principal,
         sequence_number=sequence_number,
+        schema_version=schema_version,
         timestamp=timestamp,
         ingest_time=timestamp,
         prev_hash=prev_hash,
@@ -91,6 +107,7 @@ def _build_persisted_event(
         source_component=submitted.source_component,
         reason=submitted.reason,
         metadata=submitted.metadata,
+        provenance=submitted.provenance,
     )
 
 
@@ -249,13 +266,15 @@ class PostgresAuditEventStore:
                     event_id, source_principal, sequence_number, timestamp, ingest_time,
                     prev_hash, event_hash, actor, actor_type, module, action,
                     outcome, correlation_id, resource_type, resource_id,
-                    classification, source_system, source_component, reason, metadata
+                    classification, source_system, source_component, reason, metadata,
+                    schema_version, provenance
                 ) VALUES (
                     %(event_id)s, %(source_principal)s, %(sequence_number)s, %(timestamp)s,
                     %(ingest_time)s, %(prev_hash)s, %(event_hash)s, %(actor)s, %(actor_type)s,
                     %(module)s, %(action)s, %(outcome)s, %(correlation_id)s, %(resource_type)s,
                     %(resource_id)s, %(classification)s, %(source_system)s,
-                    %(source_component)s, %(reason)s, %(metadata)s
+                    %(source_component)s, %(reason)s, %(metadata)s,
+                    %(schema_version)s, %(provenance)s
                 )
                 ON CONFLICT (source_principal, event_id) DO NOTHING
                 """,
@@ -325,11 +344,14 @@ class PostgresAuditEventStore:
 
     # --- row mapping -------------------------------------------------------
 
+    # schema_version and provenance are appended at the end so every existing
+    # column index (used positionally in _row_to_event and _raw_sequence) is
+    # unchanged — additive, backward-compatible column layout (FEAT-04-2).
     _COLUMNS = (
         "event_id, source_principal, sequence_number, timestamp, ingest_time, prev_hash, "
         "event_hash, actor, actor_type, module, action, outcome, correlation_id, "
         "resource_type, resource_id, classification, source_system, source_component, "
-        "reason, metadata"
+        "reason, metadata, schema_version, provenance"
     )
 
     def _fetch_by_key(self, source_principal: str, event_id: str) -> AuditEvent:
@@ -348,6 +370,11 @@ class PostgresAuditEventStore:
     def _row_params(event: AuditEvent) -> dict[str, object]:
         import json
 
+        provenance = (
+            None
+            if event.provenance is None
+            else json.dumps(event.provenance.model_dump(mode="json"))
+        )
         return {
             "event_id": event.event_id,
             "source_principal": event.source_principal,
@@ -369,20 +396,41 @@ class PostgresAuditEventStore:
             "source_component": event.source_component,
             "reason": event.reason,
             "metadata": json.dumps(event.metadata),
+            "schema_version": event.schema_version,
+            "provenance": provenance,
         }
 
     @staticmethod
     def _row_to_event(row: tuple[object, ...]) -> AuditEvent:
         import json
 
+        from emg_audit_client import ProvenanceRecord
         from emg_common_types import Classification
 
         raw_metadata = row[19]
         metadata = raw_metadata if isinstance(raw_metadata, dict) else json.loads(str(raw_metadata))
+        # schema_version / provenance columns are appended (FEAT-04-2); a
+        # pre-migration row (Sprint 6) has schema_version defaulted to 1 by the
+        # DB and provenance NULL, so it reconstructs as a version-1 event whose
+        # stored hash still verifies.
+        raw_schema_version = row[20] if len(row) > 20 else None
+        schema_version = (
+            EVENT_SCHEMA_VERSION_V1
+            if raw_schema_version is None
+            else int(cast(int, raw_schema_version))
+        )
+        raw_provenance = row[21] if len(row) > 21 else None
+        if raw_provenance is None:
+            provenance = None
+        elif isinstance(raw_provenance, dict):
+            provenance = ProvenanceRecord.model_validate(raw_provenance)
+        else:
+            provenance = ProvenanceRecord.model_validate_json(str(raw_provenance))
         return AuditEvent(
             event_id=str(row[0]),
             source_principal=str(row[1]),
             sequence_number=int(cast(int, row[2])),
+            schema_version=schema_version,
             timestamp=cast(datetime, row[3]),
             ingest_time=cast(datetime, row[4]),
             prev_hash=str(row[5]),
@@ -400,4 +448,5 @@ class PostgresAuditEventStore:
             source_component=None if row[17] is None else str(row[17]),
             reason=str(row[18]),
             metadata=metadata,
+            provenance=provenance,
         )

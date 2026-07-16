@@ -18,6 +18,7 @@ from emg_telemetry import set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from .routers.custody import router as custody_router
 from .routers.events import router as events_router
 from .routers.health import router as health_router
 from .routers.integrity import router as integrity_router
@@ -33,12 +34,15 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="EMG Audit Service",
         description=(
-            "Module 6 — Audit, Provenance & Digital Evidence Platform. Sprint 6 "
-            "FEAT-04-1 (Audit Event Pipeline): append-only store, authenticated "
-            "ingestion, minimal US-04 query, and integrity verification, over the "
-            "shared emg-audit-client / emg-audit-pipeline libraries."
+            "Module 6 — Audit, Provenance & Digital Evidence Platform. "
+            "FEAT-04-1 (Audit Event Pipeline, Sprint 6): append-only store, "
+            "authenticated ingestion, minimal US-04 query, integrity verification. "
+            "FEAT-04-2 (Provenance Record Model) + FEAT-04-3 (Digital Evidence "
+            "Chain-of-Custody, Sprint 7): versioned provenance on audit events and "
+            "a separate append-only custody ledger. Thin shell over the shared "
+            "emg-audit-client / emg-audit-pipeline libraries."
         ),
-        version="0.1.0",
+        version="0.2.0",
     )
 
     @app.middleware("http")
@@ -61,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(events_router)
     app.include_router(integrity_router)
+    app.include_router(custody_router)
     return app
 
 

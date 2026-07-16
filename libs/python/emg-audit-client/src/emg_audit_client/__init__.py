@@ -13,18 +13,36 @@ cross-cutting primitives. Kept distinct from `emg_telemetry` observability
 logs per ADR-015 §Decision.
 """
 
+from .custody import (
+    MAX_CUSTODY_VALUE_LEN,
+    CustodyAction,
+    CustodyEvent,
+    CustodyQuery,
+    SubmittedCustodyEvent,
+)
 from .event import (
+    EVENT_SCHEMA_VERSION_V1,
+    EVENT_SCHEMA_VERSION_V2,
     MAX_METADATA_ENTRIES,
     MAX_METADATA_VALUE_LEN,
+    MAX_PROVENANCE_PARENT_REFS,
+    MAX_PROVENANCE_TRANSFORMATIONS,
+    MAX_PROVENANCE_VALUE_LEN,
     ActorType,
     AuditEvent,
     AuditOutcome,
     SubmittedAuditEvent,
 )
-from .protocols import AuditEventStore, AuditSink, IntegrityResult
+from .protocols import AuditEventStore, AuditSink, CustodyEventStore, IntegrityResult
+from .provenance import (
+    PROVENANCE_SCHEMA_VERSION,
+    EventRef,
+    ProvenanceRecord,
+    TransformationStep,
+)
 from .query import AuditQuery
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "AuditEvent",
@@ -35,7 +53,22 @@ __all__ = [
     "AuditSink",
     "AuditEventStore",
     "IntegrityResult",
+    "ProvenanceRecord",
+    "TransformationStep",
+    "EventRef",
+    "PROVENANCE_SCHEMA_VERSION",
+    "CustodyEvent",
+    "SubmittedCustodyEvent",
+    "CustodyAction",
+    "CustodyQuery",
+    "CustodyEventStore",
+    "MAX_CUSTODY_VALUE_LEN",
+    "EVENT_SCHEMA_VERSION_V1",
+    "EVENT_SCHEMA_VERSION_V2",
     "MAX_METADATA_ENTRIES",
     "MAX_METADATA_VALUE_LEN",
+    "MAX_PROVENANCE_TRANSFORMATIONS",
+    "MAX_PROVENANCE_PARENT_REFS",
+    "MAX_PROVENANCE_VALUE_LEN",
     "__version__",
 ]

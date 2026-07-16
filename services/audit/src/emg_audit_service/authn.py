@@ -154,5 +154,23 @@ def require_audit_reader(
     return principal
 
 
+def require_audit_custodian(
+    validator: ServiceTokenValidatorDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> ServicePrincipal:
+    """A principal holding the `svc-audit` role — used for chain-of-custody
+    writes (FEAT-04-3). Custody transfers are audit-plane records; recording
+    them is least-privilege and service-authenticated, restricted to the
+    existing `svc-audit` role (no new role invented). Default-deny."""
+    principal = _principal_from_header(validator, authorization)
+    if "svc-audit" not in principal.roles:
+        raise AuthorizationError(
+            f"Service client '{principal.client_id}' lacks the 'svc-audit' role required "
+            "to record custody transfers"
+        )
+    return principal
+
+
 ServicePrincipalDep = Annotated[ServicePrincipal, Depends(require_service_principal)]
 AuditReaderDep = Annotated[ServicePrincipal, Depends(require_audit_reader)]
+AuditCustodianDep = Annotated[ServicePrincipal, Depends(require_audit_custodian)]

@@ -1,13 +1,14 @@
 # Sprint 6 Completion Status — EPIC-04 Audit Platform, FEAT-04-1 (Audit Event Pipeline)
 
-**Status:** Sprint 6 — **Complete — pending merge.** Implementation and
-security fixes are approved. The security review concluded **APPROVE WITH
-MINOR FIXES**, and every required minor fix (P1–P6) has been resolved and
-verified; all quality gates pass (see §4/§4b). Nothing has been committed,
-pushed, or merged — this status reflects the working tree only. Per the
-Definition of Done, this audit/provenance change still requires formal
-organizational **Security Reviewer sign-off** prior to merge; no such
-external sign-off has occurred and none is claimed here (see §8).
+**Status:** Sprint 6 — **Complete and merged** (PR #6, merge commit `1fe6bc7`,
+into `develop`). Implementation and security fixes were approved; the security
+review concluded **APPROVE WITH MINOR FIXES**, and every required minor fix
+(P1–P6) was resolved and verified; all quality gates passed (see §4/§4b). This
+document is retained as the historical Sprint 6 completion record — the
+"working tree only / pending merge" language below reflects its state at the
+time of writing, before the Sprint 6 merge; it is preserved rather than
+rewritten. Sprint 7 (`feature/sprint-7-audit-completion`) now continues EPIC-04
+with FEAT-04-2 + FEAT-04-3 (see `SPRINT-7-STATUS.md`).
 
 **Scope:** FEAT-04-1 only. Per Engineering Backlog v1.0 §6 and US-04.
 

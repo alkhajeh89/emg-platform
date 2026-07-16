@@ -43,6 +43,36 @@ class AuditEventView(BaseModel):
     reason: str
 
 
+class CustodyIngestResponse(BaseModel):
+    """Acknowledgement that a custody transfer was durably appended (or already
+    present, for an idempotent duplicate) — FEAT-04-3."""
+
+    custody_event_id: str
+    chain_sequence: int
+    custody_sequence: int
+    event_hash: str
+    accepted: bool = True
+
+
+class CustodyEventView(BaseModel):
+    """Read view of a persisted custody event (FEAT-04-3). Exposes safe,
+    persisted fields only; no field can carry a secret (rejected/redacted
+    before persistence)."""
+
+    custody_event_id: str
+    source_principal: str
+    chain_sequence: int
+    custody_sequence: int
+    transfer_timestamp: datetime
+    evidence_id: str
+    custody_action: str
+    custodian: str
+    prior_custodian: str | None
+    transfer_reason: str
+    classification: str
+    correlation_id: str | None
+
+
 class IntegrityResponse(BaseModel):
     intact: bool
     checked_count: int

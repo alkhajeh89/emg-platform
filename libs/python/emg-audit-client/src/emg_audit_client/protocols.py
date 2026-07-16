@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from .custody import CustodyEvent, CustodyQuery, SubmittedCustodyEvent
 from .event import AuditEvent, SubmittedAuditEvent
 from .query import AuditQuery
 
@@ -68,11 +69,47 @@ class AuditEventStore(Protocol):
         ...
 
 
+@runtime_checkable
+class CustodyEventStore(Protocol):
+    """The append-only digital-evidence chain-of-custody ledger (FEAT-04-3).
+
+    A separate store from `AuditEventStore` — its own table and its own hash
+    chain — so it never mutates or re-hashes an audit event. Same single-writer
+    discipline: the store assigns `source_principal`, the global
+    `chain_sequence`, the per-evidence `custody_sequence`, timing, and the
+    hash-chain fields centrally.
+    """
+
+    def append(self, event: SubmittedCustodyEvent, *, source_principal: str) -> CustodyEvent:
+        """Append one custody transfer and return the fully-persisted record.
+
+        Idempotency is scoped to `(source_principal, custody_event_id)`:
+        re-appending an event whose key already exists returns the existing
+        record without appending a duplicate, while two different producers
+        using the same `custody_event_id` create distinct events.
+        `source_principal` is assigned by the caller from the validated service
+        token — never from producer content."""
+        ...
+
+    def query(self, query: CustodyQuery) -> list[CustodyEvent]:
+        """Return custody events matching `query`, ordered by
+        `chain_sequence`."""
+        ...
+
+    def verify_integrity(self) -> IntegrityResult:
+        """Recompute the global custody hash chain and check per-evidence
+        sequence contiguity; report tamper, deletion, sequence gaps, and
+        schema-violating rows as an explicit failure result — never a raised
+        500 (FEAT-04-3 integrity requirement)."""
+        ...
+
+
 class IntegrityResult(Protocol):
-    """Result of `AuditEventStore.verify_integrity`. `intact` is True when the
-    recomputed hash chain matches every stored `event_hash`; when False,
-    `first_broken_sequence` is the earliest sequence number whose hash does
-    not verify."""
+    """Result of `AuditEventStore.verify_integrity` /
+    `CustodyEventStore.verify_integrity`. `intact` is True when the recomputed
+    hash chain matches every stored hash (and, for custody, per-evidence
+    sequences are contiguous); when False, `first_broken_sequence` is the
+    earliest sequence number whose verification fails."""
 
     @property
     def intact(self) -> bool: ...
