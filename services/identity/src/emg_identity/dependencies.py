@@ -21,6 +21,12 @@ from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi import Depends, Header
 
 from .audit import AuditEventSink, StructuredLogAuditSink
+from .audit_pipeline import (
+    AuditDeliveryStatus,
+    DurableSpool,
+    HttpAuditForwarder,
+    PipelineAuditSink,
+)
 from .auth_client import SessionAuthClient
 from .config import Settings, get_settings
 from .federation import FederationConfig, load_federation_config
@@ -58,8 +64,74 @@ def auth_client_dependency(session_manager: SessionManagerDep) -> SessionAuthCli
     return SessionAuthClient(session_manager)
 
 
+# --- Sprint 6: Audit Event Pipeline forwarding (FEAT-04-1) ----------------
+#
+# The audit sink is migrated from StructuredLogAuditSink to the
+# Protocol-preserving PipelineAuditSink. Forwarding to the audit service is
+# gated by `audit_forwarding_enabled` (default False): when off, the sink
+# emits ADR-015 telemetry only — byte-for-byte the prior behavior — so every
+# Sprint 2-5 call site and test is unaffected. When on, the Decision-C durable
+# delivery / spool / dead-letter machinery activates. The spool, status, and
+# forwarder are process-level singletons so degraded state persists across
+# requests and is visible on the readiness endpoint.
+
+
+@lru_cache
+def _audit_delivery_status_singleton() -> AuditDeliveryStatus:
+    return AuditDeliveryStatus()
+
+
+def audit_delivery_status() -> AuditDeliveryStatus:
+    return _audit_delivery_status_singleton()
+
+
+@lru_cache
+def _audit_spool_singleton() -> DurableSpool:
+    return DurableSpool(_settings_singleton().audit_spool_path)
+
+
+def _fetch_service_token(settings: Settings) -> str:
+    """Synchronously acquire this service's own client-credentials token to
+    authenticate to the audit service. Any failure raises, which the forwarder
+    maps to a transient AuditDeliveryError (event spooled, login unaffected)."""
+    import httpx
+
+    response = httpx.post(
+        f"{settings.keycloak_issuer}/protocol/openid-connect/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": settings.service_client_id,
+            "client_secret": settings.service_client_secret,
+        },
+        timeout=settings.audit_delivery_timeout_seconds,
+    )
+    response.raise_for_status()
+    token = response.json().get("access_token")
+    if not isinstance(token, str):
+        raise RuntimeError("client-credentials response missing access_token")
+    return token
+
+
+@lru_cache
+def _pipeline_audit_sink_singleton() -> PipelineAuditSink:
+    settings = _settings_singleton()
+    forwarder = HttpAuditForwarder(
+        base_url=settings.audit_service_base_url,
+        token_provider=lambda: _fetch_service_token(settings),
+        timeout_seconds=settings.audit_delivery_timeout_seconds,
+    )
+    return PipelineAuditSink(
+        forwarder=forwarder,
+        spool=_audit_spool_singleton(),
+        status=_audit_delivery_status_singleton(),
+        telemetry=StructuredLogAuditSink(),
+        max_attempts=settings.audit_delivery_max_attempts,
+        enabled=settings.audit_forwarding_enabled,
+    )
+
+
 def audit_sink_dependency() -> AuditEventSink:
-    return StructuredLogAuditSink()
+    return _pipeline_audit_sink_singleton()
 
 
 AuthClientDep = Annotated[SessionAuthClient, Depends(auth_client_dependency)]

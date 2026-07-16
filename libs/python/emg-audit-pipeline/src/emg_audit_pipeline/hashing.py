@@ -1,0 +1,126 @@
+"""Canonical audit-event hashing and hash-chain computation (FEAT-04-1).
+
+The hash chain is what makes out-of-band mutation *detectable*: each event's
+`event_hash` is computed over a canonical serialization of its immutable
+fields together with the previous event's hash, so altering any stored field
+(or reordering events) breaks the chain from that point forward.
+
+`GENESIS_PREV_HASH` is the `prev_hash` of the very first event in a store.
+
+Canonicalization is deterministic: a fixed field order, UTC ISO-8601
+timestamps, and sorted metadata keys, JSON-serialized with sorted keys and no
+insignificant whitespace. The same event always produces the same hash across
+processes and store backends.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+
+from emg_audit_client import AuditEvent, SubmittedAuditEvent
+
+GENESIS_PREV_HASH = "0" * 64
+
+
+def _isoformat_utc(value: datetime) -> str:
+    """Serialize a datetime as a canonical UTC ISO-8601 string. Naive
+    datetimes are treated as UTC; aware datetimes are converted to UTC."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def canonical_payload(
+    *,
+    event_id: str,
+    source_principal: str,
+    sequence_number: int,
+    timestamp: datetime,
+    ingest_time: datetime,
+    submitted: SubmittedAuditEvent,
+    prev_hash: str,
+) -> str:
+    """Return the deterministic canonical string that `event_hash` is computed
+    over. Includes every immutable field plus `prev_hash` (the chain link).
+    `event_hash` itself is excluded (it is the output). `source_principal` (the
+    server-assigned authenticated producer identity) is included so tampering
+    with it is detected by integrity verification."""
+    payload = {
+        "event_id": event_id,
+        "source_principal": source_principal,
+        "sequence_number": sequence_number,
+        "timestamp": _isoformat_utc(timestamp),
+        "ingest_time": _isoformat_utc(ingest_time),
+        "actor": submitted.actor,
+        "actor_type": submitted.actor_type,
+        "module": submitted.module,
+        "action": submitted.action,
+        "outcome": submitted.outcome,
+        "correlation_id": submitted.correlation_id,
+        "resource_type": submitted.resource_type,
+        "resource_id": submitted.resource_id,
+        "classification": submitted.classification.value,
+        "source_system": submitted.source_system,
+        "source_component": submitted.source_component,
+        "reason": submitted.reason,
+        "metadata": {key: submitted.metadata[key] for key in sorted(submitted.metadata)},
+        "prev_hash": prev_hash,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def compute_hash(
+    *,
+    event_id: str,
+    source_principal: str,
+    sequence_number: int,
+    timestamp: datetime,
+    ingest_time: datetime,
+    submitted: SubmittedAuditEvent,
+    prev_hash: str,
+) -> str:
+    """Compute the SHA-256 `event_hash` for one event."""
+    payload = canonical_payload(
+        event_id=event_id,
+        source_principal=source_principal,
+        sequence_number=sequence_number,
+        timestamp=timestamp,
+        ingest_time=ingest_time,
+        submitted=submitted,
+        prev_hash=prev_hash,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def recompute_event_hash(event: AuditEvent) -> str:
+    """Recompute the hash of a *persisted* event from its stored fields, for
+    integrity verification. Rebuilds the producer portion from the persisted
+    record, so any altered field yields a different hash than the stored
+    `event_hash`."""
+    submitted = SubmittedAuditEvent(
+        event_id=event.event_id,
+        actor=event.actor,
+        actor_type=event.actor_type,
+        module=event.module,
+        action=event.action,
+        outcome=event.outcome,
+        correlation_id=event.correlation_id,
+        resource_type=event.resource_type,
+        resource_id=event.resource_id,
+        classification=event.classification,
+        source_system=event.source_system,
+        source_component=event.source_component,
+        reason=event.reason,
+        metadata=event.metadata,
+    )
+    return compute_hash(
+        event_id=event.event_id,
+        source_principal=event.source_principal,
+        sequence_number=event.sequence_number,
+        timestamp=event.timestamp,
+        ingest_time=event.ingest_time,
+        submitted=submitted,
+        prev_hash=event.prev_hash,
+    )

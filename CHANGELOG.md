@@ -5,6 +5,60 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
+### Sprint 6 — EPIC-04 Audit Platform (FEAT-04-1) — complete (pending merge)
+
+- New `libs/python/emg-audit-client`: the audit event contract — `AuditEvent`
+  model, `AuditSink` and `AuditEventStore` protocols, `AuditQuery`, and
+  outcome types. Reuses `emg_common_types.Classification` / `CorrelationId`;
+  no new cross-cutting primitives.
+- New `libs/python/emg-audit-pipeline`: the audit pipeline core — canonical
+  event hashing, a **centralized** hash chain and sequence assignment (chains
+  are constructed by the audit store, never by individual producer services),
+  `InMemoryAuditEventStore` (tests) and a PostgreSQL-backed append-only store,
+  integrity verification (out-of-band mutation detection), event-id
+  idempotency, and metadata/secret-key validation.
+- `services/audit` **activated** as a minimal live service (Module 6) over the
+  shared libraries: authenticated ingestion, minimal US-04 query (by actor,
+  time range, correlation id), integrity verification, and health/readiness
+  reporting that surfaces audit degradation. It owns the single append-only
+  store; it is a thin deployment shell over the libraries.
+- `tools/seed-data/postgres/`: idempotent initialization SQL creating the
+  append-only `audit_events` table and an application role granted INSERT and
+  SELECT only (no application UPDATE/DELETE path). Schema-migration tooling
+  (e.g. Alembic) is documented as a later production-hardening item.
+- `services/identity`: migrated from `StructuredLogAuditSink` to a
+  Protocol-preserving `PipelineAuditSink`. The existing `AuditEventSink`
+  Protocol and every `record_*` call site are unchanged. The new sink forwards
+  each event to the audit service and, on transient failure, spools durably
+  with bounded exponential backoff and an explicit dead-letter state; it
+  continues emitting ADR-015 structured telemetry throughout and never
+  silently claims an event was recorded. Existing login/authentication
+  endpoints do not fail solely because the audit service is temporarily
+  unavailable (Sprint 6 compatibility posture; see
+  `docs/engineering/security-limitations.md`).
+- Compatibility: `StructuredLogAuditSink` is retained as the degraded-mode
+  fallback limb and test double.
+- Scope note: Sprint 6 implements **FEAT-04-1 only**. FEAT-04-2 (Provenance
+  Record Model), FEAT-04-3 (Digital Evidence Chain-of-Custody), and FEAT-04-4
+  (full Audit Query & Reporting Interface) are shifted to later Audit sprints —
+  an engineering-sequencing decision that alters no Backlog feature-to-epic
+  assignment and requires no new ADR. Sprint 6 implements only the minimal
+  query capability US-04 explicitly requires.
+- Security review: a final security-focused review of Sprint 6 concluded
+  **APPROVE WITH MINOR FIXES**; every required minor fix (advisory-lock
+  concurrency serialization, per-principal idempotency, durable-spool
+  fsync + truthful failure reporting, defensive integrity verification,
+  route-level query validation, and SQL-role hardening) was resolved. Two
+  items were recorded as documented technical debt rather than fixed in
+  Sprint 6 (duplicated service-token validator; Postgres connection pooling /
+  async-safe DB access) — see `docs/engineering/security-limitations.md` and
+  `SPRINT-6-STATUS.md` §4b for the full findings-and-dispositions table. Per
+  the Definition of Done, this audit/provenance change still requires formal
+  organizational Security Reviewer sign-off prior to merge.
+- New docs: `docs/engineering/sprint-6-design.md`; Sprint 6 sections added to
+  `docs/engineering/security-limitations.md` and
+  `docs/engineering/testing-strategy.md`.
+
 ### Sprint 5 — EPIC-03 Authorization Completion (FEAT-03-3, FEAT-03-4) — complete
 
 - `libs/python/emg-policy-engine`: **RBAC Baseline Roles (FEAT-03-3)** — a

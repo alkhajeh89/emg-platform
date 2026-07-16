@@ -13,7 +13,7 @@ repository structure.
 | --- | --- | --- | --- | --- |
 | `identity/` | Module 4 — Identity & Authentication | EPIC-02 | 2-3 | In progress — FEAT-02-1/02-2 done (Sprint 2), FEAT-02-3/02-4 pending (Sprint 3) |
 | `authz/` | Module 5 — Authorization & Policy | EPIC-03 | 4-5 | Scaffolded |
-| `audit/` | Module 6 — Audit, Provenance & Digital Evidence | EPIC-04 | 5-6 | Scaffolded |
+| `audit/` | Module 6 — Audit, Provenance & Digital Evidence | EPIC-04 | 6 | Active — FEAT-04-1 Audit Event Pipeline (Sprint 6); FEAT-04-2/04-3/04-4 later Audit sprints |
 | `knowledge-graph/` | Module 7 — Knowledge Graph Platform | EPIC-05 | 7-9 | Scaffolded |
 | `retrieval/` | Module 8 — Search, GraphRAG & Retrieval | EPIC-06 / EPIC-07 | 10-14 | Scaffolded |
 | `ai-orchestration/` | Module 9 — AI Orchestration & Agents | EPIC-08 | 15-17 | Scaffolded |

@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 5 (EPIC-03 Authorization Completion) complete, pending merge |
+| Engineering Phase | Active — Sprint 6 (EPIC-04 Audit Platform, complete — pending merge) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -47,17 +47,29 @@ role catalog (`libs/python/emg-policy-engine`'s `ROLE_CATALOG`, a versioned
 role vocabulary the ABAC engine's `required_roles` conditions draw from, not
 a second enforcement mechanism) and a reusable authorization testing harness
 (`AuthorizationScenario`, `assert_scenario`, `run_scenarios`) proven by real
-adoption in `services/identity`. The Backlog's Sprint 5 row also lists
-FEAT-04-1 (Audit Event Pipeline); it has been rescheduled to the next Audit
-implementation sprint (engineering sequencing only — see
-`docs/engineering/sprint-5-design.md` and `ARCHITECTURE_STATUS.md`). See
-`docs/engineering/sprint-5-design.md` and `SPRINT-5-STATUS.md`.
+adoption in `services/identity`. See `docs/engineering/sprint-5-design.md`
+and `SPRINT-5-STATUS.md`.
 
-No business logic beyond Module 4 (Identity) and Module 5's PEP/ABAC/RBAC
-library scope above, no other API implementations, no AI orchestration, no
-Knowledge Graph implementation, and no frontend code exists yet. Those land
-in later sprints per `docs/architecture/EMG_Engineering_Backlog_v1.0.md`,
-Section 6 (Sprint Planning). FEAT-04-1 (Audit Event Pipeline) and Sprint 6
+**Sprint 6** (EPIC-04 Audit Platform, FEAT-04-1 — complete, pending merge):
+the Audit Event Pipeline — a library-first core (`libs/python/emg-audit-client`
+contract and `libs/python/emg-audit-pipeline` implementation: `AuditEvent`
+model, append-only store, centralized hash chain and sequence assignment,
+integrity verification, event-id idempotency) with `services/audit` activated
+as a minimal live service that owns the append-only PostgreSQL store,
+authenticated ingestion, minimal US-04 query (by actor, time range,
+correlation id), and integrity verification. `services/identity` migrates from
+`StructuredLogAuditSink` to a Protocol-preserving `PipelineAuditSink` with a
+durable degraded-mode spool, so existing login/authentication behavior is
+never coupled to the audit service's availability. FEAT-04-1 was rescheduled
+from the Backlog's Sprint 5 row into Sprint 6, and FEAT-04-2/04-3/04-4 are
+correspondingly shifted to later Audit sprints (engineering sequencing only —
+see `docs/engineering/sprint-6-design.md` and `ARCHITECTURE_STATUS.md`).
+
+No business logic beyond Module 4 (Identity), Module 5 (Authorization
+PEP/ABAC/RBAC), and Module 6's FEAT-04-1 audit pipeline exists yet — no
+Knowledge Graph, no AI orchestration, and no frontend code. Those land in
+later sprints per `docs/architecture/EMG_Engineering_Backlog_v1.0.md`,
+Section 6 (Sprint Planning). FEAT-04-2, FEAT-04-3, FEAT-04-4, and Sprint 7
 have not been started.
 
 ## Repository Structure
@@ -71,16 +83,20 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
 /services        One directory per backend module (Modules 4–10).
                   identity/ implemented (Sprint 2 FEAT-02-1/02-2, Sprint 3
                   FEAT-02-3/02-4, Sprint 4 FEAT-03-1/03-2 reference PEP
-                  integration); authz/ remains scaffolded by design
+                  integration); audit/ activated Sprint 6 (FEAT-04-1 Audit
+                  Event Pipeline — minimal live service over the shared
+                  audit libraries); authz/ remains scaffolded by design
                   (Module 5 is library-first, no live authorization
                   service); all other services remain scaffolded until
                   their sprint lands.
 /libs             Shared libraries (Module 3, ADR-012). FEAT-01-2 scaffold,
                   extended Sprint 4 with the PEP contract
                   (emg-auth-client) and the ABAC policy engine
-                  (emg-policy-engine), and Sprint 5 with the RBAC baseline
+                  (emg-policy-engine), Sprint 5 with the RBAC baseline
                   role catalog and authorization testing harness
-                  (emg-policy-engine).
+                  (emg-policy-engine), and Sprint 6 with the audit event
+                  contract (emg-audit-client) and pipeline
+                  (emg-audit-pipeline).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).

@@ -1,10 +1,11 @@
 # Identity Platform — Security Limitations & Deferred Items
 
 Covers Sprint 2 (FEAT-02-1, FEAT-02-2), Sprint 3 (FEAT-02-3, FEAT-02-4),
-Sprint 4 (FEAT-03-1, FEAT-03-2), and Sprint 5 (FEAT-03-3, FEAT-03-4). Each
-item states what the current implementation does, what it does not do, and
-when the gap is expected to close. Nothing here is silently accepted — every
-limitation is a tracked, documented, deliberate scope boundary.
+Sprint 4 (FEAT-03-1, FEAT-03-2), Sprint 5 (FEAT-03-3, FEAT-03-4), and Sprint 6
+(FEAT-04-1). Each item states what the current implementation does, what it
+does not do, and when the gap is expected to close. Nothing here is silently
+accepted — every limitation is a tracked, documented, deliberate scope
+boundary.
 
 ## Controls implemented (Sprint 3)
 
@@ -109,6 +110,44 @@ limitation is a tracked, documented, deliberate scope boundary.
   dependency and no YAML DSL, keeping the package's dependency and
   complexity footprint unchanged.
 
+## Controls implemented (Sprint 6)
+
+- **Append-only audit store with defense-in-depth immutability.** The audit
+  event stores (`emg-audit-pipeline`) expose no update or delete method; the
+  PostgreSQL application role (`emg_audit_app`) is granted INSERT and SELECT
+  only (`tools/seed-data/postgres/001_audit_events.sql`). "No mutation or
+  deletion" is an application-code and database-role guarantee.
+- **Tamper-evident hash chain + integrity verification.** Every event carries
+  a SHA-256 `event_hash` chained to the previous event's hash; `verify_chain`
+  / `GET /audit/integrity` recompute the chain and report the first break,
+  detecting out-of-band mutation, reordering, or gaps.
+- **Centralized single-writer chain.** Sequence numbers and hash links are
+  assigned by the store (inside `services/audit`), never by producers, so
+  independent producer services cannot construct competing chains.
+- **Idempotent ingestion.** `append` / `POST /audit/events` is idempotent by
+  producer-supplied `event_id`.
+- **No secrets or tokens in audit records.** Structural (no token/secret field
+  on `SubmittedAuditEvent`) plus a pre-persistence guard that rejects
+  sensitive-looking metadata keys and redacts secret-shaped substrings and
+  bearer tokens from `reason`/metadata; raw access/refresh tokens, client
+  secrets, passwords, and Authorization headers are never accepted.
+- **Bounded metadata.** Metadata is size- and count-limited before
+  persistence.
+- **Authenticated, least-privilege audit APIs — no new roles.** Ingest
+  requires a recognized service token; query and integrity require the
+  existing `svc-audit` role (default-deny otherwise). No new role was
+  invented; recognized clients/roles mirror the existing realm seed.
+- **UTC server-assigned timestamps; correlation ids preserved end-to-end.**
+- **Audit store kept distinct from `emg-telemetry`** (observability logs),
+  per ADR-015 §Decision.
+- **Non-blocking degraded-mode capture (Decision C).** `services/identity`'s
+  `PipelineAuditSink` delivers to the audit service, and on transient failure
+  spools durably, retries with bounded exponential backoff, dead-letters
+  exhausted deliveries, keeps emitting ADR-015 telemetry, and — if it can
+  neither deliver nor durably spool — emits critical telemetry and marks the
+  service degraded (`GET /readyz`) rather than silently claiming the event was
+  recorded.
+
 ## Known limitations (tracked, carried from Sprint 2 unless noted)
 
 - **No session revocation** (Sprint 2). A compromised EMG refresh token
@@ -174,11 +213,70 @@ limitation is a tracked, documented, deliberate scope boundary.
   FEAT-03-3 — deliberate design boundary, not a gap). It does not define
   role→permission mappings, role hierarchy, or inheritance; all authorization
   decisions are made solely by the ABAC `PolicyEngine`.
-- **No live authorization service, and no FEAT-04-1 audit pipeline yet**
-  (Sprint 5). `services/authz` remains scaffolded (unchanged from Sprint 4),
-  and FEAT-04-1 (the real append-only Audit Event Pipeline) was rescheduled
-  out of Sprint 5 to the next Audit sprint — allow/deny decisions still log
-  through the interim `StructuredLogAuditSink` established in Sprint 4.
+- **No live authorization service** (Sprint 5). `services/authz` remains
+  scaffolded (unchanged from Sprint 4); the PEP/ABAC engine are in-process
+  libraries.
+- **Immutability is application- and role-enforced, not absolute** (Sprint 6,
+  FEAT-04-1 — honest boundary, not a gap to close by role grants alone). The
+  append-only guarantee is enforced by the store contract (no mutate/delete
+  method) and PostgreSQL INSERT/SELECT-only grants. It is **not** a claim that
+  a PostgreSQL superuser, or anyone with direct storage/filesystem access, can
+  never alter bytes. The hash-chain integrity verification exists precisely to
+  *detect* such out-of-band mutation; cryptographic external anchoring /
+  write-once media are later-sprint hardening.
+- **Audit-capture degraded mode is fail-open for the business action, by
+  approved design** (Sprint 6, Decision C). A transient audit-service outage
+  does not fail login/authentication; events are durably spooled, retried, and
+  dead-lettered, never silently dropped, and degradation is surfaced on
+  `/readyz`. Hard fail-closed ("no governed action without a confirmed audit
+  record") for designated higher-assurance actions requires security review
+  and is a later-sprint decision — it is **not** implemented in Sprint 6.
+- **The durable spool is a local file, not a production queue** (Sprint 6).
+  `DurableSpool` (JSONL file + dead-letter file) is the durability floor so
+  events are not lost during a brief audit outage; a real message queue /
+  streaming pipeline and cross-node durability are later infrastructure
+  (EPIC-11/12).
+- **First-tier persistence only** (Sprint 6). Single-node PostgreSQL, plain
+  idempotent init SQL (no Alembic — schema-migration tooling is a documented
+  later production-hardening item), no table partitioning, retention, or
+  HA/DR. Retention-*ready* fields (timestamp, classification) exist; retention
+  *enforcement* is later.
+- **Audit forwarding is disabled by default** (Sprint 6). To preserve Sprint
+  2-5 behavior exactly, `EMG_IDENTITY_AUDIT_FORWARDING_ENABLED` defaults to
+  False (telemetry-only); enabling it activates the durable-delivery path once
+  the audit service is present. The plumbing is fully tested with a fake
+  forwarder regardless.
+- **Minimal query only, no human reporting surface** (Sprint 6). Only the
+  US-04 query (by actor, time range, correlation id) is implemented, for
+  `svc-audit` service principals. The richer human compliance-reporting
+  interface is FEAT-04-4, a later Audit sprint.
+
+## Known technical debt (Sprint 6 — must be resolved for production)
+
+These items are safe for the Sprint 6 scope (in-memory store + identity
+forwarding disabled by default) but must be resolved before the PostgreSQL
+path and real audit ingestion are enabled in a shared or production
+environment:
+
+- **Duplicated service-token validator.** `services/audit`'s
+  `ServiceTokenValidator` (`authn.py`) is a deliberate copy of
+  `services/identity`'s Sprint 3 validator, to avoid a service→service import.
+  The two can drift. Production use requires consolidating them into a single
+  shared, independently-validated library (e.g. an `emg-service-auth`
+  package). Both validators' negative paths (expired / wrong-audience /
+  wrong-issuer / tampered-signature / unrecognized-client / insufficient-role)
+  are now covered by tests on each side, but the duplication itself remains
+  debt. Creating that shared package was intentionally **not** done in Sprint 6
+  to avoid expanding scope.
+- **PostgreSQL connection pooling / async-safe DB access.** The audit service
+  holds a single `psycopg` connection per process and the ingest/query/
+  integrity handlers are `async def` invoking synchronous, blocking DB calls,
+  which serialize on and block the event loop. Production hardening requires a
+  connection pool (`psycopg_pool`) and offloading DB I/O (e.g.
+  `run_in_executor`) or synchronous handlers. Correctness under concurrency is
+  already ensured (transaction-level advisory lock + `UNIQUE(sequence_number)`
+  + bounded retry), so this is a throughput/availability hardening item, not a
+  correctness defect.
 
 ## Deferred to later sprints (not started)
 
@@ -186,11 +284,12 @@ limitation is a tracked, documented, deliberate scope boundary.
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
-- Module 6 Audit Event Pipeline / append-only audit store (EPIC-04),
-  **including FEAT-04-1**, which was grouped with FEAT-03-3/03-4 in the
-  Backlog's Sprint 5 row but rescheduled to the next Audit implementation
-  sprint (engineering sequencing only — see `sprint-5-design.md` and
-  `ARCHITECTURE_STATUS.md`).
+- Remaining Module 6 Audit features (EPIC-04): **FEAT-04-2 (Provenance Record
+  Model), FEAT-04-3 (Digital Evidence Chain-of-Custody), and FEAT-04-4 (Audit
+  Query & Reporting Interface)** — shifted to later Audit sprints as a
+  continuation of the FEAT-04-1 reschedule (engineering sequencing only — see
+  `sprint-6-design.md` and `ARCHITECTURE_STATUS.md`). FEAT-04-1 (Audit Event
+  Pipeline) itself is implemented in Sprint 6.
 - Knowledge Graph, Search, GraphRAG, AI agents, Decision Intelligence
   (EPIC-05 onward).
 - Frontend features (EPIC-10 onward).
