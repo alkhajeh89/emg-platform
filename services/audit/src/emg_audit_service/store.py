@@ -18,8 +18,13 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Annotated
 
-from emg_audit_client import AuditEventStore, AuditQuery
-from emg_audit_pipeline import InMemoryAuditEventStore, PostgresAuditEventStore
+from emg_audit_client import AuditEventStore, AuditQuery, CustodyEventStore
+from emg_audit_pipeline import (
+    InMemoryAuditEventStore,
+    InMemoryCustodyEventStore,
+    PostgresAuditEventStore,
+    PostgresCustodyEventStore,
+)
 from fastapi import Depends
 
 from .authn import SettingsDep
@@ -61,6 +66,39 @@ def store_dependency(settings: SettingsDep) -> AuditEventStore:
 
 
 StoreDep = Annotated[AuditEventStore, Depends(store_dependency)]
+
+
+# --- Chain-of-custody store (FEAT-04-3) — a separate ledger from the audit
+# store, wired identically. It reuses the same PostgreSQL connection settings
+# but is its own store object over its own table.
+
+
+@lru_cache
+def _memory_custody_store_singleton() -> InMemoryCustodyEventStore:
+    return InMemoryCustodyEventStore()
+
+
+def _build_custody_store(settings: Settings) -> CustodyEventStore:
+    if settings.store_backend == "postgres":
+        import psycopg
+
+        connection = psycopg.connect(settings.postgres_dsn)
+        return PostgresCustodyEventStore(connection)
+    return _memory_custody_store_singleton()
+
+
+@lru_cache
+def _custody_store_singleton_for(backend: str, dsn: str) -> CustodyEventStore:
+    from .config import Settings as _Settings
+
+    return _build_custody_store(_Settings(store_backend=backend, postgres_dsn=dsn))
+
+
+def custody_store_dependency(settings: SettingsDep) -> CustodyEventStore:
+    return _custody_store_singleton_for(settings.store_backend, settings.postgres_dsn)
+
+
+CustodyStoreDep = Annotated[CustodyEventStore, Depends(custody_store_dependency)]
 
 
 def store_health(store: AuditEventStore, settings: Settings) -> StoreHealth:

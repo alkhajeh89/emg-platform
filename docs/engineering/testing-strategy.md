@@ -52,3 +52,33 @@ Docker or a database by default:
   against a real Postgres from `docker-compose` to prove persistence, DB-layer
   append-only enforcement (INSERT/SELECT-only role denied UPDATE/DELETE),
   idempotency, and integrity.
+
+## Provenance + chain-of-custody testing (Sprint 7, FEAT-04-2 + FEAT-04-3)
+
+- `libs/python/emg-audit-pipeline/tests/test_backward_compat_hashing.py` — the
+  **merge-blocking backward-compatibility gate**: the version-1 canonical
+  payload is byte-for-byte identical to Sprint 6, a pinned literal golden
+  version-1 hash still matches, a stored version-1 record re-verifies, and a
+  mixed version-1/version-2 store verifies intact. If this fails, a change has
+  silently altered the hash of already-published audit records.
+- `libs/python/emg-audit-pipeline/tests/test_provenance.py` — provenance version
+  stamping (server-derived), persistence, provenance tamper detection, and
+  validation/redaction of oversized / secret-shaped provenance.
+- `libs/python/emg-audit-pipeline/tests/test_custody_stores.py` — custody
+  append-only, global + per-evidence sequencing, hash-chain links, queries,
+  per-principal idempotency isolation, and the no-mutation/no-delete surface.
+- `libs/python/emg-audit-pipeline/tests/test_custody_integrity.py` — custody
+  mutation, deletion, non-increasing global sequence, per-evidence sequence gap,
+  and schema-violating-row detection (each an explicit failure, never a raise).
+- `services/audit/tests/test_provenance_api.py` — HTTP: provenance-carrying
+  ingest persists a version-2 event, keeps the chain intact, and rejects
+  oversized provenance (400).
+- `services/audit/tests/test_custody_api.py` — HTTP: least-privilege
+  (`svc-audit`-only) custody record/query/integrity, authorization negatives,
+  idempotency, route-limit 422, invalid-action 422, and tamper detection.
+- `libs/python/emg-audit-pipeline/tests/test_integration_live_postgres_custody.py`
+  — an **opt-in, skipped-by-default** suite: custody persistence, DB-layer
+  append-only enforcement, per-principal idempotency, integrity, a **25-thread
+  concurrency** test (unique + contiguous global sequence, one valid chain), and
+  the **FEAT-04-2 migration backward-compatibility** check (a version-1 and a
+  version-2 event coexist and verify intact after `002` runs).

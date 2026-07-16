@@ -250,13 +250,42 @@ boundary.
   US-04 query (by actor, time range, correlation id) is implemented, for
   `svc-audit` service principals. The richer human compliance-reporting
   interface is FEAT-04-4, a later Audit sprint.
+- **Provenance is producer-asserted** (Sprint 7, FEAT-04-2 — trust-model note,
+  not a gap). A producer supplies its own provenance (source system, originating
+  actor, transformation history, parent references, evidence origin/collection
+  method). The store assigns the event `schema_version`, sequence, and hash
+  chain centrally, and provenance is tamper-*evident* once stored — but the
+  store does not independently attest a producer's claimed origin. Cross-checking
+  provenance against an external source of truth is later-sprint work.
+- **Custody immutability is application/role-enforced, not absolute** (Sprint 7,
+  FEAT-04-3 — same honest boundary as the audit store). `evidence_custody_events`
+  is append-only via the store contract and INSERT/SELECT-only role grants; it is
+  **not** a claim that a PostgreSQL superuser or direct storage access can never
+  alter bytes. The custody hash chain + per-evidence sequence verification
+  (`GET /audit/custody/integrity`) is the compensating control that *detects*
+  mutation, deletion, and sequence gaps.
+- **Custody integrity uses a hash chain, not digital signatures** (Sprint 7,
+  FEAT-04-3 — deliberate scope boundary). FEAT-04-3's "digital signature *or*
+  hash requirements" is satisfied with the established SHA-256 hash-chain
+  approach; **no PKI / asymmetric signatures** were introduced (that would be a
+  new architectural element requiring an ADR). External cryptographic anchoring
+  and signature-based non-repudiation are later hardening.
+- **Classification-aware audit reads are not implemented yet** (Sprint 7 — this
+  is FEAT-04-4). Audit and custody reads are gated by the `svc-audit` role only;
+  classification-aware read filtering / redaction, human compliance-officer
+  access, export/reporting, and any UI are the deferred FEAT-04-4 surface. EPIC-04
+  remains incomplete until FEAT-04-4 is delivered, and EPIC-05 (Module 7) is
+  blocked until then.
 
-## Known technical debt (Sprint 6 — must be resolved for production)
+## Known technical debt (Sprint 6/7 — must be resolved for production)
 
-These items are safe for the Sprint 6 scope (in-memory store + identity
+These items are safe for the Sprint 6/7 scope (in-memory store + identity
 forwarding disabled by default) but must be resolved before the PostgreSQL
 path and real audit ingestion are enabled in a shared or production
-environment:
+environment. **Both were carried forward unchanged in Sprint 7 by explicit
+approval — neither `emg-service-auth` nor connection pooling was introduced,
+because no proven Sprint-7 defect required it.** They should be resolved with
+FEAT-04-4 or before production load.
 
 - **Duplicated service-token validator.** `services/audit`'s
   `ServiceTokenValidator` (`authn.py`) is a deliberate copy of
@@ -265,17 +294,19 @@ environment:
   shared, independently-validated library (e.g. an `emg-service-auth`
   package). Both validators' negative paths (expired / wrong-audience /
   wrong-issuer / tampered-signature / unrecognized-client / insufficient-role)
-  are now covered by tests on each side, but the duplication itself remains
-  debt. Creating that shared package was intentionally **not** done in Sprint 6
-  to avoid expanding scope.
+  are covered by tests on each side, but the duplication itself remains debt.
+  Sprint 7 added custody authorization (`svc-audit`-only) reusing the same local
+  validator; consolidation was still intentionally **not** done, to avoid
+  expanding scope.
 - **PostgreSQL connection pooling / async-safe DB access.** The audit service
   holds a single `psycopg` connection per process and the ingest/query/
-  integrity handlers are `async def` invoking synchronous, blocking DB calls,
-  which serialize on and block the event loop. Production hardening requires a
-  connection pool (`psycopg_pool`) and offloading DB I/O (e.g.
-  `run_in_executor`) or synchronous handlers. Correctness under concurrency is
-  already ensured (transaction-level advisory lock + `UNIQUE(sequence_number)`
-  + bounded retry), so this is a throughput/availability hardening item, not a
+  integrity handlers (now including the Sprint 7 custody handlers) are
+  `async def` invoking synchronous, blocking DB calls, which serialize on and
+  block the event loop. Production hardening requires a connection pool
+  (`psycopg_pool`) and offloading DB I/O (e.g. `run_in_executor`) or synchronous
+  handlers. Correctness under concurrency is already ensured (transaction-level
+  advisory locks — a distinct lock per chain — + `UNIQUE` sequence constraints +
+  bounded retry), so this is a throughput/availability hardening item, not a
   correctness defect.
 
 ## Deferred to later sprints (not started)
@@ -284,12 +315,13 @@ environment:
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
-- Remaining Module 6 Audit features (EPIC-04): **FEAT-04-2 (Provenance Record
-  Model), FEAT-04-3 (Digital Evidence Chain-of-Custody), and FEAT-04-4 (Audit
-  Query & Reporting Interface)** — shifted to later Audit sprints as a
-  continuation of the FEAT-04-1 reschedule (engineering sequencing only — see
-  `sprint-6-design.md` and `ARCHITECTURE_STATUS.md`). FEAT-04-1 (Audit Event
-  Pipeline) itself is implemented in Sprint 6.
+- Remaining Module 6 Audit feature (EPIC-04): **FEAT-04-4 (Audit Query &
+  Reporting Interface)** — deferred to the **immediate next sprint** as an
+  approved controlled split, and must land before EPIC-05 / Module 7 begins.
+  **EPIC-04 remains incomplete until FEAT-04-4 is delivered.** FEAT-04-1 (Audit
+  Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7), and
+  FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7) are implemented. See
+  `sprint-7-design.md` and `ARCHITECTURE_STATUS.md`.
 - Knowledge Graph, Search, GraphRAG, AI agents, Decision Intelligence
   (EPIC-05 onward).
 - Frontend features (EPIC-10 onward).

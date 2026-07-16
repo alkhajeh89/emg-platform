@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 6 (EPIC-04 Audit Platform, complete — pending merge) |
+| Engineering Phase | Active — Sprint 7 (EPIC-04 Audit Platform completion: FEAT-04-2 + FEAT-04-3, complete — pending merge) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -50,27 +50,38 @@ a second enforcement mechanism) and a reusable authorization testing harness
 adoption in `services/identity`. See `docs/engineering/sprint-5-design.md`
 and `SPRINT-5-STATUS.md`.
 
-**Sprint 6** (EPIC-04 Audit Platform, FEAT-04-1 — complete, pending merge):
-the Audit Event Pipeline — a library-first core (`libs/python/emg-audit-client`
-contract and `libs/python/emg-audit-pipeline` implementation: `AuditEvent`
-model, append-only store, centralized hash chain and sequence assignment,
-integrity verification, event-id idempotency) with `services/audit` activated
-as a minimal live service that owns the append-only PostgreSQL store,
-authenticated ingestion, minimal US-04 query (by actor, time range,
-correlation id), and integrity verification. `services/identity` migrates from
-`StructuredLogAuditSink` to a Protocol-preserving `PipelineAuditSink` with a
-durable degraded-mode spool, so existing login/authentication behavior is
-never coupled to the audit service's availability. FEAT-04-1 was rescheduled
-from the Backlog's Sprint 5 row into Sprint 6, and FEAT-04-2/04-3/04-4 are
-correspondingly shifted to later Audit sprints (engineering sequencing only —
-see `docs/engineering/sprint-6-design.md` and `ARCHITECTURE_STATUS.md`).
+**Sprint 6** (EPIC-04 Audit Platform, FEAT-04-1 — complete, merged as PR #6,
+merge commit `1fe6bc7`): the Audit Event Pipeline — a library-first core
+(`libs/python/emg-audit-client` contract and `libs/python/emg-audit-pipeline`
+implementation: `AuditEvent` model, append-only store, centralized hash chain
+and sequence assignment, integrity verification, event-id idempotency) with
+`services/audit` activated as a minimal live service that owns the append-only
+PostgreSQL store, authenticated ingestion, minimal US-04 query (by actor, time
+range, correlation id), and integrity verification. `services/identity`
+migrates from `StructuredLogAuditSink` to a Protocol-preserving
+`PipelineAuditSink` with a durable degraded-mode spool, so existing
+login/authentication behavior is never coupled to the audit service's
+availability. See `docs/engineering/sprint-6-design.md` and `SPRINT-6-STATUS.md`.
+
+**Sprint 7** (EPIC-04 Audit Platform completion, FEAT-04-2 + FEAT-04-3 —
+**complete, pending merge**): the **Provenance Record Model** (a versioned
+`ProvenanceRecord` on the audit event, with version-aware canonical hashing
+that keeps every Sprint 6 version-1 record byte-for-byte verifiable) and the
+**Digital Evidence Chain-of-Custody** ledger (a separate append-only custody
+store with a global hash chain, per-evidence custody sequence, tamper/gap
+detection, and `(source_principal, custody_event_id)` idempotency). A final
+security-focused review of Sprint 7 concluded **APPROVE**, with no blocking or
+high-risk findings. Approved controlled split: **FEAT-04-4 (Audit Query &
+Reporting Interface) is deferred to the immediate next sprint** and must land
+before EPIC-05 (Module 7) begins. See `docs/engineering/sprint-7-design.md`
+and `SPRINT-7-STATUS.md`.
 
 No business logic beyond Module 4 (Identity), Module 5 (Authorization
-PEP/ABAC/RBAC), and Module 6's FEAT-04-1 audit pipeline exists yet — no
-Knowledge Graph, no AI orchestration, and no frontend code. Those land in
+PEP/ABAC/RBAC), and Module 6's FEAT-04-1/04-2/04-3 audit pipeline exists yet —
+no Knowledge Graph, no AI orchestration, and no frontend code. Those land in
 later sprints per `docs/architecture/EMG_Engineering_Backlog_v1.0.md`,
-Section 6 (Sprint Planning). FEAT-04-2, FEAT-04-3, FEAT-04-4, and Sprint 7
-have not been started.
+Section 6 (Sprint Planning). FEAT-04-4, EPIC-05, and Sprint 8 have not been
+started.
 
 ## Repository Structure
 

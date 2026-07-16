@@ -6,10 +6,10 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `feature/sprint-6-audit-event-pipeline` (remains the current
-branch until merge)
+Current Branch: `feature/sprint-7-audit-completion`
 
-Current Sprint: Sprint 6 (complete — pending merge)
+Current Sprint: Sprint 7 (complete — pending merge) — EPIC-04 completion,
+FEAT-04-2 + FEAT-04-3
 
 ---
 
@@ -55,7 +55,7 @@ status.
 | Modules 1–3 (Foundation) | Complete | Sprint 1 — monorepo, shared library scaffolding, local dev environment, CI skeleton |
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4 | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below) |
-| Module 6 (Audit) | Implemented through FEAT-04-1 (Sprint 6 complete) | FEAT-04-1 (Audit Event Pipeline). `services/audit` activated as a minimal live service over shared libraries (`emg-audit-client`, `emg-audit-pipeline`); append-only PostgreSQL store, ingest, minimal US-04 query, integrity verification. FEAT-04-2, FEAT-04-3, and FEAT-04-4 remain scheduled for later Audit sprints (see Sprint 6 scope note below). |
+| Module 6 (Audit) | Implemented through FEAT-04-3 — FEAT-04-1 complete (merged); FEAT-04-2 + FEAT-04-3 complete (Sprint 7, pending merge) | FEAT-04-1 (Audit Event Pipeline) merged in Sprint 6. Sprint 7 adds FEAT-04-2 (Provenance Record Model) and FEAT-04-3 (Digital Evidence Chain-of-Custody), pending merge. FEAT-04-4 (Audit Query & Reporting Interface) is explicitly scheduled for the immediate next sprint. **EPIC-04 remains incomplete until FEAT-04-4 is delivered**, and EPIC-05 (Module 7) is blocked until then (see Sprint 7 scope note below). |
 | Module 7 (Knowledge Graph) | Scaffolded | `services/knowledge-graph/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -93,8 +93,9 @@ under `docs/architecture/`.
 | Sprint 3 | Complete |
 | Sprint 4 | Complete |
 | Sprint 5 | Complete (merged) |
-| Sprint 6 | Complete (pending merge) |
-| Sprint 7 | Planned |
+| Sprint 6 | Complete (merged — PR #6, `1fe6bc7`) |
+| Sprint 7 | Complete — pending merge (EPIC-04 completion — FEAT-04-2 + FEAT-04-3) |
+| Sprint 8 | Planned (FEAT-04-4, then EPIC-05) |
 
 Sprint scope for Sprint 4 onward follows the approved
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md` Sprint Planning table
@@ -124,6 +125,20 @@ implements the minimal query capability US-04 explicitly requires (by actor,
 time range, and correlation identifier); the fuller FEAT-04-4 reporting
 interface remains deferred.
 
+**Sprint 7 scope note — approved controlled split of the remaining EPIC-04
+features.** Sprint 7 implements **FEAT-04-2 (Provenance Record Model)** and
+**FEAT-04-3 (Digital Evidence Chain-of-Custody)** only, and is **complete —
+pending merge**. **FEAT-04-4 (Audit Query & Reporting Interface) is
+explicitly deferred** to the immediate next sprint, which must deliver it
+**before** EPIC-05 or any Module 7 work begins. This is an
+engineering-sequencing decision only: it does not modify the Architecture
+Baseline, does not redesign Module 6, and does not create or require a new
+ADR. Provenance and chain-of-custody are already within Module 6's frozen
+scope ("Audit, Provenance & Digital Evidence"; ADR-015, ADR-016 §1).
+**EPIC-04 remains incomplete until FEAT-04-4 is delivered**, and the EPIC-05
+dependency gate (Backlog §7; Master Plan §17 — "no module begins before
+every module it depends on has passed acceptance") stays closed until then.
+
 ---
 
 ## Branch Strategy
@@ -148,17 +163,20 @@ No redesign without ADR.
 
 ## Last Updated
 
-Sprint 5 merged successfully (PR #4, `feature/sprint-5-authorization-completion`
-→ `develop` → `main`), delivering FEAT-03-3 (RBAC Baseline Roles) and
-FEAT-03-4 (Authorization Testing Harness) and completing the Module 5
-authorization baseline. Sprint 6 (`feature/sprint-6-audit-event-pipeline`,
-EPIC-04 Audit Platform — FEAT-04-1 Audit Event Pipeline) is **complete,
-pending merge**: a library-first core (`emg-audit-client`,
-`emg-audit-pipeline`) with `services/audit` activated as a minimal live
-service owning the append-only PostgreSQL store, ingestion, minimal US-04
-query, and integrity verification. The Sprint 6 security review concluded
-**APPROVE WITH MINOR FIXES**, and every required minor fix has been
-resolved (see `SPRINT-6-STATUS.md` §4b). FEAT-04-2, FEAT-04-3, and FEAT-04-4
-remain scheduled for later Audit sprints (see the Sprint 6 scope note
-above). The branch remains `feature/sprint-6-audit-event-pipeline` until
-merged.
+Sprint 6 (`feature/sprint-6-audit-event-pipeline`, EPIC-04 Audit Platform —
+FEAT-04-1 Audit Event Pipeline) **merged successfully** (PR #6, merge commit
+`1fe6bc7`, → `develop`), delivering the library-first audit core
+(`emg-audit-client`, `emg-audit-pipeline`) and `services/audit` as a minimal
+live service owning the append-only PostgreSQL store, ingestion, minimal US-04
+query, and integrity verification; the Sprint 6 security review concluded
+**APPROVE WITH MINOR FIXES** and every required fix was resolved (see
+`SPRINT-6-STATUS.md` §4b). Sprint 7 (`feature/sprint-7-audit-completion`) is
+**complete — pending merge**, completing EPIC-04 in an approved controlled
+split: **FEAT-04-2 (Provenance Record Model)** and **FEAT-04-3 (Digital
+Evidence Chain-of-Custody)** this sprint, with **FEAT-04-4 (Audit Query &
+Reporting Interface)** scheduled for the immediate next sprint. A final
+security-focused review of Sprint 7 concluded **APPROVE**, with no blocking
+or high-risk findings; per the Definition of Done, formal organizational
+Security Reviewer sign-off is still required before merge and is not claimed
+here. EPIC-04 remains incomplete, and EPIC-05 (Module 7) is blocked, until
+FEAT-04-4 is delivered.
