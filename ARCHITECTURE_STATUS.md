@@ -6,9 +6,10 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `feature/sprint-4-authorization-platform`
+Current Branch: `feature/sprint-5-authorization-completion` (remains the
+current branch until this sprint is merged)
 
-Current Sprint: Sprint 4
+Current Sprint: Sprint 5 (complete, pending merge)
 
 ---
 
@@ -53,7 +54,7 @@ status.
 | --- | --- | --- |
 | Modules 1–3 (Foundation) | Complete | Sprint 1 — monorepo, shared library scaffolding, local dev environment, CI skeleton |
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
-| Module 5 (Authorization & Policy) | In Progress (Sprint 4) | FEAT-03-1, FEAT-03-2 — `services/authz` remains scaffolded this sprint (library-first approach; see Sprint 4 design doc) |
+| Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4 | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below) |
 | Module 6 (Audit) | Scaffolded | `services/audit/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 7 (Knowledge Graph) | Scaffolded | `services/knowledge-graph/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -90,13 +91,23 @@ under `docs/architecture/`.
 | Sprint 1 | Complete |
 | Sprint 2 | Complete |
 | Sprint 3 | Complete |
-| Sprint 4 | In Progress |
-| Sprint 5 | Planned |
+| Sprint 4 | Complete |
+| Sprint 5 | Complete |
 | Sprint 6 | Planned |
 
 Sprint scope for Sprint 4 onward follows the approved
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md` Sprint Planning table
 (§6), not any simplified or alternate roadmap.
+
+**Sprint 5 scope note — FEAT-04-1 rescheduling.** The Backlog's Sprint 5 row
+(§6) groups three features: FEAT-03-3, FEAT-03-4, and FEAT-04-1 (Audit Event
+Pipeline). Sprint 5 as executed implements only the two EPIC-03 authorization
+features (FEAT-03-3, FEAT-03-4); FEAT-04-1 has been rescheduled to the next
+Audit implementation sprint. This is an engineering sequencing decision only:
+it does not modify the Architecture Baseline, does not redesign Module 6, and
+does not create or require a new ADR. The Backlog's feature-to-epic
+assignments are unchanged; only the sprint in which FEAT-04-1 is built has
+moved.
 
 ---
 
@@ -122,7 +133,14 @@ No redesign without ADR.
 
 ## Last Updated
 
-Sprint 3 merged successfully (PR #2, `feature/sprint-3-service-identity` →
-`develop` → `main`). Sprint 4 (`feature/sprint-4-authorization-platform`,
-EPIC-03 Authorization Platform — FEAT-03-1 Policy Enforcement Point,
-FEAT-03-2 ABAC Policy Engine Integration) is in progress.
+Sprint 4 merged successfully (PR #3, `feature/sprint-4-authorization-platform`
+→ `develop` → `main`), delivering FEAT-03-1 (Policy Enforcement Point) and
+FEAT-03-2 (ABAC Policy Engine Integration). Sprint 5
+(`feature/sprint-5-authorization-completion`, EPIC-03 Authorization Platform
+— FEAT-03-3 RBAC Baseline Roles, FEAT-03-4 Authorization Testing Harness) is
+complete and pending merge; this completes the Module 5 authorization
+baseline through FEAT-03-4. The branch remains
+`feature/sprint-5-authorization-completion` until it is merged. FEAT-04-1
+(Audit Event Pipeline), grouped with these two in the Backlog's Sprint 5
+row, has been rescheduled to the next Audit sprint (see the Sprint 5 scope
+note above).

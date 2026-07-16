@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from .roles import is_known_role
 from .rules import PolicyConfig
 
 _log = logging.getLogger("emg.policy_engine")
@@ -45,7 +46,16 @@ def load_policy_config(path: Path) -> PolicyConfig:
 
 def validate_policy_config(config: PolicyConfig) -> list[str]:
     """Return a list of human-readable validation problems (empty list =
-    valid). Never raises — callers decide how to surface problems."""
+    valid). Never raises — callers decide how to surface problems.
+
+    All checks here are *advisory*: they help operators catch likely
+    mistakes, but a returned problem does not block `load_policy_config`
+    (only a malformed file, raising `pydantic.ValidationError`, does). This
+    includes the Sprint 5 unknown-role check (FEAT-03-3): a `required_roles`
+    value not present in the RBAC baseline catalog (`roles.ROLE_CATALOG`) is
+    surfaced as a problem string, not enforced — see
+    `docs/engineering/sprint-5-design.md` and `security-limitations.md`.
+    """
     errors: list[str] = []
     seen_rule_ids: set[str] = set()
 
@@ -65,6 +75,17 @@ def validate_policy_config(config: PolicyConfig) -> list[str]:
                 errors.append(
                     f"Rule '{rule.rule_id}' required_attributes['{attribute_name}'] "
                     "has an empty allow-list, which can never be satisfied"
+                )
+
+        # FEAT-03-3 (advisory): flag roles not present in the RBAC baseline
+        # catalog. Does not block loading — a typo'd role is a warning, not a
+        # hard failure (documented known limitation).
+        for role in rule.required_roles:
+            if not is_known_role(role):
+                errors.append(
+                    f"Rule '{rule.rule_id}' required_roles references "
+                    f"'{role}', which is not in the RBAC baseline role "
+                    "catalog (emg_policy_engine.roles.ROLE_CATALOG)"
                 )
 
     return errors

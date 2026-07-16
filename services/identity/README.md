@@ -336,3 +336,12 @@ acceptance of either identity kind does not weaken `/auth/session` /
 itself (default-deny, deny-overrides, human-attribute vs. service-scope
 conditions) is unit-tested in
 `libs/python/emg-policy-engine/tests/test_engine.py`, not re-tested here.
+
+Sprint 5 additions: `test_authz_scenarios.py` — real adoption of the shared
+authorization testing harness (`emg_policy_engine.testing`, FEAT-03-4).
+Expresses authorization expectations against the real
+`config/policy.example.yaml` declaratively via `AuthorizationScenario` /
+`assert_scenario` / `run_scenarios`, using this service's real
+`ServicePrincipal` type for the machine-caller case. It is additive — it does
+not replace `test_authz_router.py` — and demonstrates the harness in use by a
+real service, satisfying FEAT-03-4's "prove real adoption" requirement.

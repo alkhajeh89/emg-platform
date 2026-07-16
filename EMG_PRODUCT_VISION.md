@@ -93,12 +93,18 @@ Confirmed sprints (verified against the current repository):
 | Sprint 1 | EPIC-01 Foundation | Monorepo bootstrap, shared library scaffolding, local dev environment, CI skeleton — **Complete** |
 | Sprint 2 | EPIC-02 Identity | Identity Provider Integration, Authentication Session Management (FEAT-02-1, FEAT-02-2) — **Complete** |
 | Sprint 3 | EPIC-02 Identity | Service Identity & M2M Auth, Identity Federation Readiness (FEAT-02-3, FEAT-02-4) — **Complete** |
-| Sprint 4 | EPIC-03 Authorization Platform | Policy Enforcement Point, ABAC Policy Engine Integration (FEAT-03-1, FEAT-03-2) — **In Progress** |
+| Sprint 4 | EPIC-03 Authorization Platform | Policy Enforcement Point, ABAC Policy Engine Integration (FEAT-03-1, FEAT-03-2) — **Complete** |
+| Sprint 5 | EPIC-03 Authorization Completion | RBAC Baseline Roles, Authorization Testing Harness (FEAT-03-3, FEAT-03-4) — **Complete** |
 
-Sprint 5 and later follow the Engineering Backlog's Sprint Planning table
+Sprint 6 and later follow the Engineering Backlog's Sprint Planning table
 exactly (§6) — including its EPIC-04 Audit, EPIC-05 Knowledge Graph,
 EPIC-06 Search, EPIC-07 GraphRAG, EPIC-08 AI Platform, EPIC-09 Decision
 Intelligence, EPIC-10 Frontend, EPIC-11 Infrastructure, and EPIC-12
 DevSecOps phases — and are not restated here to avoid this document drifting
 out of sync with the governing Backlog. Consult the Backlog directly for any
-sprint beyond Sprint 4.
+sprint beyond Sprint 5.
+
+Note: the Backlog's Sprint 5 row (§6) also lists FEAT-04-1 (Audit Event
+Pipeline); it has been rescheduled to the next Audit implementation sprint as
+an engineering-sequencing decision that does not alter the Backlog's
+feature-to-epic assignments. The Backlog remains the authoritative roadmap.

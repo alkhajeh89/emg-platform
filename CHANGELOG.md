@@ -5,6 +5,41 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
+### Sprint 5 — EPIC-03 Authorization Completion (FEAT-03-3, FEAT-03-4) — complete
+
+- `libs/python/emg-policy-engine`: **RBAC Baseline Roles (FEAT-03-3)** — a
+  governed, versioned role catalog (`roles.py`: `RoleDefinition`,
+  `RoleCategory`, `ROLE_CATALOG`) enumerating the eight roles already proven
+  to exist in the repository and the Keycloak realm seed (`platform-user`,
+  `investigator`, `decision-maker`, `knowledge-steward`; `service-account`,
+  `svc-identity`, `svc-authorization`, `svc-audit`). This is a role
+  *vocabulary* consumed by the ABAC engine's `required_roles` conditions —
+  **not** a second authorization or enforcement mechanism, no permission
+  matrix, no role hierarchy/inheritance, no new roles invented.
+- `libs/python/emg-policy-engine`: `validate_policy_config` gains an
+  additive, **advisory** check — any `PolicyRule.required_roles` value not
+  present in `ROLE_CATALOG` is reported as a validation problem (never a hard
+  load failure; a malformed file remains the only hard error).
+- `libs/python/emg-policy-engine`: **Authorization Testing Harness
+  (FEAT-03-4)** — a small reusable toolkit (`testing.py`:
+  `AuthorizationScenario`, `assert_scenario`, `run_scenarios`) for
+  declarative positive/negative authorization testing, with no pytest
+  runtime dependency and no YAML DSL.
+- `services/identity`: `tests/test_authz_scenarios.py` — real adoption of
+  the harness against the existing `policy.example.yaml`, proving the harness
+  works outside its own unit tests.
+- `tools/seed-data/keycloak/emg-realm.json`: role `description` fields only
+  updated to point at the new catalog — no role name, id, or grant changed.
+- Scope note: the Backlog's Sprint 5 row (§6) also lists FEAT-04-1 (Audit
+  Event Pipeline); it has been **rescheduled to the next Audit implementation
+  sprint**. Engineering-sequencing decision only — no Architecture Baseline
+  change, no Module 6 redesign, no new ADR. FEAT-04-1 is **not** implemented
+  in Sprint 5.
+- New docs: `docs/engineering/sprint-5-design.md`; Sprint 5 sections added to
+  `libs/python/emg-policy-engine/README.md`, `services/identity/README.md`,
+  `docs/engineering/security-limitations.md`, and
+  `docs/engineering/testing-strategy.md`.
+
 ### Sprint 4 — EPIC-03 Authorization Platform (FEAT-03-1, FEAT-03-2)
 
 - `libs/python/emg-auth-client` (0.2.0): the Policy Enforcement Point
