@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-audit-client"
+version = "0.1.0"
+description = "Audit event contract (Module 6 — Audit, Provenance & Digital Evidence, FEAT-04-1): AuditEvent model, AuditSink and AuditEventStore protocols, AuditQuery. Added Sprint 6."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = ["emg-common-types", "emg-errors", "pydantic>=2.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_audit_client"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

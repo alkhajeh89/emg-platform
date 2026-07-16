@@ -26,6 +26,13 @@ Sprint 4 (FEAT-03-1/03-2) extends the Protocol again, additively, with
 `record_authorization_decision` — US-03's "denial and allow decisions are
 both logged" acceptance criterion. Every Sprint 2/3 method keeps its exact
 signature and behavior.
+
+Sprint 6 (FEAT-04-1) migrates the *wiring* to `PipelineAuditSink`
+(`audit_pipeline.py`), which implements this same Protocol (Protocol-preserving
+adapter): it emits the ADR-015 telemetry below AND durably forwards each event
+to the Module 6 audit service. This module's Protocol and `StructuredLogAuditSink`
+are unchanged — `StructuredLogAuditSink` is retained as the telemetry limb and
+the degraded-mode / test fallback. No `record_*` signature changes.
 """
 
 from __future__ import annotations

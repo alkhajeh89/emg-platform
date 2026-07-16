@@ -2,4 +2,6 @@ name: audit
 module: "Module 6 — Audit, Provenance & Digital Evidence"
 owner: "CISO / Chief Data Officer (joint)"                # Accountable Owner — ADR-016 Section 1
 steward: "Audit Platform Team"            # Operational Steward — ADR-016 Section 1
-status: scaffolded
+status: active                            # Sprint 6 (FEAT-04-1) — Audit Event Pipeline
+feature: "FEAT-04-1 — Audit Event Pipeline"
+sprint: 6

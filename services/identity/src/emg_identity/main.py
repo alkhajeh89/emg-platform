@@ -66,6 +66,18 @@ def create_app() -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok", "service": "identity"}
 
+    @app.get("/readyz", tags=["ops"])
+    async def readyz() -> dict[str, object]:
+        """Readiness incl. audit-delivery status (Sprint 6, FEAT-04-1,
+        Decision C item 6). `status` is "degraded" when audit events are not
+        being durably accepted remotely; the service itself stays available so
+        login/authentication is never blocked by audit unavailability."""
+        from .dependencies import audit_delivery_status
+
+        audit = audit_delivery_status().snapshot()
+        overall = "degraded" if audit.get("degraded") else "ready"
+        return {"status": overall, "service": "identity", "audit_delivery": audit}
+
     app.include_router(auth_router)
     app.include_router(service_auth_router)
     app.include_router(federation_router)

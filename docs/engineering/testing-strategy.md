@@ -28,3 +28,27 @@ no pytest runtime dependency (plain `assert` / returned strings) and no
 YAML/DSL layer. Reference adoption:
 `services/identity/tests/test_authz_scenarios.py`, which runs the harness
 against that service's real `config/policy.example.yaml`.
+
+## Audit pipeline testing (Sprint 6, FEAT-04-1)
+
+Audit tests are split across the libraries and the service, and run without
+Docker or a database by default:
+
+- `libs/python/emg-audit-pipeline/tests` — unit tests for canonical hashing,
+  the append-only `InMemoryAuditEventStore` (sequence/chain assignment, US-04
+  queries), event-id idempotency, hash-chain tamper detection, and
+  pre-persistence validation/redaction.
+- `services/audit/tests` — HTTP-level tests against the live service with an
+  in-memory store and an injected local RSA keypair validator: authenticated
+  ingest, schema rejection (422), sensitive-metadata rejection (400),
+  duplicate idempotency, correlation propagation, redaction, integrity/tamper,
+  and endpoint authorization (ingest vs. `svc-audit`-only read/integrity).
+- `services/identity/tests/test_audit_pipeline.py` — the `PipelineAuditSink`
+  degraded-mode behavior (Decision C): successful delivery, transient failure
+  → durable spool → retry → dead-letter, continued ADR-015 telemetry, the
+  never-raises guarantee, and Protocol preservation vs. `StructuredLogAuditSink`.
+- `libs/python/emg-audit-pipeline/tests/test_integration_live_postgres.py` —
+  an **opt-in, skipped-by-default** suite (see its module docstring) that runs
+  against a real Postgres from `docker-compose` to prove persistence, DB-layer
+  append-only enforcement (INSERT/SELECT-only role denied UPDATE/DELETE),
+  idempotency, and integrity.

@@ -3,27 +3,25 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "emg-identity"
-version = "0.5.0"
-description = "EMG Identity Service — Module 4 (Identity & Authentication) FEAT-02-1..02-4, a reference integration of Module 5's Policy Enforcement Point (FEAT-03-1, FEAT-03-2, Sprint 4), and Sprint 6 (FEAT-04-1) audit-event forwarding to the Module 6 audit pipeline."
+name = "emg-audit-service"
+version = "0.1.0"
+description = "EMG Audit Service — Module 6 (Audit, Provenance & Digital Evidence). Sprint 6 FEAT-04-1: a thin live service over emg-audit-client / emg-audit-pipeline owning the append-only store, ingestion, minimal US-04 query, and integrity verification."
 requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Proprietary" }
 dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
-  "httpx>=0.27",
   "pyjwt[crypto]>=2.9",
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
-  "pyyaml>=6.0",
+  "psycopg[binary]>=3.1",
   "emg-common-types",
   "emg-errors",
   "emg-telemetry",
-  "emg-auth-client",
-  "emg-policy-engine",
   "emg-api-contracts",
   "emg-audit-client",
+  "emg-audit-pipeline",
 ]
 
 [project.optional-dependencies]
@@ -33,11 +31,10 @@ dev = [
   "httpx>=0.27",
   "mypy>=1.10",
   "ruff>=0.6",
-  "types-PyYAML>=6.0",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/emg_identity"]
+packages = ["src/emg_audit_service"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -96,6 +96,27 @@ class Settings(BaseSettings):
     # emg_policy_engine.loader.load_policy_config) rather than raising.
     policy_config_path: Path = Path("services/identity/config/policy.example.yaml")
 
+    # --- Sprint 6: Audit Event Pipeline forwarding (FEAT-04-1) -------------
+    #
+    # The identity service forwards each governed-action audit event to the
+    # audit service (Module 6). Decision C (Sprint 6): a transient audit
+    # outage must NOT fail login/authentication — the PipelineAuditSink
+    # delivers, then durably spools + retries + dead-letters on failure, and
+    # never silently claims an unrecorded event. See audit_pipeline.py.
+    # Forwarding is OFF by default so Sprint 2-5 behavior is preserved
+    # byte-for-byte (telemetry-only, no network, no spool). It is enabled by
+    # configuration once the audit service is present (e.g. docker-compose),
+    # at which point the PipelineAuditSink's durable-delivery machinery
+    # activates. Existing login/authentication endpoints never fail because
+    # the audit service is unavailable (Decision C).
+    audit_forwarding_enabled: bool = False
+    audit_service_base_url: str = "http://localhost:8002"
+    audit_delivery_timeout_seconds: float = 3.0
+    audit_delivery_max_attempts: int = 5
+    audit_delivery_backoff_base_seconds: float = 0.5
+    # Durable local spool for events not yet accepted by the audit service.
+    audit_spool_path: Path = Path("services/identity/.audit-spool")
+
 
 def get_settings() -> Settings:
     """Factory (not a singleton) so tests can construct isolated Settings
