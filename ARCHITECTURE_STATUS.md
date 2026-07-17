@@ -6,10 +6,10 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `feature/sprint-9-core-ontology`
+Current Branch: `feature/sprint-10-knowledge-ingestion`
 
-Current Sprint: Sprint 9 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-1
-(Core Ontology)
+Current Sprint: Sprint 10 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-2
+(Knowledge Ingestion Pipeline)
 
 ---
 
@@ -56,7 +56,7 @@ status.
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4 | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below) |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. Clearance-based classification read *authorization* remains a documented follow-up (filter-only). |
-| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 (Core Ontology) in progress (Sprint 9) | Sprint 9 implements FEAT-05-1 **library-first** as `libs/python/emg-ontology` (governed ontology model + conformance validation): core archetypes (Entity/Actor/Artifact/Event/Relationship), the Organizational and Risk & Safety domains, classification + trust-score + provenance-reference by construction, and a deterministic ontology descriptor. `services/knowledge-graph` **remains scaffolded** (no live service, no Neo4j binding — that is FEAT-05-2/05-4). FEAT-05-2 through FEAT-05-5 are deferred. |
+| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 complete (merged); FEAT-05-2 (Knowledge Ingestion Pipeline) in progress (Sprint 10) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`. Sprint 10 adds FEAT-05-2 **library-first** as `libs/python/emg-knowledge-pipeline`: a **storage-independent** ingestion pipeline (request models, validation, idempotent id generation, entity/relationship resolvers, batch dependency ordering, a `GraphStore`/transaction abstraction with an in-memory adapter, and Module-6 audit-contract emission) that turns validated ontology models into persistent graph operations. Owner/provenance/trust are **server-assigned** (never caller-supplied). `services/knowledge-graph` **remains scaffolded**; **no Neo4j binding** (the storage-independent Semantic Layer + Neo4j adapter is FEAT-05-4). FEAT-05-3/05-4/05-5 are deferred. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -96,8 +96,9 @@ under `docs/architecture/`.
 | Sprint 6 | Complete (merged — PR #6, `1fe6bc7`) |
 | Sprint 7 | Complete (merged — PR #7) (EPIC-04 — FEAT-04-2 + FEAT-04-3) |
 | Sprint 8 | Complete (merged — PR #8, `79eaae6`) (EPIC-04 completion — FEAT-04-4 Audit Query & Reporting) |
-| Sprint 9 | In Progress (EPIC-05 Knowledge Graph — FEAT-05-1 Core Ontology, library-first) |
-| Sprint 10 | Planned (EPIC-05 — FEAT-05-2 Knowledge Ingestion Pipeline) |
+| Sprint 9 | Complete (merged — PR #9, `2fcbaa9`) (EPIC-05 — FEAT-05-1 Core Ontology, library-first) |
+| Sprint 10 | In Progress (EPIC-05 — FEAT-05-2 Knowledge Ingestion Pipeline, library-first) |
+| Sprint 11 | Planned (EPIC-05 — FEAT-05-3 Knowledge Validation & Trust Scoring) |
 
 Sprint scope for Sprint 4 onward follows the approved
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md` Sprint Planning table
@@ -177,7 +178,31 @@ FEAT-05-4). **FEAT-05-2 through FEAT-05-5 are deferred.** This is engineering
 sequencing within Module 7's frozen scope: it does not modify the Architecture
 Baseline, does not redesign Module 7, introduces **no new role and no new ADR**,
 and touches no Module 6 record or hash. Neo4j Enterprise remains the approved
-future knowledge-graph store (Master Plan Technology Choice #4).
+future knowledge-graph store (Master Plan Technology Choice #4). Sprint 9
+**merged** as PR #9 (merge commit `2fcbaa9`).
+
+**Sprint 10 scope note — FEAT-05-2 Knowledge Ingestion Pipeline, library-first,
+storage-independent.** Sprint 10 implements **FEAT-05-2 only**: the
+**storage-independent ingestion pipeline** that converts validated ontology
+models into persistent graph operations, delivered library-first as
+`libs/python/emg-knowledge-pipeline`. It provides ingestion request models,
+an ingestion context, an ingestion validator (ontology conformance + bounds +
+duplicate/cycle checks — no persistence before validation), deterministic
+idempotent id generation, entity/relationship resolvers, batch dependency
+ordering, a `GraphStore` + transaction abstraction (rollback / no partial
+graph) with an **in-memory adapter**, an ingestion result model, typed
+ingestion errors, and **Module-6 audit-contract emission** for
+`entity.created` / `relationship.created` / `entity.superseded` /
+`relationship.superseded` (provenance referenced, correlation preserved, no
+audit record duplicated). `owner`, `provenance_reference`, and `trust_score`
+are **server-assigned** — caller-supplied values are not trusted; free-text is
+length-bounded to prevent oversized-payload DoS; mass-assignment is rejected.
+It is **storage-independent** (a `GraphStore` Protocol lets Neo4j be added later
+without coupling business logic); there is **no Neo4j binding, no retrieval, no
+search, no embeddings, no AI, and no UI** this sprint — the Neo4j adapter and
+the Semantic Layer are FEAT-05-4. `services/knowledge-graph` remains scaffolded.
+**FEAT-05-3/05-4/05-5 are deferred.** No new database, no new role, no new ADR,
+no frozen-architecture change, and no Module 6 record or hash modified.
 
 ---
 
@@ -215,14 +240,21 @@ FEAT-04-2 + FEAT-04-3) **merged** as PR #7. Sprint 8
 (`feature/sprint-8-audit-query-reporting`, **FEAT-04-4 Audit Query & Reporting
 Interface**) **merged** as **PR #8 (merge commit `79eaae6`)**, completing
 **EPIC-04 (Audit Platform)** end to end (FEAT-04-1 → FEAT-04-4). Sprint 9
-(`feature/sprint-9-core-ontology`) is **in progress**, starting **EPIC-05
-(Knowledge Graph, Module 7)** with **FEAT-05-1 (Core Ontology)** library-first
-in `libs/python/emg-ontology` — the governed ontology model, the Organizational
-and Risk & Safety domains, and a pure conformance validator, all with
-classification + trust-score + provenance-reference by construction and a
-deterministic golden-tested descriptor. `services/knowledge-graph` remains
-scaffolded; no Neo4j binding, HTTP surface, or live service this sprint (those
-are FEAT-05-2/05-4). No new role, no new ADR, no frozen-architecture change, and
-no Module 6 record or hash touched. Per the Definition of Done, formal
+(`feature/sprint-9-core-ontology`, **FEAT-05-1 Core Ontology**) **merged** as
+**PR #9 (merge commit `2fcbaa9`)**, delivering the governed ontology model,
+the Organizational and Risk & Safety domains, and a pure conformance validator
+(`libs/python/emg-ontology`). Sprint 10
+(`feature/sprint-10-knowledge-ingestion`) is **in progress**, adding **FEAT-05-2
+(Knowledge Ingestion Pipeline)** library-first in
+`libs/python/emg-knowledge-pipeline` — a **storage-independent** pipeline that
+validates and persists ontology entities/relationships through a `GraphStore`
+abstraction (in-memory adapter; no Neo4j binding), with deterministic idempotent
+ids, batch dependency ordering, transaction rollback (no partial graph),
+**server-assigned** owner/provenance/trust, length-bounded free-text, and
+**Module-6 audit-contract emission** (provenance referenced, correlation
+preserved). `services/knowledge-graph` remains scaffolded; no retrieval, search,
+embeddings, AI, or UI (those are EPIC-06+ / later EPIC-05 features). No new
+database, no new role, no new ADR, no frozen-architecture change, and no
+Module 6 record or hash touched. Per the Definition of Done, formal
 organizational Security Reviewer sign-off remains required before merge and is
 not claimed here.

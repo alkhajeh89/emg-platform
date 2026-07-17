@@ -5,7 +5,77 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
-### Sprint 9 — EPIC-05 Knowledge Graph — Core Ontology (FEAT-05-1) — in progress
+### Sprint 10 — EPIC-05 Knowledge Graph — Knowledge Ingestion Pipeline (FEAT-05-2) — in progress
+
+- **New `libs/python/emg-knowledge-pipeline`** (Module 7, EPIC-05, FEAT-05-2) —
+  the **storage-independent Knowledge Ingestion Pipeline** that converts
+  validated ontology models into persistent graph operations, delivered
+  **library-first** on top of `emg-ontology` (models + conformance) and
+  `emg-audit-client` (Module-6 audit contract). No retrieval, search,
+  embeddings, AI, UI, or Neo4j binding this sprint.
+  - **Ingestion request models** (`requests.py`): `EntityIngestionRequest`,
+    `RelationshipIngestionRequest`, `IngestionBatch` — frozen, `extra="forbid"`
+    (mass-assignment rejected), length-bounded free-text, and **no
+    server-assigned fields** (a producer cannot supply `entity_id`, `owner`,
+    `provenance_reference`, or `trust_score`).
+  - **Ingestion context** (`context.py`): the server-side authority —
+    authenticated `source_principal`, `source_type` (system/document/api/ai/
+    human), correlation id, ingest time, owner, and the interim trust policy.
+  - **Deterministic idempotency** (`idempotency.py`): entity/relationship ids
+    derived from `(source_principal, source_type, type, natural_key)` /
+    `(source_principal, relationship_type, from_id, to_id)`, so re-ingesting the
+    same payload never creates duplicates.
+  - **Resolvers** (`resolver.py`): entity resolution by natural key, relationship
+    endpoint resolution, and duplicate detection.
+  - **Ingestion validator** (`validation.py`): bounds payload/field sizes, runs
+    ontology conformance, and checks entity uniqueness, relationship validity,
+    identifier validity, provenance/classification/trust/ownership/effective
+    dates, duplicate entities/relationships, and **cyclic dependency** (for
+    acyclic relationship types). **No persistence occurs before validation
+    succeeds.**
+  - **Graph store + transaction abstraction** (`graph_store.py`): a
+    storage-independent `GraphStore` Protocol and a `GraphTransaction`
+    (begin/commit/rollback) with an append-only **`InMemoryGraphStore`** (no
+    update/delete path). A failed persistence rolls back — **no partial graph,
+    no partial relationships**. A `GraphStore` Protocol lets a Neo4j adapter be
+    added later (FEAT-05-4) without coupling business logic.
+  - **Pipeline orchestrator** (`pipeline.py`) + **result model** (`result.py`) +
+    **typed ingestion errors** (`errors.py`): validate → order → persist in one
+    transaction → emit audit → return a typed `IngestionResult` (created /
+    idempotent-skipped ids, emitted audit-event refs, correlation id).
+  - **Module-6 audit integration** (`audit.py`): each graph mutation emits a
+    `SubmittedAuditEvent` (via the `emg-audit-client` `AuditSink`) with action
+    `entity.created` / `relationship.created` / `entity.superseded` /
+    `relationship.superseded`, module `knowledge-graph`. The entity's
+    `provenance_reference` **points to that audit event** (single system of
+    record — no audit content copied); correlation ids are preserved end to end.
+  - **Security posture:** `owner`, `provenance_reference`, and `trust_score` are
+    **server-assigned** from the ingestion context — caller-supplied values are
+    structurally impossible (not fields on the request models). Free-text is
+    length-bounded and batch size is capped to prevent oversized-payload DoS.
+- Review-fix round (independent Sprint 10 review — APPROVE WITH MINOR FIXES):
+  the ingestion validator's `DERIVED_FROM` cycle detector was **rewritten from
+  recursive to iterative** (explicit-stack DFS) so a valid in-limit batch (a
+  chain deeper than Python's recursion limit but within
+  `MAX_BATCH_RELATIONSHIPS`) can no longer raise an uncaught `RecursionError`;
+  semantics and the typed `CODE_CYCLIC_DEPENDENCY` rejection are unchanged, and
+  `MAX_BATCH_RELATIONSHIPS` was not reduced. Adversarial regression tests were
+  added (deep-chain no-recursion, duplicate relationship in batch,
+  same-id/different-content conflict, concurrent different-content). The review's
+  C2 finding (pre-commit created/skipped reporting + deduplicated double audit
+  emission) is **documented as deferred hardening**, not fixed (the graph is
+  always correct and audit ids are deterministic/Module-6-deduped).
+- Scope note: Sprint 10 implements **FEAT-05-2 only**. **FEAT-05-3 (Validation &
+  Trust Scoring), FEAT-05-4 (Semantic Layer + Neo4j adapter), and FEAT-05-5
+  (Knowledge Lifecycle & Versioning) are deferred.** `services/knowledge-graph`
+  remains scaffolded. **No Neo4j binding, no new database, no Modules 8–10 work,
+  no new role, no new ADR.** No Module 6 record or hash is modified.
+- New docs: `docs/engineering/sprint-10-design.md`,
+  `libs/python/emg-knowledge-pipeline/README.md`; Sprint 10 sections added to
+  `docs/engineering/testing-strategy.md` and
+  `docs/engineering/security-limitations.md`.
+
+### Sprint 9 — EPIC-05 Knowledge Graph — Core Ontology (FEAT-05-1) — complete (merged, PR #9, `2fcbaa9`)
 
 - **New `libs/python/emg-ontology`** (Module 7, EPIC-05, FEAT-05-1) — the
   governed **Core Ontology** as a **library-first** model + conformance layer,
