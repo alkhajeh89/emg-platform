@@ -82,3 +82,33 @@ Docker or a database by default:
   concurrency** test (unique + contiguous global sequence, one valid chain), and
   the **FEAT-04-2 migration backward-compatibility** check (a version-1 and a
   version-2 event coexist and verify intact after `002` runs).
+
+## Audit Query & Reporting Interface testing (Sprint 8, FEAT-04-4)
+
+- `libs/python/emg-audit-pipeline/tests/test_pagination.py` — the cursor codec
+  (`encode_cursor` / `decode_cursor` round-trip, opacity, and `CURSOR_INVALID`
+  rejection of malformed / non-numeric / negative tokens), stable keyset
+  pagination over the in-memory audit + custody stores (**every record exactly
+  once, in order — no duplicates, no skips**, including when new rows are
+  appended mid-walk), cursor+filter composition, and the new
+  classification / module / action / outcome / source_system / has_provenance
+  filters.
+- `services/audit/tests/test_reporting_api.py` — HTTP: classification and
+  richer-filter queries; `GET /audit/events/page` and
+  `GET /audit/custody/events/page` cursor walks (no dupes / no skips, terminal
+  cursor contract); JSON + CSV export for both surfaces (stable CSV header/
+  column order, filtered export); `422` on invalid classification / export
+  format, `400 CURSOR_INVALID` on a bad cursor; **least-privilege authorization**
+  (the new page/export endpoints reject a non-`svc-audit` principal); backward
+  compatibility (the Sprint 6 `GET /audit/events` still returns a list); and a
+  **report-walk performance** test proving export issues one store query per
+  page, never one per row (no N+1).
+- `libs/python/emg-audit-pipeline/tests/test_integration_live_postgres_reporting.py`
+  — an **opt-in, skipped-by-default** suite: filters + keyset cursor pagination
+  through real SQL (deterministic, no dupes / no skips), the `004` composite
+  reporting indexes exist in `pg_indexes`, and — proving `004` is index-only /
+  additive — existing rows and their hashes are untouched (integrity still
+  intact after `004` runs).
+- The **merge-blocking golden hash gate** (`test_backward_compat_hashing.py`,
+  Sprint 7) continues to run unchanged: FEAT-04-4 adds only read paths and
+  index-only SQL, so every stored `event_hash` is byte-for-byte unchanged.

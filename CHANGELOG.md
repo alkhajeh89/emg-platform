@@ -5,6 +5,49 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
+### Sprint 8 — EPIC-04 Audit Query & Reporting Interface (FEAT-04-4) — complete, pending merge
+
+- `libs/python/emg-audit-client` (0.3.0): **richer, backward-compatible query
+  models (FEAT-04-4)** — `AuditQuery` gains optional `module`, `action`,
+  `outcome`, `source_system`, `classification`, `has_provenance` filters and an
+  opaque `cursor`; `CustodyQuery` gains `classification` and `cursor`. Every new
+  field defaults to `None`, so the Sprint 6/7 query surface is unchanged.
+- `libs/python/emg-audit-pipeline` (0.3.0): **stable keyset (cursor)
+  pagination** (`pagination.py`: `encode_cursor` / `decode_cursor`, a versioned
+  opaque token over the server-assigned `sequence_number` / `chain_sequence`) —
+  deterministic ordering, no duplicates, no skipped records; a malformed cursor
+  is rejected (`CURSOR_INVALID`), never silently ignored. Both audit and custody
+  in-memory + PostgreSQL stores apply the new filters and cursor through their
+  `query` paths.
+- `services/audit` (0.3.0): additive reporting endpoints — `GET
+  /audit/events/page` and `GET /audit/custody/events/page` (cursor-paginated),
+  `GET /audit/events/export` and `GET /audit/custody/export` (`format=json|csv`,
+  no HTML/UI). The Sprint 6 `GET /audit/events` and Sprint 7 `GET
+  /audit/custody/events` keep their list shape and gain the new optional
+  filters. Report export walks the result set one store query per page (keyset),
+  never per row (no N+1). All read endpoints remain least-privilege and
+  restricted to the existing `svc-audit` role.
+- `tools/seed-data/postgres/004_audit_reporting_indexes.sql` — **index-only,
+  additive** composite `(filter, sequence)` indexes supporting classification-/
+  source-system-/module-filtered cursor pagination and per-evidence custody
+  export. It creates indexes only: no column/row is added, altered, dropped,
+  rewritten, re-hashed, or deleted, so no stored `event_hash` changes and the
+  golden hash-compatibility tests still pass. Idempotent SQL, no Alembic.
+- Scope note: classification here is a **filter** dimension only. Clearance-based
+  classification-aware read *authorization* (restricting which classifications a
+  principal may see) is a deliberate follow-up requiring a human reader role and
+  an authorization decision — see `docs/engineering/security-limitations.md`. No
+  new role, no new ADR, no policy-engine enforcement wired into `services/audit`
+  this sprint; no EPIC-05 / Module 7–10 work; backend only.
+- Pre-condition fix (test-only, separate from FEAT-04-4): two stale assertions
+  in `libs/python/emg-audit-client/tests/test_import.py` that were red on the
+  merged mainline (`__version__` expected `0.1.0`; an `AuditEvent` built without
+  the now-required `source_principal`) were corrected so the regression gate is
+  actually green. No production code changed for this fix.
+- **EPIC-04 exit:** with FEAT-04-4 delivered, EPIC-04 (Audit Platform) is
+  functionally complete (FEAT-04-1 through FEAT-04-4), unblocking the EPIC-05
+  dependency gate (Backlog §7; Master Plan §17) for a future sprint.
+
 ### Sprint 7 — EPIC-04 Audit Platform completion (FEAT-04-2, FEAT-04-3) — complete, pending merge
 
 - `libs/python/emg-audit-client`: **Provenance Record Model (FEAT-04-2)** — a

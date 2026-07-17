@@ -73,6 +73,24 @@ class CustodyEventView(BaseModel):
     correlation_id: str | None
 
 
+class AuditEventPage(BaseModel):
+    """A cursor-paginated page of audit events (FEAT-04-4). `next_cursor` is an
+    opaque token to pass back for the following page; it is null when the last
+    page has been reached. `count` is the number of items in this page."""
+
+    items: list[AuditEventView]
+    next_cursor: str | None = None
+    count: int
+
+
+class CustodyEventPage(BaseModel):
+    """A cursor-paginated page of custody events (FEAT-04-4)."""
+
+    items: list[CustodyEventView]
+    next_cursor: str | None = None
+    count: int
+
+
 class IntegrityResponse(BaseModel):
     intact: bool
     checked_count: int

@@ -44,6 +44,7 @@ from emg_audit_client import (
 
 from .hashing import GENESIS_PREV_HASH, compute_hash
 from .integrity import IntegrityReport, verify_chain
+from .pagination import decode_cursor
 from .validation import validate_and_sanitize
 
 if TYPE_CHECKING:
@@ -112,13 +113,29 @@ def _build_persisted_event(
 
 
 def _matches(event: AuditEvent, query: AuditQuery) -> bool:
+    # Sprint 6 (FEAT-04-1) filters.
     if query.actor is not None and event.actor != query.actor:
         return False
     if query.correlation_id is not None and event.correlation_id != query.correlation_id:
         return False
     if query.start_time is not None and event.timestamp < query.start_time:
         return False
-    return not (query.end_time is not None and event.timestamp >= query.end_time)
+    if query.end_time is not None and event.timestamp >= query.end_time:
+        return False
+    # Sprint 8 (FEAT-04-4) richer filters.
+    if query.module is not None and event.module != query.module:
+        return False
+    if query.action is not None and event.action != query.action:
+        return False
+    if query.outcome is not None and event.outcome != query.outcome:
+        return False
+    if query.source_system is not None and event.source_system != query.source_system:
+        return False
+    if query.classification is not None and event.classification != query.classification:
+        return False
+    return not (
+        query.has_provenance is not None and (event.provenance is not None) != query.has_provenance
+    )
 
 
 class InMemoryAuditEventStore:
@@ -151,8 +168,15 @@ class InMemoryAuditEventStore:
             return persisted
 
     def query(self, query: AuditQuery) -> list[AuditEvent]:
+        after = decode_cursor(query.cursor) if query.cursor is not None else None
         with self._lock:
-            matched = [event for event in self._events if _matches(event, query)]
+            matched = [
+                event
+                for event in self._events
+                if _matches(event, query) and (after is None or event.sequence_number > after)
+            ]
+        # self._events is in append order == ascending sequence_number, so the
+        # slice is a deterministic keyset page (no duplicates, no skips).
         return matched[: query.limit]
 
     def verify_integrity(self) -> IntegrityReport:
@@ -286,6 +310,7 @@ class PostgresAuditEventStore:
     def query(self, query: AuditQuery) -> list[AuditEvent]:
         clauses: list[str] = []
         params: dict[str, object] = {}
+        # Sprint 6 (FEAT-04-1) filters.
         if query.actor is not None:
             clauses.append("actor = %(actor)s")
             params["actor"] = query.actor
@@ -298,6 +323,30 @@ class PostgresAuditEventStore:
         if query.end_time is not None:
             clauses.append("timestamp < %(end_time)s")
             params["end_time"] = query.end_time
+        # Sprint 8 (FEAT-04-4) richer filters.
+        if query.module is not None:
+            clauses.append("module = %(module)s")
+            params["module"] = query.module
+        if query.action is not None:
+            clauses.append("action = %(action)s")
+            params["action"] = query.action
+        if query.outcome is not None:
+            clauses.append("outcome = %(outcome)s")
+            params["outcome"] = query.outcome
+        if query.source_system is not None:
+            clauses.append("source_system = %(source_system)s")
+            params["source_system"] = query.source_system
+        if query.classification is not None:
+            clauses.append("classification = %(classification)s")
+            params["classification"] = query.classification.value
+        if query.has_provenance is not None:
+            clauses.append(
+                "provenance IS NOT NULL" if query.has_provenance else "provenance IS NULL"
+            )
+        # Keyset pagination: only rows strictly after the cursor position.
+        if query.cursor is not None:
+            clauses.append("sequence_number > %(after_sequence)s")
+            params["after_sequence"] = decode_cursor(query.cursor)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params["limit"] = query.limit
         with self._conn.cursor() as cur:

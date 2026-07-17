@@ -270,22 +270,38 @@ boundary.
   approach; **no PKI / asymmetric signatures** were introduced (that would be a
   new architectural element requiring an ADR). External cryptographic anchoring
   and signature-based non-repudiation are later hardening.
-- **Classification-aware audit reads are not implemented yet** (Sprint 7 — this
-  is FEAT-04-4). Audit and custody reads are gated by the `svc-audit` role only;
-  classification-aware read filtering / redaction, human compliance-officer
-  access, export/reporting, and any UI are the deferred FEAT-04-4 surface. EPIC-04
-  remains incomplete until FEAT-04-4 is delivered, and EPIC-05 (Module 7) is
-  blocked until then.
+- **Classification on reads is a *filter*, not clearance-based access
+  enforcement** (Sprint 8, FEAT-04-4 — explicit scope boundary, not a gap).
+  FEAT-04-4 lets an `svc-audit` reader *filter* audit and custody records by
+  classification (and by module / action / outcome / source system /
+  provenance-presence) and export them as JSON/CSV. It does **not** yet restrict
+  *which* classifications a given principal may read: every audit/custody read is
+  still gated only by the `svc-audit` service role, and a holder of that role can
+  read and export records at any classification. Clearance-based
+  classification-aware read *authorization* — a human compliance-officer/auditor
+  principal whose clearance bounds the classifications returned, enforced via the
+  policy engine — is a deliberate **follow-up**. It was intentionally not built
+  this sprint because it needs a human reader role (none exists in
+  `ROLE_CATALOG`; inventing one was out of scope) and an authorization-model
+  decision (likely a new ADR). Until then, treat the audit read plane as a
+  uniformly-trusted `svc-audit` surface. This is the single most important
+  boundary a reviewer of FEAT-04-4 should note.
+- **Report export is bounded, not streamed** (Sprint 8, FEAT-04-4). JSON/CSV
+  export walks the filtered result set by keyset pagination (one store query per
+  page, never per row — no N+1) and is capped at `EXPORT_MAX_ROWS` (100k). A
+  result set larger than the cap is truncated rather than streamed; true
+  streaming/chunked export for very large ranges is later hardening.
 
-## Known technical debt (Sprint 6/7 — must be resolved for production)
+## Known technical debt (Sprint 6/7/8 — must be resolved for production)
 
-These items are safe for the Sprint 6/7 scope (in-memory store + identity
+These items are safe for the current scope (in-memory store + identity
 forwarding disabled by default) but must be resolved before the PostgreSQL
 path and real audit ingestion are enabled in a shared or production
-environment. **Both were carried forward unchanged in Sprint 7 by explicit
-approval — neither `emg-service-auth` nor connection pooling was introduced,
-because no proven Sprint-7 defect required it.** They should be resolved with
-FEAT-04-4 or before production load.
+environment. **Both were again carried forward unchanged in Sprint 8 (FEAT-04-4)
+by explicit decision — FEAT-04-4 adds only read/query/report paths and
+index-only SQL, so neither `emg-service-auth` consolidation nor connection
+pooling was triggered by a proven Sprint-8 defect.** They should be resolved
+before production load.
 
 - **Duplicated service-token validator.** `services/audit`'s
   `ServiceTokenValidator` (`authn.py`) is a deliberate copy of
@@ -315,13 +331,15 @@ FEAT-04-4 or before production load.
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
-- Remaining Module 6 Audit feature (EPIC-04): **FEAT-04-4 (Audit Query &
-  Reporting Interface)** — deferred to the **immediate next sprint** as an
-  approved controlled split, and must land before EPIC-05 / Module 7 begins.
-  **EPIC-04 remains incomplete until FEAT-04-4 is delivered.** FEAT-04-1 (Audit
-  Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7), and
-  FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7) are implemented. See
-  `sprint-7-design.md` and `ARCHITECTURE_STATUS.md`.
+- Module 6 Audit (EPIC-04) is now **functionally complete**: FEAT-04-1 (Audit
+  Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7),
+  FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7), and FEAT-04-4 (Audit
+  Query & Reporting Interface, Sprint 8) are all implemented. See
+  `sprint-8-design.md` and `ARCHITECTURE_STATUS.md`. The one deliberate follow-up
+  carried out of FEAT-04-4 is **clearance-based classification-aware read
+  authorization** (a human reader role + policy-engine enforcement, likely a new
+  ADR) — see the classification limitation above. Classification *filtering*
+  ships in FEAT-04-4; classification *enforcement* does not.
 - Knowledge Graph, Search, GraphRAG, AI agents, Decision Intelligence
   (EPIC-05 onward).
 - Frontend features (EPIC-10 onward).

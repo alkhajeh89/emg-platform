@@ -42,6 +42,7 @@ from emg_errors import ValidationError
 
 from .custody_hashing import GENESIS_PREV_HASH, compute_custody_hash, recompute_custody_event_hash
 from .integrity import IntegrityReport
+from .pagination import decode_cursor
 from .validation import is_sensitive_key, redact_text
 
 if TYPE_CHECKING:
@@ -136,6 +137,8 @@ def _matches(event: CustodyEvent, query: CustodyQuery) -> bool:
     if query.evidence_id is not None and event.evidence_id != query.evidence_id:
         return False
     if query.custodian is not None and event.custodian != query.custodian:
+        return False
+    if query.classification is not None and event.classification != query.classification:
         return False
     if query.start_time is not None and event.transfer_timestamp < query.start_time:
         return False
@@ -257,8 +260,15 @@ class InMemoryCustodyEventStore:
             return persisted
 
     def query(self, query: CustodyQuery) -> list[CustodyEvent]:
+        after = decode_cursor(query.cursor) if query.cursor is not None else None
         with self._lock:
-            matched = [event for event in self._events if _matches(event, query)]
+            matched = [
+                event
+                for event in self._events
+                if _matches(event, query) and (after is None or event.chain_sequence > after)
+            ]
+        # Append order == ascending chain_sequence, so the slice is a
+        # deterministic keyset page (no duplicates, no skips).
         return matched[: query.limit]
 
     def verify_integrity(self) -> IntegrityReport:
@@ -390,12 +400,19 @@ class PostgresCustodyEventStore:
         if query.custodian is not None:
             clauses.append("custodian = %(custodian)s")
             params["custodian"] = query.custodian
+        if query.classification is not None:
+            clauses.append("classification = %(classification)s")
+            params["classification"] = query.classification.value
         if query.start_time is not None:
             clauses.append("transfer_timestamp >= %(start_time)s")
             params["start_time"] = query.start_time
         if query.end_time is not None:
             clauses.append("transfer_timestamp < %(end_time)s")
             params["end_time"] = query.end_time
+        # Keyset pagination: only rows strictly after the cursor position.
+        if query.cursor is not None:
+            clauses.append("chain_sequence > %(after_sequence)s")
+            params["after_sequence"] = decode_cursor(query.cursor)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params["limit"] = query.limit
         with self._conn.cursor() as cur:
