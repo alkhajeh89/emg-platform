@@ -251,3 +251,70 @@ descriptor** regressions run unchanged; FEAT-05-3 is a new isolated library that
 touches no Module 1–6 code, record, or hash, does not modify `emg-ontology` or
 `emg-knowledge-pipeline`, and is not wired into the ingestion pipeline this
 sprint.
+
+## Semantic Layer testing (Sprint 12, FEAT-05-4)
+
+`libs/python/emg-semantic-layer/tests` — pure unit tests (no Docker, no database,
+no service, no network; the layer defines semantics only and executes nothing):
+
+- `test_graph.py` — `SemanticNode` / `SemanticRelationship` / `SemanticGraph`
+  construction, defaults, scalar-only properties (nested/non-scalar rejected),
+  deterministic property key sorting, **immutability**, empty-id/type rejection,
+  duplicate node/relationship-id rejection, and the pure lookup helpers (`node`,
+  `relationships_of`, `neighbors`) including their deterministic ordering.
+- `test_filters.py` — per-operator operand validation (nullary operators reject a
+  value; `IN`/`NOT_IN` require a non-empty collection; scalar operators reject a
+  collection; comparison operators require a non-null operand; text operators
+  require a string), condition immutability, empty-group "match all", `NOT` must
+  wrap exactly one child, computed nesting `depth`, and the `MAX_FILTER_DEPTH`
+  bound (exactly-at-max allowed, one deeper rejected).
+- `test_query_model.py` — `NodeSelector` (by ids/type/filter; fully-unbounded and
+  empty-id rejected; immutable), `SemanticTraversal` (depth = step count;
+  ≥ 1 step; `MAX_TRAVERSAL_DEPTH` bound), `TraversalStep` (direction default,
+  relationship-type fan-out bound, empty-type rejection), `SemanticProjection`
+  (default projects-all; duplicate/empty fields rejected), `SemanticOrdering`
+  (non-empty, distinct fields), `Pagination` (defaults and `[MIN, MAX]` limit +
+  non-negative offset bounds), and `SemanticQuery` (default bounded page,
+  immutability, traversal-depth accessor).
+- `test_planner.py` — the **deterministic execution model**: minimal plan
+  (`SELECT → PAGINATE`), the full **canonical order**
+  (`SELECT → TRAVERSE → FILTER → ORDER → PAGINATE → PROJECT`), determinism
+  (identical query ⇒ identical plan), sequential step indices, one `TRAVERSE`
+  step per hop, match-all filter / project-all elided, pagination always present,
+  ordering-key order preserved in detail, and plan immutability.
+- `test_result.py` — `PageInfo` count bounds, `SemanticResult` page/graph
+  consistency, immutability, and the `SemanticQueryExecutor` **protocol** verified
+  structurally against an in-memory test double (the library ships no executor)
+  and a negative `isinstance` check.
+- `test_security.py` — **no arbitrary code / no injection surface** (operator must
+  be a closed enum; an injection-like string value is stored as inert data and
+  never interpreted; a callable property value is rejected; unknown query fields
+  rejected), all query parts **frozen/immutable**, **deterministic** execution
+  model, **bounded traversal depth** (at construction and a defensive
+  planner-level `SemanticQueryError` for a query assembled via `model_construct`),
+  the typed `SemanticQueryError` (an `emg_errors.ValidationError` subclass with a
+  stable code), and unbounded-selector rejection.
+- `test_import.py` — version, the eight named abstractions + extension point +
+  planner + error type on the public surface, and an assertion (in a clean
+  subprocess) that **no storage/network/AI module** (`neo4j`, `requests`,
+  `httpx`, `sqlalchemy`, `torch`, `openai`) is imported by the layer.
+- `test_adversarial.py` (Sprint 12 review fixes) — **deep immutability** (node/
+  relationship `properties` reject item-assignment, key-addition, and deletion;
+  a caller's input dict cannot mutate the model afterward; mutation through a
+  graph-returned node fails; dump/equality preserved); **size bounds** (page
+  offset, selector ids, filter conditions/groups width, projection fields, and
+  ordering keys — each tested at the exact limit and one above, plus extreme
+  integers and the retained zero/negative rejections); **identifier validation**
+  (NUL, ASCII control, CR/LF, tab, bidi override/isolate/mark, and empty/
+  whitespace-only rejected across ids, type names, relationship types/endpoints,
+  filter/projection/ordering fields, and property keys; legitimate Arabic/
+  accented-Latin/CJK labels preserved); **filter nesting** at and above
+  `MAX_FILTER_DEPTH`; **deterministic/repeated planning**; the **result-forgery
+  trust boundary** (constructable but consistency-checked); and **executor-
+  protocol misuse** (missing `execute` fails the structural check).
+
+The **Module 6 golden audit-hash** and the **Sprint 9 golden ontology
+descriptor** regressions run unchanged; FEAT-05-4 is a new isolated library that
+touches no Module 1–6 code, record, or hash, does not modify `emg-ontology`,
+`emg-knowledge-pipeline`, or `emg-trust-scoring`, and is not wired into any
+service this sprint.

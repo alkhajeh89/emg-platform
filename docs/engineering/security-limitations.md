@@ -492,19 +492,89 @@ no service.
 - **No persistence, no service, no Neo4j, no Semantic Layer** (FEAT-05-4), **no
   lifecycle management** (FEAT-05-5), and no retrieval/search/embeddings/AI/UI.
 
+## Controls and limitations (Sprint 12, FEAT-05-4 Semantic Layer)
+
+Sprint 12 delivers the Semantic Layer **library-first** and **storage-independent**
+as `libs/python/emg-semantic-layer`. It **defines query/traversal semantics only
+and executes nothing** — there is no store, no driver, no network, and no Neo4j —
+so its security posture is about the *shape and bounds of a query*, not runtime
+data access (which a future storage binding owns).
+
+Controls:
+
+- **Deeply immutable, self-validating query models.** Every model (`SemanticQuery`
+  and its parts, the graph value objects, the plan, the result) is frozen
+  (`extra="forbid"`) and validated at construction. Immutability is **deep**:
+  `SemanticNode` / `SemanticRelationship` `properties` is stored as a read-only
+  `MappingProxyType` over a private copy, so a caller can neither mutate a
+  returned node's properties (item-assign / add / delete all raise) nor mutate the
+  dict it passed in after construction.
+- **Bounded by construction — in size, not only depth.** Every user-controlled
+  quantity is hard-capped: traversal depth (`MAX_TRAVERSAL_DEPTH`), page limit
+  (`[MIN_PAGE_LIMIT, MAX_PAGE_LIMIT]`), **page offset (`MAX_PAGE_OFFSET`)**,
+  relationship-type fan-out (`MAX_RELATIONSHIP_TYPES_PER_STEP`), filter nesting
+  (`MAX_FILTER_DEPTH`), **filter width (`MAX_FILTER_CONDITIONS`,
+  `MAX_FILTER_GROUPS`)**, **selector-id count (`MAX_SELECTOR_IDS`)**,
+  **projection-field count (`MAX_PROJECTION_FIELDS`)**, and **ordering-key count
+  (`MAX_ORDERING_KEYS`)**; a fully-unbounded `NodeSelector` is rejected. An
+  unbounded scan, an unbounded page, an arbitrarily deep offset, or an oversized
+  collection is **not expressible**.
+- **No arbitrary code, no injection surface.** Operators and directions come from
+  **closed enums**, property/condition values are plain scalars, and every
+  identifier/label (ids, type names, relationship-type names, filter/projection/
+  ordering fields, property keys) passes `ensure_safe_label`, which rejects empty/
+  whitespace-only strings and any NUL, ASCII control, CR/LF, or Unicode bidi
+  override/control character (legitimate Unicode preserved). There is no free-form
+  operator string, no raw query fragment, no callable, and nothing is `eval`'d. A
+  malicious-looking *value* is stored as inert data. The `SemanticQueryExecutor`
+  contract requires bindings to map operators onto their own **parameterised**
+  query API and never string-concatenate query text.
+- **Deterministic canonical step order.** `plan()` is pure — identical queries
+  yield an identical plan — and `SemanticOrdering` defines a total, unambiguous
+  order, so a conforming executor returns reproducible results across backends.
+  The plan is a canonical *step order*, not an executable form: `PlanStep.detail`
+  is human-readable text an executor must not parse.
+- **Typed rejection.** Cross-model semantic violations raise `SemanticQueryError`
+  (an `emg_errors.ValidationError` subclass with a stable code), including a
+  defensive planner-level depth re-check.
+
+Limitations / non-goals (by design this sprint):
+
+- **The layer enforces query *structure* and *bounds*, not data-access
+  authorization.** Classification / need-to-know filtering and result-level
+  authorization (Module 7 §21) are the responsibility of the consuming service and
+  the storage binding; `classification` is carried on `SemanticNode` as a label
+  only, with no enforcement here.
+- **Output DTOs are constructable.** `SemanticResult` / `PageInfo` are frozen but
+  can be hand-built in Python (a documented trust boundary — they are still
+  internally consistency-checked); a consumer must treat them as executor output
+  and never fabricate one in place of a real query result.
+- **Two storage seams, composed later.** The FEAT-05-4 `SemanticQueryExecutor`
+  (read-query) is separate from FEAT-05-2's `GraphStore` (append-only
+  persistence); a future adapter may implement both. An ontology→`SemanticNode`
+  adapter is intentionally deferred to the binding sprint (it belongs with the
+  binding, not the abstraction).
+- **No persistence, no database driver, no networking, no Neo4j binding, no
+  retrieval/search/embeddings/AI/LLM/REST/UI**, and **no lifecycle management**
+  (FEAT-05-5). The layer is **not wired** into any service, the knowledge
+  pipeline, or the trust-scoring runtime — integration happens only through the
+  `SemanticQueryExecutor` extension point, which no binding implements yet.
+
 ## Deferred to later sprints (not started)
 
 - Module 5 Authorization Platform: a live network-reachable authorization
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
-- Knowledge Graph (EPIC-05) remaining features: **FEAT-05-4 (Semantic Layer —
-  storage-independent query/traversal + the Neo4j adapter)** and **FEAT-05-5
-  (Knowledge Lifecycle & Versioning)**. FEAT-05-1 (Core Ontology, Sprint 9),
-  FEAT-05-2 (Knowledge Ingestion Pipeline, Sprint 10), and **FEAT-05-3
-  (Validation & Trust Scoring, Sprint 11 — library-first)** are implemented; the
-  rest are not started. `services/knowledge-graph` remains scaffolded, there is
-  no Neo4j binding yet, and the trust engine is not yet wired into ingestion.
+- Knowledge Graph (EPIC-05) remaining work: the **concrete Neo4j storage binding**
+  (an implementation of the FEAT-05-4 `SemanticQueryExecutor` extension point) and
+  **FEAT-05-5 (Knowledge Lifecycle & Versioning)**. FEAT-05-1 (Core Ontology,
+  Sprint 9), FEAT-05-2 (Knowledge Ingestion Pipeline, Sprint 10), FEAT-05-3
+  (Validation & Trust Scoring, Sprint 11), and **FEAT-05-4 (Semantic Layer,
+  Sprint 12 — storage-independent, library-first)** are implemented; the Neo4j
+  binding and FEAT-05-5 are not started. `services/knowledge-graph` remains
+  scaffolded, there is no Neo4j binding yet, the trust engine is not yet wired into
+  ingestion, and the Semantic Layer is not yet wired to any store or consumer.
 - Module 6 Audit (EPIC-04) is now **functionally complete**: FEAT-04-1 (Audit
   Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7),
   FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7), and FEAT-04-4 (Audit

@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 11 (EPIC-05 Knowledge Graph: FEAT-05-3 Knowledge Validation & Trust Scoring, library-first, in progress) |
+| Engineering Phase | Active — Sprint 12 (EPIC-05 Knowledge Graph: FEAT-05-4 Semantic Layer, storage-independent, library-first, in progress) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -119,8 +119,8 @@ this sprint (that, and the Semantic Layer, are FEAT-05-4), and no retrieval,
 search, embeddings, AI, or UI. `services/knowledge-graph` remains scaffolded.
 See `docs/engineering/sprint-10-design.md` and `SPRINT-10-STATUS.md`.
 
-**Sprint 11** (EPIC-05 Knowledge Graph, FEAT-05-3 — in progress): **Knowledge
-Validation & Trust Scoring**, delivered **library-first** as
+**Sprint 11** (EPIC-05 Knowledge Graph, FEAT-05-3 — complete, merged as PR #12,
+`d27ab59`): **Knowledge Validation & Trust Scoring**, delivered **library-first** as
 `libs/python/emg-trust-scoring`. It is a **deterministic, storage-independent**
 engine that computes an immutable, **explainable composite confidence (trust)
 score** from observable **signals** — source confidence, provenance quality,
@@ -138,16 +138,42 @@ pipeline (replacing the FEAT-05-2 interim source-type default) is a follow-up fo
 the future live ingestion service. See `docs/engineering/sprint-11-design.md`
 and `SPRINT-11-STATUS.md`.
 
+**Sprint 12** (EPIC-05 Knowledge Graph, FEAT-05-4 — in progress): the
+**Semantic Layer**, delivered **library-first** as `libs/python/emg-semantic-layer`.
+It is a **storage-independent, deterministic** query/traversal/projection model
+plus a single storage-binding extension point (`SemanticQueryExecutor`) that
+decouples every knowledge consumer (Search, GraphRAG, AI, Decision, Presentation)
+from the underlying persistence technology (Architecture Baseline,
+*Storage-technology independence*; Module 7 §10). It provides the eight named
+abstractions — `SemanticGraph`, `SemanticNode`, `SemanticRelationship`,
+`SemanticQuery`, `SemanticFilter`, `SemanticResult`, `SemanticTraversal`,
+`SemanticProjection` — plus a pure `plan()` that compiles a query into a
+deterministic **canonical step-order** plan (a human-readable description, not an
+executable form). It **defines semantics only and executes nothing**: query models
+are **deeply immutable** and self-validating (malformed queries rejected at
+construction; `properties` is a read-only mapping), every user-controlled quantity
+is **bounded by construction** (traversal depth, page limit and offset, fan-out,
+filter nesting and width, selector-id/projection/ordering counts), operators are
+**closed enums** and every identifier is validated against control/bidi characters
+(no arbitrary code, no injection surface), and it has **no persistence, no database
+driver, no networking, no Neo4j, no retrieval, no embeddings, no AI, no REST API,
+and no UI**. It is a distinct read-query seam, complementary to FEAT-05-2's
+`GraphStore` persistence contract; the concrete **Neo4j binding** and FEAT-05-5
+remain deferred. See `docs/engineering/sprint-12-design.md` and
+`SPRINT-12-STATUS.md`.
+
 Business logic so far covers Module 4 (Identity), Module 5 (Authorization
 PEP/ABAC/RBAC), Module 6's complete FEAT-04-1 through FEAT-04-4 audit platform,
 and Module 7's **FEAT-05-1 Core Ontology** (`emg-ontology`), **FEAT-05-2
-Knowledge Ingestion Pipeline** (`emg-knowledge-pipeline`), and — beginning in
-Sprint 11 — **FEAT-05-3 Validation & Trust Scoring** (`emg-trust-scoring`,
-deterministic, library-only). There is still no graph persistence to Neo4j, no
-semantic layer, no search or retrieval, no AI orchestration, and no frontend
-code. Those land in later sprints per
+Knowledge Ingestion Pipeline** (`emg-knowledge-pipeline`), **FEAT-05-3 Validation
+& Trust Scoring** (`emg-trust-scoring`, deterministic, library-only), and —
+beginning in Sprint 12 — the **FEAT-05-4 Semantic Layer** (`emg-semantic-layer`,
+storage-independent query/traversal abstraction, library-only). There is still no
+graph persistence to Neo4j, no search or retrieval, no AI orchestration, and no
+frontend code. Those land in later sprints per
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
-Planning). FEAT-05-4/05-5, EPIC-06+, and Modules 8–10 have not been started.
+Planning). The Neo4j binding, FEAT-05-5, EPIC-06+, and Modules 8–10 have not been
+started.
 
 ## Repository Structure
 
@@ -179,9 +205,12 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
                   Sprint 10 with the Module 7 storage-independent
                   Knowledge Ingestion Pipeline (emg-knowledge-pipeline,
                   FEAT-05-2 — in-memory graph adapter, no Neo4j binding),
-                  and Sprint 11 with the Module 7 deterministic
+                  Sprint 11 with the Module 7 deterministic
                   Validation & Trust Scoring engine (emg-trust-scoring,
-                  FEAT-05-3 — library-only, no persistence).
+                  FEAT-05-3 — library-only, no persistence), and
+                  Sprint 12 with the Module 7 storage-independent
+                  Semantic Layer (emg-semantic-layer, FEAT-05-4 —
+                  query/traversal abstraction, executes nothing, no Neo4j).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).

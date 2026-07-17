@@ -6,10 +6,10 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `feature/sprint-11-trust-scoring`
+Current Branch: `feature/sprint-12-semantic-layer`
 
-Current Sprint: Sprint 11 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-3
-(Knowledge Validation & Trust Scoring)
+Current Sprint: Sprint 12 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-4
+(Semantic Layer — storage-independent query/traversal abstraction)
 
 ---
 
@@ -56,7 +56,7 @@ status.
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4 | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below) |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. Clearance-based classification read *authorization* remains a documented follow-up (filter-only). |
-| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 + FEAT-05-2 complete (merged); FEAT-05-3 (Validation & Trust Scoring) in progress (Sprint 11) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`; FEAT-05-2 (Knowledge Ingestion Pipeline) merged (Sprint 10, PR #10, `bf8d460`) as `libs/python/emg-knowledge-pipeline`. Sprint 11 adds FEAT-05-3 **library-first** as `libs/python/emg-trust-scoring`: a **deterministic, storage-independent** trust-scoring + advanced-validation engine (scoring factors, weighting policy, composite confidence score with an explanation breakdown, and typed quality-gate validation results). Trust is **computed from observable signals**, never a caller-supplied value; output is immutable and reproducible. It is a standalone library (no persistence, no service); wiring it into the ingestion pipeline in place of the FEAT-05-2 interim source-type default is a follow-up for the future live ingestion service. `services/knowledge-graph` **remains scaffolded**; **no Neo4j binding, no Semantic Layer** (FEAT-05-4). FEAT-05-4/05-5 are deferred. |
+| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 + FEAT-05-2 + FEAT-05-3 complete (merged); FEAT-05-4 (Semantic Layer) in progress (Sprint 12) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`; FEAT-05-2 (Knowledge Ingestion Pipeline) merged (Sprint 10, PR #10, `bf8d460`) as `libs/python/emg-knowledge-pipeline`; FEAT-05-3 (Knowledge Validation & Trust Scoring) merged (Sprint 11, PR #12, `d27ab59`) as `libs/python/emg-trust-scoring`. Sprint 12 adds FEAT-05-4 **library-first** as `libs/python/emg-semantic-layer`: a **storage-independent, deterministic** query/traversal/projection model plus a single storage-binding extension point (`SemanticQueryExecutor`), decoupling every knowledge consumer from the persistence technology (Architecture Baseline, *Storage-technology independence*; Module 7 §10). It **defines semantics only — executes nothing**: no persistence, no database driver, no networking, **no Neo4j**, no retrieval/embeddings/AI/REST/UI. Query models are **deeply immutable** (frozen models plus read-only `properties` mappings) and self-validating; every user-controlled quantity is **bounded by construction** (traversal depth, page limit and offset, fan-out, filter nesting and width, selector-id/projection/ordering counts); operators are closed enums and every identifier is validated against control/bidi characters (no injection surface); and `plan()` yields a deterministic **canonical step-order** plan (a human-readable description, not an executable representation) without executing. It is a distinct read-query seam, complementary to (not a duplicate of) FEAT-05-2's append-only `GraphStore` persistence contract; a future adapter may implement both. `services/knowledge-graph` **remains scaffolded**; the **Neo4j binding** (a concrete implementation of the extension point) and FEAT-05-5 (Lifecycle & Versioning) remain **deferred**. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -98,8 +98,9 @@ under `docs/architecture/`.
 | Sprint 8 | Complete (merged — PR #8, `79eaae6`) (EPIC-04 completion — FEAT-04-4 Audit Query & Reporting) |
 | Sprint 9 | Complete (merged — PR #9, `2fcbaa9`) (EPIC-05 — FEAT-05-1 Core Ontology, library-first) |
 | Sprint 10 | Complete (merged — PR #10, `bf8d460`) (EPIC-05 — FEAT-05-2 Knowledge Ingestion Pipeline, library-first) |
-| Sprint 11 | In Progress (EPIC-05 — FEAT-05-3 Knowledge Validation & Trust Scoring, library-first) |
-| Sprint 12 | Planned (EPIC-05 — FEAT-05-4 Semantic Layer + Neo4j adapter) |
+| Sprint 11 | Complete (merged — PR #12, `d27ab59`) (EPIC-05 — FEAT-05-3 Knowledge Validation & Trust Scoring, library-first) |
+| Sprint 12 | In Progress (EPIC-05 — FEAT-05-4 Semantic Layer, storage-independent, library-first; Neo4j binding deferred) |
+| Sprint 13 | Planned (EPIC-05 — FEAT-05-5 Knowledge Lifecycle & Versioning) |
 
 Sprint scope for Sprint 4 onward follows the approved
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md` Sprint Planning table
