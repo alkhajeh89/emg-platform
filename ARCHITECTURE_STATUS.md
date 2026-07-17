@@ -6,10 +6,10 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `feature/sprint-10-knowledge-ingestion`
+Current Branch: `feature/sprint-11-trust-scoring`
 
-Current Sprint: Sprint 10 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-2
-(Knowledge Ingestion Pipeline)
+Current Sprint: Sprint 11 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-3
+(Knowledge Validation & Trust Scoring)
 
 ---
 
@@ -56,7 +56,7 @@ status.
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4 | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below) |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. Clearance-based classification read *authorization* remains a documented follow-up (filter-only). |
-| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 complete (merged); FEAT-05-2 (Knowledge Ingestion Pipeline) in progress (Sprint 10) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`. Sprint 10 adds FEAT-05-2 **library-first** as `libs/python/emg-knowledge-pipeline`: a **storage-independent** ingestion pipeline (request models, validation, idempotent id generation, entity/relationship resolvers, batch dependency ordering, a `GraphStore`/transaction abstraction with an in-memory adapter, and Module-6 audit-contract emission) that turns validated ontology models into persistent graph operations. Owner/provenance/trust are **server-assigned** (never caller-supplied). `services/knowledge-graph` **remains scaffolded**; **no Neo4j binding** (the storage-independent Semantic Layer + Neo4j adapter is FEAT-05-4). FEAT-05-3/05-4/05-5 are deferred. |
+| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 + FEAT-05-2 complete (merged); FEAT-05-3 (Validation & Trust Scoring) in progress (Sprint 11) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`; FEAT-05-2 (Knowledge Ingestion Pipeline) merged (Sprint 10, PR #10, `bf8d460`) as `libs/python/emg-knowledge-pipeline`. Sprint 11 adds FEAT-05-3 **library-first** as `libs/python/emg-trust-scoring`: a **deterministic, storage-independent** trust-scoring + advanced-validation engine (scoring factors, weighting policy, composite confidence score with an explanation breakdown, and typed quality-gate validation results). Trust is **computed from observable signals**, never a caller-supplied value; output is immutable and reproducible. It is a standalone library (no persistence, no service); wiring it into the ingestion pipeline in place of the FEAT-05-2 interim source-type default is a follow-up for the future live ingestion service. `services/knowledge-graph` **remains scaffolded**; **no Neo4j binding, no Semantic Layer** (FEAT-05-4). FEAT-05-4/05-5 are deferred. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -97,8 +97,9 @@ under `docs/architecture/`.
 | Sprint 7 | Complete (merged — PR #7) (EPIC-04 — FEAT-04-2 + FEAT-04-3) |
 | Sprint 8 | Complete (merged — PR #8, `79eaae6`) (EPIC-04 completion — FEAT-04-4 Audit Query & Reporting) |
 | Sprint 9 | Complete (merged — PR #9, `2fcbaa9`) (EPIC-05 — FEAT-05-1 Core Ontology, library-first) |
-| Sprint 10 | In Progress (EPIC-05 — FEAT-05-2 Knowledge Ingestion Pipeline, library-first) |
-| Sprint 11 | Planned (EPIC-05 — FEAT-05-3 Knowledge Validation & Trust Scoring) |
+| Sprint 10 | Complete (merged — PR #10, `bf8d460`) (EPIC-05 — FEAT-05-2 Knowledge Ingestion Pipeline, library-first) |
+| Sprint 11 | In Progress (EPIC-05 — FEAT-05-3 Knowledge Validation & Trust Scoring, library-first) |
+| Sprint 12 | Planned (EPIC-05 — FEAT-05-4 Semantic Layer + Neo4j adapter) |
 
 Sprint scope for Sprint 4 onward follows the approved
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md` Sprint Planning table
@@ -202,7 +203,33 @@ without coupling business logic); there is **no Neo4j binding, no retrieval, no
 search, no embeddings, no AI, and no UI** this sprint — the Neo4j adapter and
 the Semantic Layer are FEAT-05-4. `services/knowledge-graph` remains scaffolded.
 **FEAT-05-3/05-4/05-5 are deferred.** No new database, no new role, no new ADR,
-no frozen-architecture change, and no Module 6 record or hash modified.
+no frozen-architecture change, and no Module 6 record or hash modified. Sprint 10
+**merged** as PR #10 (merge commit `bf8d460`).
+
+**Sprint 11 scope note — FEAT-05-3 Knowledge Validation & Trust Scoring,
+library-first, deterministic.** Sprint 11 implements **FEAT-05-3 only**: the
+composite confidence-scoring and advanced-validation ("quality gates") engine,
+delivered library-first as `libs/python/emg-trust-scoring`. It provides a set of
+trust **factors** (source confidence, provenance quality, evidence completeness,
+validation status, ownership confidence, temporal freshness, relationship
+consistency, ingestion quality), a **scoring policy** (per-factor weights, a
+temporal-decay half-life, thresholds, and a pinned policy version), a
+**deterministic scoring engine** that computes an immutable composite trust
+score with a per-factor **explanation breakdown**, and a suite of typed
+**quality-gate validation** checks (evidence completeness, provenance integrity,
+ownership/identifier/ontology/relationship consistency, duplicate-confidence,
+temporal, and lifecycle). Trust is **computed from observable signals** — a
+caller supplies signals, never a trust value, so trust cannot be spoofed;
+calculations are pure and reproducible and the output is frozen. It is a
+**reusable library** with **no storage coupling, no persistence engine, and no
+service**; there is **no Semantic Layer, no Neo4j, no retrieval, no graph
+querying, no embeddings, no AI, and no UI**. Wiring this engine into the
+ingestion pipeline in place of the FEAT-05-2 interim source-type default is a
+follow-up for the future live ingestion service and is not done here (to avoid
+changing merged FEAT-05-2 behaviour). `services/knowledge-graph` remains
+scaffolded. **FEAT-05-4 and FEAT-05-5 are deferred.** No new database, no new
+role, no new ADR, no frozen-architecture change, and no Module 6 record or hash
+modified.
 
 ---
 
@@ -244,16 +271,22 @@ Interface**) **merged** as **PR #8 (merge commit `79eaae6`)**, completing
 **PR #9 (merge commit `2fcbaa9`)**, delivering the governed ontology model,
 the Organizational and Risk & Safety domains, and a pure conformance validator
 (`libs/python/emg-ontology`). Sprint 10
-(`feature/sprint-10-knowledge-ingestion`) is **in progress**, adding **FEAT-05-2
-(Knowledge Ingestion Pipeline)** library-first in
-`libs/python/emg-knowledge-pipeline` — a **storage-independent** pipeline that
+(`feature/sprint-10-knowledge-ingestion`, **FEAT-05-2 Knowledge Ingestion
+Pipeline**) **merged** as **PR #10 (merge commit `bf8d460`)** — a
+**storage-independent** pipeline in `libs/python/emg-knowledge-pipeline` that
 validates and persists ontology entities/relationships through a `GraphStore`
 abstraction (in-memory adapter; no Neo4j binding), with deterministic idempotent
-ids, batch dependency ordering, transaction rollback (no partial graph),
-**server-assigned** owner/provenance/trust, length-bounded free-text, and
-**Module-6 audit-contract emission** (provenance referenced, correlation
-preserved). `services/knowledge-graph` remains scaffolded; no retrieval, search,
-embeddings, AI, or UI (those are EPIC-06+ / later EPIC-05 features). No new
+ids, transaction rollback (no partial graph), server-assigned
+owner/provenance/trust, and Module-6 audit-contract emission. Sprint 11
+(`feature/sprint-11-trust-scoring`) is **in progress**, adding **FEAT-05-3
+(Knowledge Validation & Trust Scoring)** library-first in
+`libs/python/emg-trust-scoring` — a **deterministic** trust-scoring +
+advanced-validation engine that computes an immutable, explainable composite
+confidence score from observable signals (never a caller-supplied trust value)
+and runs typed quality-gate validation checks. It is a standalone library (no
+persistence, no service, no Neo4j, no Semantic Layer, no retrieval/search/AI/UI);
+wiring it into the ingestion pipeline is a follow-up for the future live
+ingestion service. `services/knowledge-graph` remains scaffolded. No new
 database, no new role, no new ADR, no frozen-architecture change, and no
 Module 6 record or hash touched. Per the Definition of Done, formal
 organizational Security Reviewer sign-off remains required before merge and is

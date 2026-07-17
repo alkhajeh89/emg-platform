@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 10 (EPIC-05 Knowledge Graph: FEAT-05-2 Knowledge Ingestion Pipeline, library-first, in progress) |
+| Engineering Phase | Active — Sprint 11 (EPIC-05 Knowledge Graph: FEAT-05-3 Knowledge Validation & Trust Scoring, library-first, in progress) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -97,8 +97,9 @@ storage-independent **conformance validator** and a deterministic,
 pinned-version ontology descriptor (golden-tested). See
 `docs/engineering/sprint-9-design.md` and `SPRINT-9-STATUS.md`.
 
-**Sprint 10** (EPIC-05 Knowledge Graph, FEAT-05-2 — in progress): the **Knowledge
-Ingestion Pipeline**, delivered **library-first** as
+**Sprint 10** (EPIC-05 Knowledge Graph, FEAT-05-2 — complete, merged as PR #10,
+merge commit `bf8d460`): the **Knowledge Ingestion Pipeline**, delivered
+**library-first** as
 `libs/python/emg-knowledge-pipeline`. It is the **storage-independent** pipeline
 that turns validated ontology models into persistent graph operations: ingestion
 request models (server-assigned `owner`/`provenance_reference`/`trust_score` —
@@ -118,16 +119,35 @@ this sprint (that, and the Semantic Layer, are FEAT-05-4), and no retrieval,
 search, embeddings, AI, or UI. `services/knowledge-graph` remains scaffolded.
 See `docs/engineering/sprint-10-design.md` and `SPRINT-10-STATUS.md`.
 
+**Sprint 11** (EPIC-05 Knowledge Graph, FEAT-05-3 — in progress): **Knowledge
+Validation & Trust Scoring**, delivered **library-first** as
+`libs/python/emg-trust-scoring`. It is a **deterministic, storage-independent**
+engine that computes an immutable, **explainable composite confidence (trust)
+score** from observable **signals** — source confidence, provenance quality,
+evidence completeness, validation status, ownership confidence, temporal
+freshness, relationship consistency, and ingestion quality — under a versioned
+**scoring policy** (per-factor weights, a temporal-decay half-life, thresholds).
+Trust is **computed, never caller-supplied** (the input model has no trust
+field), so it cannot be spoofed; calculations are pure and reproducible and the
+output is frozen. It also runs a suite of typed **quality-gate validation**
+checks (evidence completeness, provenance integrity, ownership/identifier/
+ontology/relationship consistency, duplicate-confidence, temporal, lifecycle).
+It has **no persistence, no service, no Neo4j, no Semantic Layer, and no
+retrieval/search/embeddings/AI/UI**; wiring the engine into the ingestion
+pipeline (replacing the FEAT-05-2 interim source-type default) is a follow-up for
+the future live ingestion service. See `docs/engineering/sprint-11-design.md`
+and `SPRINT-11-STATUS.md`.
+
 Business logic so far covers Module 4 (Identity), Module 5 (Authorization
 PEP/ABAC/RBAC), Module 6's complete FEAT-04-1 through FEAT-04-4 audit platform,
-and Module 7's **FEAT-05-1 Core Ontology** (`emg-ontology`) plus — beginning in
-Sprint 10 — **FEAT-05-2 Knowledge Ingestion Pipeline** (`emg-knowledge-pipeline`,
-storage-independent, in-memory graph adapter). There is still no graph
-persistence to Neo4j, no search or retrieval, no AI orchestration, and no
-frontend code. Those land in later sprints per
+and Module 7's **FEAT-05-1 Core Ontology** (`emg-ontology`), **FEAT-05-2
+Knowledge Ingestion Pipeline** (`emg-knowledge-pipeline`), and — beginning in
+Sprint 11 — **FEAT-05-3 Validation & Trust Scoring** (`emg-trust-scoring`,
+deterministic, library-only). There is still no graph persistence to Neo4j, no
+semantic layer, no search or retrieval, no AI orchestration, and no frontend
+code. Those land in later sprints per
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
-Planning). FEAT-05-3/05-4/05-5, EPIC-06+, and Modules 8–10 have not been
-started.
+Planning). FEAT-05-4/05-5, EPIC-06+, and Modules 8–10 have not been started.
 
 ## Repository Structure
 
@@ -156,9 +176,12 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
                   (emg-audit-pipeline), Sprint 9 with the Module 7
                   Core Ontology model + conformance library
                   (emg-ontology, FEAT-05-1 — library-first, no persistence),
-                  and Sprint 10 with the Module 7 storage-independent
+                  Sprint 10 with the Module 7 storage-independent
                   Knowledge Ingestion Pipeline (emg-knowledge-pipeline,
-                  FEAT-05-2 — in-memory graph adapter, no Neo4j binding).
+                  FEAT-05-2 — in-memory graph adapter, no Neo4j binding),
+                  and Sprint 11 with the Module 7 deterministic
+                  Validation & Trust Scoring engine (emg-trust-scoring,
+                  FEAT-05-3 — library-only, no persistence).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).

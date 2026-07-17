@@ -211,3 +211,43 @@ The **Module 6 golden audit-hash** and the **Sprint 9 golden ontology
 descriptor** regressions run unchanged; FEAT-05-2 is a new isolated library that
 touches no Module 1–6 code, record, or hash, and re-uses (does not modify) the
 `emg-ontology` models and the `emg-audit-client` contract.
+
+## Validation & Trust Scoring testing (Sprint 11, FEAT-05-3)
+
+`libs/python/emg-trust-scoring/tests` — pure unit tests (no Docker, no database,
+no service; the engine is deterministic and storage-independent):
+
+- `test_engine.py` — the per-factor calculations (source confidence, provenance
+  quality, evidence completeness, validation status, ownership confidence,
+  relationship consistency, ingestion quality), factor clamping to `[0, 1]`, the
+  weighted composite (== sum of contributions), determinism (identical repeated
+  evaluations), **immutable** result and breakdown, and the **golden score
+  pins** (high-trust composite `0.971667`, low-trust `0.216667` under
+  `DEFAULT_POLICY`) — a merge-blocking reproducibility gate analogous to the
+  Module 6 golden hash.
+- `test_temporal_and_edges.py` — temporal-freshness **decay** (maximal at the
+  effective date, halves after one half-life, monotonic decay, future-dated
+  fully fresh), **expiry** and **retired/superseded** freshness = 0, conflicting
+  evidence with no support, all-default signals still valid, malformed-signal
+  rejection at construction, and the duplicate-likelihood gate.
+- `test_quality_gates.py` — every typed quality gate (evidence completeness,
+  provenance integrity, ownership/identifier/ontology/relationship consistency,
+  duplicate confidence, temporal, lifecycle), report aggregation, error vs.
+  warning severity (warnings do not fail the report), immutability, and the
+  combined `evaluate(...)`.
+- `test_security_and_policy.py` — **trust cannot be spoofed** (`TrustSignals`
+  has no trust field and rejects extra fields), signals are immutable, a single
+  **manipulated signal cannot dominate** (an inflated evidence count caps at the
+  factor clamp), evaluation is **reproducible from serialized signals**, the
+  policy validates/normalizes weights (missing/unknown rejected, arbitrary
+  weights normalized to sum 1) and is immutable, a policy change moves the score
+  deterministically, and the `signals_from_entity` ontology adapter derives
+  envelope signals without using the entity's own `trust_score`.
+- `test_import.py` — version, public surface, and factor/check/policy-version
+  counts.
+
+The **Module 6 golden audit-hash** and the **Sprint 9 golden ontology
+descriptor** regressions run unchanged; FEAT-05-3 is a new isolated library that
+touches no Module 1–6 code, record, or hash, does not modify `emg-ontology` or
+`emg-knowledge-pipeline`, and is not wired into the ingestion pipeline this
+sprint.

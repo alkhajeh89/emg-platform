@@ -446,19 +446,65 @@ and no HTTP surface** this sprint.
   commit outcome — target phase: the **future persistent (Neo4j) adapter / live
   ingestion service** (FEAT-05-4 and the service). Not claimed as fixed.
 
+## Controls and limitations (Sprint 11, FEAT-05-3 Validation & Trust Scoring)
+
+Sprint 11 delivers the trust-scoring + advanced-validation engine **library-
+first** (`emg-trust-scoring`) — pure, deterministic, storage-independent, with
+no service.
+
+**Controls implemented:**
+- **Trust cannot be spoofed.** The input model `TrustSignals` has **no trust
+  field** and forbids extra fields, so a caller supplies *observable signals*
+  and the engine **computes** the score — there is no code path by which a
+  caller sets a trust value. (This is the real replacement for the FEAT-05-2
+  interim source-type default; it is not yet wired into the pipeline — see
+  limitations.)
+- **Deterministic + reproducible.** The engine is pure (no wall-clock, no
+  randomness, no I/O; temporal decay uses an explicit `as_of`); identical
+  signals + policy yield a byte-identical result, pinned by a golden test.
+- **Immutable output.** `TrustScoreResult`, `QualityGateReport`, and the
+  combined `TrustEvaluation` are frozen.
+- **Bounded, non-dominating signals.** Every signal is bounded at construction
+  (non-negative counts, a defined source type, a `[0, 1]` duplicate likelihood),
+  and every factor is clamped to `[0, 1]` and combined as a *weighted average* —
+  so a single manipulated signal (e.g. an inflated evidence count) caps at its
+  factor's clamp and can contribute at most its weight, never dominating the
+  composite.
+- **Explainable by construction.** Each result carries a full per-factor
+  breakdown (raw score, weight, contribution) and a human-readable explanation
+  (Architecture Baseline: grounded, cited, explainable; Module 7 §34).
+- **Versioned policy.** `policy_version` is pinned so a stored score can be
+  interpreted against the exact scoring behaviour that produced it.
+
+**Limitations (deliberate Sprint 11 scope boundaries, not gaps):**
+- **The engine is not wired into the ingestion pipeline.** FEAT-05-2 still
+  assigns its interim source-type default trust; replacing it with this engine
+  would change merged FEAT-05-2 behaviour, so it is a follow-up for the future
+  live ingestion service (which will call `signals_from_entity` + `evaluate`).
+- **The engine scores the signals it is given; it does not attest them.** Signal
+  *trustworthiness* is the ingestion pipeline's responsibility (server-side
+  assignment of owner/provenance, bounds, conformance — FEAT-05-2). The scoring
+  library computes deterministically over provided signals and does not
+  independently verify, e.g., that a claimed evidence count is real.
+- **Interim factor weights and source confidences.** The `DEFAULT_POLICY`
+  weights and per-source-type confidences are reasonable defaults, not a
+  calibrated model; a future sprint may re-tune them (bumping `policy_version`).
+- **No persistence, no service, no Neo4j, no Semantic Layer** (FEAT-05-4), **no
+  lifecycle management** (FEAT-05-5), and no retrieval/search/embeddings/AI/UI.
+
 ## Deferred to later sprints (not started)
 
 - Module 5 Authorization Platform: a live network-reachable authorization
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
-- Knowledge Graph (EPIC-05) remaining features: **FEAT-05-3 (Validation & Trust
-  Scoring), FEAT-05-4 (Semantic Layer — storage-independent query/traversal + the
-  Neo4j adapter), FEAT-05-5 (Knowledge Lifecycle & Versioning)**. FEAT-05-1
-  (Core Ontology) shipped in Sprint 9 and **FEAT-05-2 (Knowledge Ingestion
-  Pipeline)** ships in Sprint 10 (library-first, in-memory graph adapter); the
-  rest are not started. `services/knowledge-graph` remains scaffolded and there
-  is no Neo4j binding yet.
+- Knowledge Graph (EPIC-05) remaining features: **FEAT-05-4 (Semantic Layer —
+  storage-independent query/traversal + the Neo4j adapter)** and **FEAT-05-5
+  (Knowledge Lifecycle & Versioning)**. FEAT-05-1 (Core Ontology, Sprint 9),
+  FEAT-05-2 (Knowledge Ingestion Pipeline, Sprint 10), and **FEAT-05-3
+  (Validation & Trust Scoring, Sprint 11 — library-first)** are implemented; the
+  rest are not started. `services/knowledge-graph` remains scaffolded, there is
+  no Neo4j binding yet, and the trust engine is not yet wired into ingestion.
 - Module 6 Audit (EPIC-04) is now **functionally complete**: FEAT-04-1 (Audit
   Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7),
   FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7), and FEAT-04-4 (Audit
