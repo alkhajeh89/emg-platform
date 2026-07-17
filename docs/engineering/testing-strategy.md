@@ -318,3 +318,64 @@ descriptor** regressions run unchanged; FEAT-05-4 is a new isolated library that
 touches no Module 1–6 code, record, or hash, does not modify `emg-ontology`,
 `emg-knowledge-pipeline`, or `emg-trust-scoring`, and is not wired into any
 service this sprint.
+
+## Knowledge Lifecycle & Versioning testing (Sprint 13, FEAT-05-5)
+
+`libs/python/emg-knowledge-lifecycle/tests` — pure unit tests (no Docker, no
+database, no service, no network, no scheduler; the library defines lifecycle
+semantics only and executes nothing):
+
+- `test_states.py` — the transition table pinned as a **golden set** (exact legal
+  transitions), no self-transitions, `allowed_transitions` consistency, restore-
+  transition detection, and the live-state set.
+- `test_version.py` — `VersionIdentifier` (canonical key/sort key, version bounds,
+  immutability), `VersionMetadata` (optional note, immutability), and
+  `KnowledgeVersion` construction + helpers, plus rejection of self-parent,
+  cross-entity parent, non-decreasing parent, and an inverted effective window.
+- `test_events.py` — `LifecycleEvent` accepts only legal transitions (illegal and
+  self transitions rejected), flags the restore transition, and is immutable.
+- `test_chain.py` — `VersionChain` lineage helpers (`active`, `roots`, `latest`,
+  `children`, `lineage`, `get`) and their determinism, plus every structural
+  rejection: empty, mixed entity, duplicate identifier, orphaned parent, duplicate
+  active, and cyclic input (assembled via `model_construct`, rejected when building
+  a chain).
+- `test_validation.py` — `LifecycleValidator.validate_chain(...)` enumerates every
+  issue as a typed `ChainIssue` (duplicate-active, mixed-entity, orphan, cycle,
+  cross-entity/non-decreasing parent, inverted window, empty) without raising;
+  `assert_valid_chain`, `validate_transition`, `assert_transition`, and a policy
+  that disables the restore transition.
+- `test_retention.py` — deterministic retention windows per state, archive
+  eligibility (including the `archive_after_days` delay and the not-eligible cases:
+  live states, already-archived, indefinite retention), restore eligibility and
+  its window, determinism (identical `as_of` ⇒ identical decision), and the
+  documented **restore anchor** (measured from the effective-end reference, not an
+  archival timestamp — with and without `effective_to`).
+- `test_adversarial.py` — control/NUL/CR-LF/bidi and empty/whitespace identifier
+  rejection across entity ids and metadata (legitimate Arabic/accented-Latin/CJK
+  preserved), extreme version numbers and retention-day bounds, the oversized-chain
+  bound, immutability of decision/policy/report models, unknown-field rejection,
+  and the exported `ensure_safe_label` helper.
+- `test_performance.py` (review fix) — a **deep legal linear chain** (N = 8000,
+  within `MAX_CHAIN_SIZE = 10_000`) whose construction + `validate_chain` must
+  finish under a generous 5 s ceiling (the old O(N²) implementation needed
+  ~25–40 s; the O(N) implementation clears it in tens of ms), a full deep-lineage
+  walk, and a no-recursion-limit-dependence check.
+- **`require_reason` enforcement** (in `test_validation.py`) — `validate_event` /
+  `assert_event` with `require_reason=True` (reason present → ok; reason absent →
+  `MissingReasonError`), whitespace-only reason rejected at event construction,
+  `require_reason=False` without a reason ok, a policy-disabled transition on an
+  event, and deterministic output. Plus the reachable `INVALID_STATE` issue (via
+  `model_construct`) and deterministic issue ordering — so no validation branch is
+  pragma-only dead code.
+- **Typed unknown-lineage error** (in `test_chain.py`) — `VersionChain.lineage()`
+  raises `emg_errors.NotFoundError` for an id not in the chain.
+- `test_import.py` — version, the named public surface, and a clean-subprocess
+  assertion that **no storage/network/AI module** and **no sibling Module-7
+  package** (`emg_ontology`, `emg_knowledge_pipeline`, `emg_trust_scoring`,
+  `emg_semantic_layer`) is imported by the library.
+
+The **Module 6 golden audit-hash** and the **Sprint 9 golden ontology
+descriptor** regressions run unchanged; FEAT-05-5 is a new isolated library that
+touches no Module 1–6 code, record, or hash, does not modify `emg-ontology`,
+`emg-knowledge-pipeline`, `emg-trust-scoring`, or `emg-semantic-layer`, and is not
+wired into any service this sprint.

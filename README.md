@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 12 (EPIC-05 Knowledge Graph: FEAT-05-4 Semantic Layer, storage-independent, library-first, in progress) |
+| Engineering Phase | Active — Sprint 13 (EPIC-05 Knowledge Graph: FEAT-05-5 Knowledge Lifecycle & Versioning, storage-independent, library-first, in progress) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -138,8 +138,8 @@ pipeline (replacing the FEAT-05-2 interim source-type default) is a follow-up fo
 the future live ingestion service. See `docs/engineering/sprint-11-design.md`
 and `SPRINT-11-STATUS.md`.
 
-**Sprint 12** (EPIC-05 Knowledge Graph, FEAT-05-4 — in progress): the
-**Semantic Layer**, delivered **library-first** as `libs/python/emg-semantic-layer`.
+**Sprint 12** (EPIC-05 Knowledge Graph, FEAT-05-4 — complete, merged as PR #13,
+`734aa2a`): the **Semantic Layer**, delivered **library-first** as `libs/python/emg-semantic-layer`.
 It is a **storage-independent, deterministic** query/traversal/projection model
 plus a single storage-binding extension point (`SemanticQueryExecutor`) that
 decouples every knowledge consumer (Search, GraphRAG, AI, Decision, Presentation)
@@ -162,18 +162,41 @@ and no UI**. It is a distinct read-query seam, complementary to FEAT-05-2's
 remain deferred. See `docs/engineering/sprint-12-design.md` and
 `SPRINT-12-STATUS.md`.
 
+**Sprint 13** (EPIC-05 Knowledge Graph, FEAT-05-5 — in progress): **Knowledge
+Lifecycle & Versioning**, delivered **library-first** as
+`libs/python/emg-knowledge-lifecycle`. It is a **storage-independent,
+deterministic** managed lifecycle state machine — the one the ontology deferred
+(`LifecycleStatus` notes "the managed proposed→active→retired state machine is
+FEAT-05-5") — with states `proposed → active → deprecated → superseded → archived
+→ retired` and a **fixed closed** transition table. It provides the named
+abstractions — `KnowledgeVersion`, `VersionIdentifier`, `VersionChain`,
+`VersionMetadata`, `VersionState`, `LifecycleEvent`, `LifecyclePolicy`,
+`RetentionPolicy`, `RetentionDecision`, `ArchiveDecision`, `RestoreDecision`,
+`LifecycleValidator` — plus **immutable version chains** with bounded parent-child
+lineage (cycle/orphan/duplicate-active detection) and **pure retention / archive /
+restore evaluation** against an explicit `as_of`. It **defines lifecycle semantics
+only and executes nothing, stores nothing**: **no persistence, no scheduler, no
+execution engine, no networking, no Neo4j, no retrieval, no embeddings, no AI, no
+REST API, and no UI**. Models are immutable and self-validating (malformed
+lifecycle models rejected at construction), traversal is bounded, and identifiers
+are validated against control/bidi characters (no injection surface). It depends
+only on `emg-common-types`, `emg-errors`, `pydantic` and is **not wired** into the
+pipeline, trust-scoring, or semantic layer. See
+`docs/engineering/sprint-13-design.md` and `SPRINT-13-STATUS.md`.
+
 Business logic so far covers Module 4 (Identity), Module 5 (Authorization
 PEP/ABAC/RBAC), Module 6's complete FEAT-04-1 through FEAT-04-4 audit platform,
 and Module 7's **FEAT-05-1 Core Ontology** (`emg-ontology`), **FEAT-05-2
 Knowledge Ingestion Pipeline** (`emg-knowledge-pipeline`), **FEAT-05-3 Validation
-& Trust Scoring** (`emg-trust-scoring`, deterministic, library-only), and —
-beginning in Sprint 12 — the **FEAT-05-4 Semantic Layer** (`emg-semantic-layer`,
-storage-independent query/traversal abstraction, library-only). There is still no
-graph persistence to Neo4j, no search or retrieval, no AI orchestration, and no
-frontend code. Those land in later sprints per
-`docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
-Planning). The Neo4j binding, FEAT-05-5, EPIC-06+, and Modules 8–10 have not been
-started.
+& Trust Scoring** (`emg-trust-scoring`), **FEAT-05-4 Semantic Layer**
+(`emg-semantic-layer`), and — beginning in Sprint 13 — **FEAT-05-5 Knowledge
+Lifecycle & Versioning** (`emg-knowledge-lifecycle`, storage-independent,
+library-only). With FEAT-05-5, EPIC-05's knowledge-layer feature set (FEAT-05-1 …
+05-5) is functionally complete as libraries. There is still no graph persistence
+to Neo4j, no search or retrieval, no AI orchestration, and no frontend code. Those
+land in later sprints per `docs/architecture/EMG_Engineering_Backlog_v1.0.md`,
+Section 6 (Sprint Planning). The Neo4j binding, EPIC-06+, and Modules 8–10 have not
+been started.
 
 ## Repository Structure
 
@@ -210,7 +233,12 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
                   FEAT-05-3 — library-only, no persistence), and
                   Sprint 12 with the Module 7 storage-independent
                   Semantic Layer (emg-semantic-layer, FEAT-05-4 —
-                  query/traversal abstraction, executes nothing, no Neo4j).
+                  query/traversal abstraction, executes nothing, no Neo4j),
+                  and Sprint 13 with the Module 7 storage-independent
+                  Knowledge Lifecycle & Versioning library
+                  (emg-knowledge-lifecycle, FEAT-05-5 — managed state
+                  machine + version chains + retention, executes nothing,
+                  stores nothing).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).

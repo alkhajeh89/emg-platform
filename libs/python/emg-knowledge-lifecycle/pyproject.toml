@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-knowledge-lifecycle"
+version = "0.1.0"
+description = "Storage-independent Knowledge Lifecycle & Versioning (Module 7 — Knowledge Graph, EPIC-05, FEAT-05-5): immutable, deterministic version chains, a managed proposed/active/deprecated/superseded/archived/retired state machine, and pure retention/archive/restore evaluation. Defines lifecycle semantics only — no persistence, no scheduler, no execution engine, no networking, no Neo4j. Added Sprint 13."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = ["emg-common-types", "emg-errors", "pydantic>=2.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_knowledge_lifecycle"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
