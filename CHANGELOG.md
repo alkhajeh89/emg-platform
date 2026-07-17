@@ -5,7 +5,77 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
-### Sprint 12 — EPIC-05 Knowledge Graph — Semantic Layer (FEAT-05-4) — in progress
+### Sprint 13 — EPIC-05 Knowledge Graph — Knowledge Lifecycle & Versioning (FEAT-05-5) — in progress
+
+- **New `libs/python/emg-knowledge-lifecycle`** (Module 7, EPIC-05, FEAT-05-5) — a
+  **storage-independent, deterministic** Knowledge Lifecycle & Versioning library,
+  delivered **library-first**. It **defines lifecycle semantics only and executes
+  nothing, stores nothing**: no persistence, no scheduler, no execution engine, no
+  networking, **no Neo4j**, no retrieval, no embeddings, no AI, no LLM, no REST API,
+  and no UI. This is the managed state machine the ontology deferred
+  (`emg_ontology.LifecycleStatus` notes "the managed proposed→active→retired state
+  machine is FEAT-05-5").
+  - **States + transitions** (`states.py`): `VersionState`
+    (`proposed → active → deprecated → superseded → archived → retired`) and a
+    **fixed, closed** transition table (`is_valid_transition`,
+    `allowed_transitions`, `is_restore_transition`) — no caller-supplied rule, no
+    arbitrary code.
+  - **Version model** (`identifiers.py`, `metadata.py`, `version.py`):
+    `VersionIdentifier` (entity id + monotonic version, bounded), `VersionMetadata`
+    (created-at, author, note), and the immutable `KnowledgeVersion` (identity,
+    state, parent, effective window) with append-only lineage rules (parent must be
+    the same entity and an earlier version).
+  - **Events** (`events.py`): `LifecycleEvent` — an immutable, self-validating
+    record of one *legal* transition (an illegal transition is not representable).
+  - **Chains + lineage** (`chain.py`): `VersionChain` — an immutable, validated
+    history for one entity with bounded lineage helpers (`active`, `roots`,
+    `latest`, `children`, `lineage`); rejects mixed entities, duplicate versions,
+    orphaned parents, more than one active version, and cycles (bounded traversal).
+  - **Validation** (`validation.py`): `LifecycleValidator` with a non-raising
+    `validate_chain(...) -> ChainValidationReport` (enumerates every issue as a
+    typed `ChainIssue`) plus `assert_valid_chain` / `validate_transition` /
+    `assert_transition`.
+  - **Policy** (`policy.py`): immutable, versioned `LifecyclePolicy` (permitted
+    transitions + reason requirement) and `RetentionPolicy` (per-state retention
+    windows, archive delay, restore window).
+  - **Retention evaluation** (`retention.py`): pure `evaluate_retention`,
+    `evaluate_archive`, `evaluate_restore` returning immutable `RetentionDecision`
+    / `ArchiveDecision` / `RestoreDecision`, computed against an explicit `as_of`
+    (never a wall clock).
+  - **Review fixes (independent Sprint 13 review):**
+    - **O(N) chain validation.** A single authoritative three-colour-DFS analysis
+      (`validation.find_chain_issues`) replaces the previous O(N²) per-node lineage
+      re-walk (which was ~40 s at the size cap); both `validate_chain` and the
+      `VersionChain` constructor use it. A maximal 10 000-version chain now
+      validates in tens of milliseconds. `MAX_CHAIN_SIZE` stays 10 000 (justified
+      by the linear cost).
+    - **`require_reason` is now enforced** via `LifecycleValidator.validate_event`
+      / `assert_event` (raising the new typed `MissingReasonError`); previously the
+      policy field was read nowhere.
+    - **Restore-window semantics documented** — measured from the effective-end
+      reference (`effective_to`/`effective_from`), not an archival timestamp.
+    - **Typed unknown-lineage error** — `VersionChain.lineage()` raises
+      `emg_errors.NotFoundError` instead of a bare `KeyError`.
+    - Removed the redundant/unreachable chain-level cycle routine (one authoritative
+      detector remains); the `INVALID_STATE` branch is now exercised, not
+      pragma-only.
+  - **Tests**: 95 tests covering states/transitions, version + metadata validation
+    and immutability, event legality + `require_reason` enforcement, chain lineage +
+    all structural rejections (mixed entity, duplicate id, orphan, duplicate-active,
+    cycle, invalid-state), the typed validation report + deterministic ordering,
+    retention/archive/restore evaluation + restore anchor, a **deep-chain O(N)
+    performance guard** (N = 8000), the typed unknown-lineage error, and adversarial
+    inputs (control/bidi identifiers, extreme integers, oversized chains,
+    decision-forgery boundary, determinism).
+  - **Dependencies**: `emg-common-types`, `emg-errors`, `pydantic` only — **not**
+    `emg-ontology`, `emg-knowledge-pipeline`, `emg-trust-scoring`, or
+    `emg-semantic-layer` (clean dependency direction; integration only via future
+    extension points).
+  - Quality gates: `ruff` clean, `black` clean, `mypy --strict` clean, full
+    regression green. Not wired into any service; `services/knowledge-graph`
+    remains scaffolded.
+
+### Sprint 12 — EPIC-05 Knowledge Graph — Semantic Layer (FEAT-05-4) — complete (merged — PR #13, `734aa2a`)
 
 - **New `libs/python/emg-semantic-layer`** (Module 7, EPIC-05, FEAT-05-4) — a
   **storage-independent, deterministic** Semantic Layer, delivered

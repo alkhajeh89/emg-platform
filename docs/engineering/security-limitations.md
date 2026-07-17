@@ -560,6 +560,72 @@ Limitations / non-goals (by design this sprint):
   pipeline, or the trust-scoring runtime — integration happens only through the
   `SemanticQueryExecutor` extension point, which no binding implements yet.
 
+## Controls and limitations (Sprint 13, FEAT-05-5 Knowledge Lifecycle & Versioning)
+
+Sprint 13 delivers Knowledge Lifecycle & Versioning **library-first** and
+**storage-independent** as `libs/python/emg-knowledge-lifecycle`. It **defines
+lifecycle semantics only and executes nothing, stores nothing** — no persistence,
+no scheduler, no execution engine, no networking, no Neo4j — so its security
+posture is about the *validity and boundedness of lifecycle models*, not runtime
+data movement (which a future storage binding owns).
+
+Controls:
+
+- **Immutable, self-validating models.** Every model (`KnowledgeVersion`,
+  `VersionChain`, `LifecycleEvent`, the policies, the decisions, the report) is
+  frozen (`extra="forbid"`) and validated at construction, so a malformed
+  lifecycle model is rejected immediately.
+- **Deterministic transitions.** The transition relation is a **fixed closed
+  table** — no caller-supplied rule, no arbitrary code, no escape hatch. A
+  `LifecycleEvent` can only describe a legal transition; an illegal or self
+  transition is not representable.
+- **Version-graph validation (single O(N) analysis).** Chains reject mixed
+  entities, duplicate versions, orphaned parents, more than one active version,
+  and cycles; `LifecycleValidator` additionally enumerates cross-entity/
+  non-decreasing parents, inverted effective windows, and invalid states as typed
+  issues (defensive even against `model_construct` bypass). There is one
+  authoritative analysis shared by `validate_chain` and the `VersionChain`
+  constructor — no duplicate cycle algorithm.
+- **Linear-time, bounded validation.** Chain size is hard-capped
+  (`MAX_CHAIN_SIZE = 10_000`) and chain analysis is **O(N)** (a single
+  three-colour DFS over the parent graph; each version coloured at most once), so
+  a legal within-bounds chain cannot cause a quadratic denial-of-service — a
+  maximal deep chain validates in tens of milliseconds. Lineage walks are
+  iterative and cycle-safe (a `visited` set). Version numbers and retention
+  windows are bounded too. (Review fix: the earlier design re-walked the full
+  lineage from every node — O(N²), tens of seconds at the size cap.)
+- **Enforced transition-reason policy.** `LifecyclePolicy.require_reason` is
+  enforced by `LifecycleValidator.validate_event` / `assert_event` (raising
+  `MissingReasonError` when a required reason is absent); a whitespace-only reason
+  is rejected at event construction.
+- **No injection surface.** Identifiers and free-text metadata are validated by
+  `ensure_safe_label` (empty/whitespace-only and NUL/ASCII-control/CR-LF/Unicode-
+  bidi rejected; legitimate Unicode preserved). Values are plain data; nothing is
+  `eval`'d.
+- **Deterministic evaluation.** Retention/archive/restore use an explicit `as_of`
+  (no wall clock, no randomness), so decisions are reproducible. Windows —
+  including `restore_window_days` — are measured from a version's effective-end
+  reference (`effective_to` if set, else `effective_from`), **not** from an
+  archival timestamp (which this storage-independent library does not model).
+
+Limitations / non-goals (by design this sprint):
+
+- **The library validates and evaluates lifecycle models; it does not enforce,
+  schedule, or persist anything.** Applying a transition, archiving, or purging a
+  version is the responsibility of a future storage binding / service. There is no
+  execution engine and no scheduler.
+- **Decision DTOs are constructable.** `RetentionDecision` / `ArchiveDecision` /
+  `RestoreDecision` are frozen but can be hand-built in Python (a documented trust
+  boundary — obtain them from the evaluators, never fabricate one).
+- **Not wired to the ontology.** `VersionState` aligns with (but does not import)
+  `emg_ontology.LifecycleStatus` and adds the operational states
+  `deprecated`/`archived`; mapping the managed state onto an ontology entity's
+  `lifecycle_status` field is a future binding concern.
+- **No persistence, database driver, networking, Neo4j, retrieval, embeddings, AI,
+  LLM, REST, or UI.** The library is **not wired** into `emg-knowledge-pipeline`,
+  `emg-trust-scoring`, or `emg-semantic-layer` — integration happens only through
+  future extension points, none implemented yet.
+
 ## Deferred to later sprints (not started)
 
 - Module 5 Authorization Platform: a live network-reachable authorization
@@ -567,14 +633,17 @@ Limitations / non-goals (by design this sprint):
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
 - Knowledge Graph (EPIC-05) remaining work: the **concrete Neo4j storage binding**
-  (an implementation of the FEAT-05-4 `SemanticQueryExecutor` extension point) and
-  **FEAT-05-5 (Knowledge Lifecycle & Versioning)**. FEAT-05-1 (Core Ontology,
-  Sprint 9), FEAT-05-2 (Knowledge Ingestion Pipeline, Sprint 10), FEAT-05-3
-  (Validation & Trust Scoring, Sprint 11), and **FEAT-05-4 (Semantic Layer,
-  Sprint 12 — storage-independent, library-first)** are implemented; the Neo4j
-  binding and FEAT-05-5 are not started. `services/knowledge-graph` remains
-  scaffolded, there is no Neo4j binding yet, the trust engine is not yet wired into
-  ingestion, and the Semantic Layer is not yet wired to any store or consumer.
+  and the **wiring** of the library-first knowledge layer into a live service.
+  FEAT-05-1 (Core Ontology, Sprint 9), FEAT-05-2 (Knowledge Ingestion Pipeline,
+  Sprint 10), FEAT-05-3 (Validation & Trust Scoring, Sprint 11), **FEAT-05-4
+  (Semantic Layer, Sprint 12)**, and **FEAT-05-5 (Knowledge Lifecycle &
+  Versioning, Sprint 13 — storage-independent, library-first)** are all
+  implemented as libraries, so EPIC-05's knowledge-layer feature set is
+  functionally complete. Not yet started: the Neo4j binding (a `GraphStore` +
+  `SemanticQueryExecutor` implementation) and the live service. `services/
+  knowledge-graph` remains scaffolded; the trust engine is not yet wired into
+  ingestion; the Semantic Layer is not yet wired to any store or consumer; and the
+  lifecycle library is not yet wired to the pipeline or any store.
 - Module 6 Audit (EPIC-04) is now **functionally complete**: FEAT-04-1 (Audit
   Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7),
   FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7), and FEAT-04-4 (Audit
