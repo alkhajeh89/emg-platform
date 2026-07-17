@@ -21,13 +21,22 @@ FEAT-04-4, a later sprint).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from emg_audit_client import CustodyEvent, CustodyQuery, SubmittedCustodyEvent
-from fastapi import APIRouter, Query
+from emg_audit_pipeline import encode_cursor
+from emg_common_types import Classification
+from fastapi import APIRouter, Query, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..authn import AuditCustodianDep, AuditReaderDep
-from ..schemas import CustodyEventView, CustodyIngestResponse, IntegrityResponse
+from ..reporting import collect_all_custody, custody_events_to_csv
+from ..schemas import (
+    CustodyEventPage,
+    CustodyEventView,
+    CustodyIngestResponse,
+    IntegrityResponse,
+)
 from ..store import CustodyStoreDep
 
 router = APIRouter(prefix="/audit/custody", tags=["audit-custody"])
@@ -68,24 +77,108 @@ async def record_custody_event(
     )
 
 
+def _build_query(
+    *,
+    evidence_id: str | None,
+    custodian: str | None,
+    classification: Classification | None,
+    start_time: datetime | None,
+    end_time: datetime | None,
+    cursor: str | None,
+    limit: int,
+) -> CustodyQuery:
+    return CustodyQuery(
+        evidence_id=evidence_id,
+        custodian=custodian,
+        classification=classification,
+        start_time=start_time,
+        end_time=end_time,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
 @router.get("/events", response_model=list[CustodyEventView])
 async def query_custody_events(
     reader: AuditReaderDep,
     store: CustodyStoreDep,
     evidence_id: str | None = None,
     custodian: str | None = None,
+    classification: Classification | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[CustodyEventView]:
-    query = CustodyQuery(
+    query = _build_query(
         evidence_id=evidence_id,
         custodian=custodian,
+        classification=classification,
         start_time=start_time,
         end_time=end_time,
+        cursor=None,
         limit=limit,
     )
     return [_to_view(event) for event in store.query(query)]
+
+
+@router.get("/events/page", response_model=CustodyEventPage)
+async def query_custody_events_page(
+    reader: AuditReaderDep,
+    store: CustodyStoreDep,
+    evidence_id: str | None = None,
+    custodian: str | None = None,
+    classification: Classification | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> CustodyEventPage:
+    query = _build_query(
+        evidence_id=evidence_id,
+        custodian=custodian,
+        classification=classification,
+        start_time=start_time,
+        end_time=end_time,
+        cursor=cursor,
+        limit=limit,
+    )
+    events = store.query(query)
+    next_cursor = encode_cursor(events[-1].chain_sequence) if len(events) == limit else None
+    return CustodyEventPage(
+        items=[_to_view(event) for event in events],
+        next_cursor=next_cursor,
+        count=len(events),
+    )
+
+
+@router.get("/export", response_model=None)
+async def export_custody_events(
+    reader: AuditReaderDep,
+    store: CustodyStoreDep,
+    format: Literal["json", "csv"] = "json",
+    evidence_id: str | None = None,
+    custodian: str | None = None,
+    classification: Classification | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+) -> Response:
+    base = _build_query(
+        evidence_id=evidence_id,
+        custodian=custodian,
+        classification=classification,
+        start_time=start_time,
+        end_time=end_time,
+        cursor=None,
+        limit=100,
+    )
+    views = collect_all_custody(store, base, _to_view)
+    if format == "csv":
+        return PlainTextResponse(
+            custody_events_to_csv(views),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="custody_events.csv"'},
+        )
+    return JSONResponse(content=[view.model_dump(mode="json") for view in views])
 
 
 @router.get("/integrity", response_model=IntegrityResponse)

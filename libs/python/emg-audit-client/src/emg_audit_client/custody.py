@@ -109,15 +109,20 @@ class CustodyQuery(BaseModel):
     with AND. `start_time`/`end_time` bound `CustodyEvent.transfer_timestamp`,
     inclusive of `start_time` and exclusive of `end_time`.
 
-    Deliberately minimal for Sprint 7 (retrieval of a custody chain by evidence
-    item / custodian / time range). The richer human reporting surface is
-    FEAT-04-4, a later sprint.
+    Sprint 7 (FEAT-04-3) shipped the minimal retrieval surface (by evidence
+    item / custodian / time range). Sprint 8 (FEAT-04-4) adds — additively and
+    backward-compatibly — a `classification` filter and an opaque `cursor` for
+    stable keyset pagination over `chain_sequence` (unique + monotonic, so no
+    duplicates and no skipped records). `classification` is a filter dimension
+    only, not clearance-based access enforcement (see query.py).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     evidence_id: str | None = None
     custodian: str | None = None
+    classification: Classification | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
+    cursor: str | None = None
     limit: int = Field(default=100, ge=1, le=1000)

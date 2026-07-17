@@ -30,6 +30,7 @@ from .hashing import (
     recompute_event_hash,
 )
 from .integrity import IntegrityReport, verify_chain
+from .pagination import decode_cursor, encode_cursor
 from .stores import InMemoryAuditEventStore, PostgresAuditEventStore
 from .validation import (
     is_sensitive_key,
@@ -38,7 +39,7 @@ from .validation import (
     validate_and_sanitize_provenance,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "InMemoryAuditEventStore",
@@ -48,6 +49,8 @@ __all__ = [
     "IntegrityReport",
     "verify_chain",
     "verify_custody_chain",
+    "encode_cursor",
+    "decode_cursor",
     "compute_hash",
     "canonical_payload",
     "recompute_event_hash",

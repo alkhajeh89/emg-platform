@@ -39,10 +39,13 @@ def create_app() -> FastAPI:
             "authenticated ingestion, minimal US-04 query, integrity verification. "
             "FEAT-04-2 (Provenance Record Model) + FEAT-04-3 (Digital Evidence "
             "Chain-of-Custody, Sprint 7): versioned provenance on audit events and "
-            "a separate append-only custody ledger. Thin shell over the shared "
-            "emg-audit-client / emg-audit-pipeline libraries."
+            "a separate append-only custody ledger. FEAT-04-4 (Audit Query & "
+            "Reporting Interface, Sprint 8): richer classification-aware audit + "
+            "custody queries, opaque-cursor keyset pagination, and JSON/CSV report "
+            "export. Thin shell over the shared emg-audit-client / "
+            "emg-audit-pipeline libraries."
         ),
-        version="0.2.0",
+        version="0.3.0",
     )
 
     @app.middleware("http")
