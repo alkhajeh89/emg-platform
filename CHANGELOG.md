@@ -5,7 +5,58 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
-### Sprint 10 — EPIC-05 Knowledge Graph — Knowledge Ingestion Pipeline (FEAT-05-2) — in progress
+### Sprint 11 — EPIC-05 Knowledge Graph — Knowledge Validation & Trust Scoring (FEAT-05-3) — in progress
+
+- **New `libs/python/emg-trust-scoring`** (Module 7, EPIC-05, FEAT-05-3) — a
+  **deterministic, storage-independent** trust-scoring + advanced-validation
+  ("quality gates") engine, delivered **library-first**. It has no persistence,
+  no service, no Neo4j, no Semantic Layer, and no retrieval/search/embeddings/
+  AI/UI.
+  - **Trust factors** (`factors.py`): the eight scoring dimensions — source
+    confidence, provenance quality, evidence completeness, validation status,
+    ownership confidence, temporal freshness, relationship consistency, and
+    ingestion quality.
+  - **Signals** (`signals.py`): `TrustSignals` — a frozen, bounded model of the
+    **observable inputs** the engine scores from. It has **no trust field**, so
+    a caller can supply signals but never a trust value (trust cannot be
+    spoofed).
+  - **Scoring policy** (`policy.py`): `ScoringPolicy` — per-factor weights (sum
+    ≈ 1), a temporal-decay half-life, an acceptance threshold, and a pinned
+    `policy_version`; `DEFAULT_POLICY`. Frozen/immutable.
+  - **Scoring engine** (`engine.py`): pure, deterministic per-factor
+    computations and a weighted composite, clamped to `[0, 1]` and rounded to a
+    fixed precision for reproducibility. No wall-clock, no randomness (temporal
+    freshness uses an explicit `as_of`).
+  - **Result + explanation** (`result.py`): `TrustScoreResult` — a frozen
+    composite score with a per-factor **breakdown** (raw sub-score, weight,
+    weighted contribution), the policy version, an acceptance verdict against the
+    threshold, and a human-readable explanation. Immutable and reproducible.
+  - **Advanced validation** (`validation.py`): typed `QualityCheck` /
+    `QualityGateReport` for evidence completeness, provenance integrity,
+    ownership consistency, identifier consistency, ontology consistency,
+    relationship consistency, duplicate-confidence, temporal validation, and
+    lifecycle validation.
+  - **Combined evaluation** (`evaluate.py`): `evaluate(...)` returns a frozen
+    `TrustEvaluation` (quality-gate report + trust score) computed from one set
+    of signals.
+- **Security posture:** trust is **computed from signals, never a caller-chosen
+  value**; the engine is pure and deterministic (identical signals + policy ⇒
+  identical, byte-reproducible output — pinned by a golden test); results are
+  immutable (frozen); ratios/penalties are clamped so a single manipulated
+  signal cannot dominate the composite.
+- Scope note: Sprint 11 implements **FEAT-05-3 only**. **FEAT-05-4 (Semantic
+  Layer + Neo4j adapter) and FEAT-05-5 (Knowledge Lifecycle & Versioning) are
+  deferred.** The engine is **not** wired into the ingestion pipeline this sprint
+  (that would change merged FEAT-05-2 behaviour; it is a follow-up for the future
+  live ingestion service). `services/knowledge-graph` remains scaffolded. **No
+  Neo4j, no new database, no Modules 8–10 work, no new role, no new ADR.** No
+  Module 6 record or hash is modified.
+- New docs: `docs/engineering/sprint-11-design.md`,
+  `libs/python/emg-trust-scoring/README.md`; Sprint 11 sections added to
+  `docs/engineering/testing-strategy.md` and
+  `docs/engineering/security-limitations.md`.
+
+### Sprint 10 — EPIC-05 Knowledge Graph — Knowledge Ingestion Pipeline (FEAT-05-2) — complete (merged, PR #10, `bf8d460`)
 
 - **New `libs/python/emg-knowledge-pipeline`** (Module 7, EPIC-05, FEAT-05-2) —
   the **storage-independent Knowledge Ingestion Pipeline** that converts
