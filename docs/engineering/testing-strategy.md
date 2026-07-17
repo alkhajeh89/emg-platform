@@ -112,3 +112,43 @@ Docker or a database by default:
 - The **merge-blocking golden hash gate** (`test_backward_compat_hashing.py`,
   Sprint 7) continues to run unchanged: FEAT-04-4 adds only read paths and
   index-only SQL, so every stored `event_hash` is byte-for-byte unchanged.
+
+## Core Ontology testing (Sprint 9, FEAT-05-1)
+
+`libs/python/emg-ontology/tests` — pure, storage-independent unit tests (no
+Docker, no database, no Neo4j; the ontology is a model + conformance library):
+
+- `test_import.py` — version, pinned `ontology_schema_version`, public-surface
+  export, and the registry counts (16 entity types, 8 relationship types).
+- `test_core_envelope.py` — the governance envelope **required by
+  construction**: missing classification / trust_score / provenance rejected at
+  construction; trust-score range (boundary + out-of-range); frozen/immutable
+  entities; extra-field (mass-assignment) rejection; invalid lifecycle state;
+  effective-date validation; self-supersession rejection; and
+  supersession-creates-a-new-version-while-the-original-stays-immutable.
+- `test_domains.py` — every Organizational and Risk & Safety entity constructs
+  with the envelope and pins its `entity_type`; a forged type tag is rejected; a
+  missing envelope is non-conformant; archetype assignment is correct.
+- `test_relationships.py` — the catalog contains exactly the approved eight
+  types, each fully specified (source/target/cardinality/mutability/direction/
+  self-loop); the `Relationship` model requires the envelope and is
+  frozen/extra-forbidding.
+- `test_conformance.py` — the US-05 "conformance test rejects a non-conforming
+  write" criterion, one required rejection category per test: unknown entity/
+  relationship type, missing classification/trust_score/provenance, out-of-range
+  trust score, invalid lifecycle, invalid effective dates, mass-assignment,
+  invalid source/target type, self-loop, dangling endpoint, classification
+  dominance (edge below an endpoint), and cardinality — plus the accept paths
+  and the typed-error raising helpers.
+- `test_descriptor_golden.py` — the descriptor is deterministic (byte-stable)
+  and its SHA-256 is pinned as a **merge-blocking golden gate**
+  (`_GOLDEN_DESCRIPTOR_HASH`), the same pattern as the Module 6 golden audit
+  hash; structural assertions confirm sorted output and the required-envelope
+  flags on every entity.
+- `test_audit_contract.py` — the graph-mutation action names and audit-module
+  tag the future FEAT-05-2 write path will honor are pinned, and the metadata
+  helper is proven to carry identifiers/types only (never entity content).
+
+The Module 6 **golden audit-hash regression** and the full Sprint 1–8 suites run
+unchanged alongside these; FEAT-05-1 is a new, isolated library and touches no
+Module 1–6 code, record, or hash.

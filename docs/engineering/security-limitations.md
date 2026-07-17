@@ -325,12 +325,68 @@ before production load.
   bounded retry), so this is a throughput/availability hardening item, not a
   correctness defect.
 
+## Controls and limitations (Sprint 9, FEAT-05-1 Core Ontology)
+
+Sprint 9 delivers the Core Ontology **library-first** (`emg-ontology`) — a model
++ conformance layer with **no persistence, no live service, and no Neo4j
+binding**. Its security posture this sprint is about *modeling primitives* the
+future write path (FEAT-05-2) will build on, not runtime enforcement.
+
+**Controls implemented:**
+- **Governance envelope by construction.** Every entity requires
+  `classification`, `trust_score`, and a `provenance_reference` (a *reference*
+  into Module 6, never a copy); models are frozen and `extra="forbid"`, so
+  mass-assignment and missing-envelope "writes" fail at construction.
+- **Conformance validator** — pure and storage-independent; rejects unknown
+  types, missing/invalid envelope fields, out-of-range trust, invalid lifecycle,
+  invalid effective dates, invalid source/target types, cardinality violations,
+  dangling endpoints, prohibited self-loops, mass-assignment, and — for the
+  inference/leakage concern — an **edge classification below either endpoint**
+  (classification dominance).
+- **Immutable history / no delete path.** Supersession + versioning + effective
+  dating only; there is no mutate-in-place or delete API, so historical versions
+  cannot be silently changed.
+- **Deterministic, versioned descriptor** guarded by a golden gate — an
+  unreviewed change to the ontology shape fails the build.
+- **Single system-of-record.** The ontology links to Module 6 audit/provenance/
+  custody by identifier only; no audit content is duplicated, and the
+  audit-metadata helper carries identifiers/types only (no entity content).
+
+**Limitations (deliberate Sprint 9 scope boundaries, not gaps):**
+- **Classification is a modeling attribute, not read enforcement.** As with
+  Module 6, Sprint 9 provides classification *tagging by construction* only. It
+  does not enforce clearance-based reads of graph entities/relationships (no PEP
+  integration, no new role, no human reader role). Traversal-authorization
+  leakage, inference from restricted relationships, and business-unit/tenant
+  isolation are addressed at the *substrate* level (every node and edge is
+  classified, and the dominance rule prevents an under-classified edge) but are
+  **not runtime-enforced** — enforcement arrives with the live query/traversal
+  surface (FEAT-05-4) and the same clearance/role/ADR decision deferred out of
+  FEAT-04-4.
+- **Cardinality and dangling-endpoint checks are context-supplied.** The pure
+  validator checks these only against the sibling edges / known-id universe the
+  caller passes in; global graph-wide guarantees (uniqueness, orphan detection,
+  DoS-via-expansion limits) are the persistence/traversal layer's job
+  (FEAT-05-2 / FEAT-05-4).
+- **No audit emission.** The graph-mutation audit contract is *defined* but
+  nothing is emitted (no write service). "Fail-closed on degraded audit" for
+  graph writes is a decision to be ratified with FEAT-05-2.
+- **Trust score is a stored field only** — no scoring engine (FEAT-05-3).
+  **Lifecycle status is a validated field only** — no managed state machine
+  (FEAT-05-5).
+
 ## Deferred to later sprints (not started)
 
 - Module 5 Authorization Platform: a live network-reachable authorization
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
+- Knowledge Graph (EPIC-05) remaining features: **FEAT-05-2 (Knowledge
+  Ingestion Pipeline — includes the Neo4j binding + live write path + audit
+  emission), FEAT-05-3 (Validation & Trust Scoring), FEAT-05-4 (Semantic Layer
+  — storage-independent query/traversal), FEAT-05-5 (Knowledge Lifecycle &
+  Versioning)**. FEAT-05-1 (Core Ontology) ships in Sprint 9; the rest are not
+  started. `services/knowledge-graph` remains scaffolded.
 - Module 6 Audit (EPIC-04) is now **functionally complete**: FEAT-04-1 (Audit
   Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7),
   FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7), and FEAT-04-4 (Audit
@@ -340,6 +396,6 @@ before production load.
   authorization** (a human reader role + policy-engine enforcement, likely a new
   ADR) — see the classification limitation above. Classification *filtering*
   ships in FEAT-04-4; classification *enforcement* does not.
-- Knowledge Graph, Search, GraphRAG, AI agents, Decision Intelligence
-  (EPIC-05 onward).
+- Search, GraphRAG, AI agents, Decision Intelligence (EPIC-06 onward; Modules
+  8–10).
 - Frontend features (EPIC-10 onward).

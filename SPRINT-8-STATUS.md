@@ -1,10 +1,12 @@
 # Sprint 8 Completion Status — EPIC-04 Audit Query & Reporting Interface (FEAT-04-4)
 
-**Status:** Sprint 8 — **Complete — pending merge.** Implements **FEAT-04-4
-(Audit Query & Reporting Interface)** only, the final EPIC-04 feature. With it
-delivered, **EPIC-04 (Audit Platform) is functionally complete** (FEAT-04-1 →
-FEAT-04-4), and the EPIC-05 (Module 7) dependency gate is unblocked for a future
-sprint. Nothing committed, pushed, or merged.
+**Status:** Sprint 8 — **Complete and merged** (**PR #8**, merge commit
+**`79eaae6`**, → `develop`). Implements **FEAT-04-4 (Audit Query & Reporting
+Interface)** only, the final EPIC-04 feature. With it delivered, **EPIC-04
+(Audit Platform) is complete** (FEAT-04-1 → FEAT-04-4), and the EPIC-05
+(Module 7) dependency gate is now **unblocked** — Sprint 9 begins EPIC-05 with
+FEAT-05-1 (Core Ontology). The historical, pre-merge detail below is preserved
+as a record of the sprint as executed.
 
 **Security review result:** a final security-focused review of the Sprint 8
 working-tree diff concluded **APPROVE WITH MINOR FIXES** (no blocking defects,
