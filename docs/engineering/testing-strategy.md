@@ -152,3 +152,62 @@ Docker, no database, no Neo4j; the ontology is a model + conformance library):
 The Module 6 **golden audit-hash regression** and the full Sprint 1–8 suites run
 unchanged alongside these; FEAT-05-1 is a new, isolated library and touches no
 Module 1–6 code, record, or hash.
+
+## Knowledge Ingestion Pipeline testing (Sprint 10, FEAT-05-2)
+
+`libs/python/emg-knowledge-pipeline/tests` — pure unit tests (no Docker, no
+database, no Neo4j; the pipeline persists through an in-memory `GraphStore`
+adapter):
+
+- `test_ingestion.py` — successful end-to-end ingestion (validate → persist →
+  emit audit), **idempotent re-ingestion** (nothing created, everything skipped,
+  no new audit events), deterministic ids stable across pipelines, **server-side
+  assignment** of owner/trust/provenance, provenance→audit-event linkage,
+  correlation-id preservation, per-source-type trust defaults, and
+  per-principal id isolation.
+- `test_validation.py` — **no persistence before validation succeeds**, one
+  typed problem per rejection category: unknown entity type, invalid
+  relationship endpoint types, dangling endpoints, in-batch duplicates, cyclic
+  `DERIVED_FROM` lineage, self-loops, invalid effective dates, unknown domain
+  attributes, oversized batch, and oversized attribute values.
+- `test_transactions.py` — **rollback on persistence failure leaves no partial
+  graph** (and emits no audit), explicit `rollback()` and context-manager
+  rollback-on-exception, and the append-only guarantee (no update/delete on the
+  store or transaction).
+- `test_security.py` — server-assigned fields are **not fields on the request
+  models** (structural), mass-assignment via extra fields and via `attributes`
+  is rejected, owner/trust/provenance are never taken from the request, and
+  natural-key / attribute-count / attribute-length bounds (oversized-payload DoS
+  prevention).
+- `test_audit_and_supersession.py` — audit module/actor/source/outcome, metadata
+  carries identifiers/types only (no entity content), provenance references the
+  audit event, `build_mutation_event` supports **all four** actions
+  (`entity.created` / `relationship.created` / `entity.superseded` /
+  `relationship.superseded`), and the minimal supersession primitives emit the
+  `*.superseded` + `*.created` pair while leaving the prior (historical) version
+  immutable.
+- `test_concurrency_and_batch.py` — a 16-thread concurrent identical ingestion
+  collapses to a single graph (idempotent, no fork, no unhandled error), batch
+  dependency ordering (entities before relationships) resolves same-batch
+  endpoints, a partially-invalid batch is atomically rejected, and (Sprint 10
+  review round) **concurrent different-content ingestion for the same
+  deterministic id** yields exactly one persisted, uncorrupted entity with every
+  losing attempt returning a typed error.
+- Sprint 10 review-round adversarial tests: **deep-chain cycle detection**
+  (`test_validation.py`) — a `DERIVED_FROM` chain far deeper than Python's
+  recursion limit is validated without `RecursionError` both at the
+  `_detect_cycle` unit level (5000 deep) and end-to-end through the pipeline
+  (1100 deep, within batch limits), and the cyclic variant is still rejected
+  with `CODE_CYCLIC_DEPENDENCY`; **duplicate relationship in a batch**
+  (`CODE_DUPLICATE_RELATIONSHIP_IN_BATCH`); and **same-deterministic-id /
+  different-content** (`test_transactions.py`) — the store rejects it with
+  `GRAPH_ENTITY_CONFLICT` and the pipeline rejects it at validation, in both
+  cases leaving the original record unchanged, while identical content is an
+  idempotent no-op.
+- `test_import.py` — version, public surface, and that `InMemoryGraphStore` /
+  its transaction satisfy the `GraphStore` / `GraphTransaction` Protocols.
+
+The **Module 6 golden audit-hash** and the **Sprint 9 golden ontology
+descriptor** regressions run unchanged; FEAT-05-2 is a new isolated library that
+touches no Module 1–6 code, record, or hash, and re-uses (does not modify) the
+`emg-ontology` models and the `emg-audit-client` contract.

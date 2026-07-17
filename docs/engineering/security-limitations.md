@@ -375,18 +375,90 @@ future write path (FEAT-05-2) will build on, not runtime enforcement.
   **Lifecycle status is a validated field only** — no managed state machine
   (FEAT-05-5).
 
+## Controls and limitations (Sprint 10, FEAT-05-2 Knowledge Ingestion Pipeline)
+
+Sprint 10 delivers the ingestion pipeline **library-first** and
+**storage-independent** (`emg-knowledge-pipeline`), persisting through an
+in-memory `GraphStore` adapter. There is **no Neo4j binding, no live service,
+and no HTTP surface** this sprint.
+
+**Controls implemented:**
+- **Server-side assignment of trust boundaries.** `owner`,
+  `provenance_reference`, and `trust_score` are assigned by the pipeline from the
+  `IngestionContext`, never from the request — and they are **not fields on the
+  request models at all**, so spoofing them is structurally impossible (the same
+  posture as the Sprint 6 `SubmittedAuditEvent`). `source_principal` is part of
+  every deterministic id, so one producer cannot overwrite or suppress another's
+  nodes (Sprint 6 P5 posture).
+- **Mass-assignment rejected** — request models are `extra="forbid"`, and an
+  attempt to set a server-assigned/envelope field via `attributes` is a typed
+  validation failure, not a silent drop.
+- **Oversized-payload DoS prevention** — natural keys, attribute values,
+  attribute counts, and batch sizes are all bounded; an over-limit request is
+  rejected before any work.
+- **No persistence before validation** — the validator runs ontology
+  conformance + duplicate/dangling/cycle checks first; only a fully valid batch
+  is persisted, atomically (rollback ⇒ no partial graph), and audit is emitted
+  only after a durable commit.
+- **Cycle detection is iterative (no recursion DoS)** — the `DERIVED_FROM`
+  cycle check uses an explicit-stack DFS, so a long acyclic chain up to
+  `MAX_BATCH_RELATIONSHIPS` cannot exhaust Python's recursion limit (Sprint 10
+  review fix C1). A prohibited cycle is a typed `CODE_CYCLIC_DEPENDENCY`
+  rejection, never an unhandled `RecursionError`.
+- **Single system of record** — a persisted node's `provenance_reference` points
+  at the Module-6 audit event emitted for its creation; no audit content is
+  copied into the graph, and correlation ids ride on the audit event.
+
+**Limitations (deliberate Sprint 10 scope boundaries, not gaps):**
+- **Trust score is an interim server default, not a computed score** — the
+  pipeline assigns a conservative source-type default; composite trust *scoring*
+  is FEAT-05-3.
+- **Classification is carried and dominance-checked on edges, but reads are not
+  clearance-enforced** — there is no live read/traversal surface this sprint;
+  clearance-based read authorization arrives with the Semantic Layer (FEAT-05-4)
+  and the role/ADR decision deferred out of FEAT-04-4.
+- **Cardinality is checked intra-batch only** — global (cross-store) cardinality
+  and graph-wide traversal-DoS limits are the persistence/traversal layer's job
+  (FEAT-05-4).
+- **Supersession is a minimal primitive** — `supersede_entity`/
+  `supersede_relationship` emit the `*.superseded` contracts and append a new
+  version, but the managed lifecycle state machine and current-version
+  resolution are FEAT-05-5.
+- **Audit delivery is via an injected sink** — the default is an in-memory
+  collecting sink; a production deployment injects a durable `AuditSink` (the
+  Sprint 6 degraded-spool posture). "Fail-closed on degraded audit" for graph
+  writes remains a decision to finalize when the live ingestion service is
+  built.
+- **In-memory store only** — the Neo4j adapter, the storage-independent Semantic
+  Layer, and durability/HA are FEAT-05-4 / production. No other database is
+  introduced.
+- **Deferred hardening (Sprint 10 review C2) — commit-authoritative result +
+  audit.** The `IngestionResult` `created`/`skipped` split and the audit
+  emission are computed from the pre-commit validation snapshot, not the
+  committed outcome. Under a genuine race, two callers can each report "created"
+  for the same deterministic id and re-emit its audit event. This is **benign
+  and bounded**: the persisted graph is always correct (the store's `_apply` is
+  lock-serialized — never a fork or duplicate node), and mutation audit
+  `event_id`s are deterministic so Module 6 deduplicates a re-emit. It is
+  **not** fixed in Sprint 10 (no transaction/audit redesign). Deferred
+  hardening: the graph transaction should report the *actually inserted* ids and
+  the ingestion result + audit emission should be derived from the authoritative
+  commit outcome — target phase: the **future persistent (Neo4j) adapter / live
+  ingestion service** (FEAT-05-4 and the service). Not claimed as fixed.
+
 ## Deferred to later sprints (not started)
 
 - Module 5 Authorization Platform: a live network-reachable authorization
   service, if a future sprint's design calls for one (EPIC-03 is otherwise
   complete after Sprint 5's FEAT-03-3/03-4). Hardening the advisory
   unknown-role check into a load-blocking failure is also deferred.
-- Knowledge Graph (EPIC-05) remaining features: **FEAT-05-2 (Knowledge
-  Ingestion Pipeline — includes the Neo4j binding + live write path + audit
-  emission), FEAT-05-3 (Validation & Trust Scoring), FEAT-05-4 (Semantic Layer
-  — storage-independent query/traversal), FEAT-05-5 (Knowledge Lifecycle &
-  Versioning)**. FEAT-05-1 (Core Ontology) ships in Sprint 9; the rest are not
-  started. `services/knowledge-graph` remains scaffolded.
+- Knowledge Graph (EPIC-05) remaining features: **FEAT-05-3 (Validation & Trust
+  Scoring), FEAT-05-4 (Semantic Layer — storage-independent query/traversal + the
+  Neo4j adapter), FEAT-05-5 (Knowledge Lifecycle & Versioning)**. FEAT-05-1
+  (Core Ontology) shipped in Sprint 9 and **FEAT-05-2 (Knowledge Ingestion
+  Pipeline)** ships in Sprint 10 (library-first, in-memory graph adapter); the
+  rest are not started. `services/knowledge-graph` remains scaffolded and there
+  is no Neo4j binding yet.
 - Module 6 Audit (EPIC-04) is now **functionally complete**: FEAT-04-1 (Audit
   Event Pipeline, Sprint 6), FEAT-04-2 (Provenance Record Model, Sprint 7),
   FEAT-04-3 (Digital Evidence Chain-of-Custody, Sprint 7), and FEAT-04-4 (Audit
