@@ -5,7 +5,69 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
-### Sprint 11 — EPIC-05 Knowledge Graph — Knowledge Validation & Trust Scoring (FEAT-05-3) — in progress
+### Sprint 12 — EPIC-05 Knowledge Graph — Semantic Layer (FEAT-05-4) — in progress
+
+- **New `libs/python/emg-semantic-layer`** (Module 7, EPIC-05, FEAT-05-4) — a
+  **storage-independent, deterministic** Semantic Layer, delivered
+  **library-first**. It **defines semantics only and executes nothing**: no
+  persistence, no database driver, no networking, **no Neo4j**, no retrieval, no
+  embeddings, no AI, no LLM integration, no REST API, and no UI.
+  - **Graph value objects** (`graph.py`): `SemanticNode`, `SemanticRelationship`,
+    `SemanticGraph` — immutable, storage-independent projections with pure lookup
+    helpers (`node`, `relationships_of`, `neighbors`); node/relationship types are
+    plain labels and properties are plain scalars (no ontology dependency).
+  - **Closed enums** (`enums.py`): `TraversalDirection`, `FilterOperator`,
+    `BooleanOperator`, `SortDirection` — a fixed operator vocabulary, never a
+    caller string, callable, or expression (no injection surface).
+  - **Filtering** (`filters.py`): `FilterCondition` (a leaf predicate) combined by
+    a bounded, recursive `SemanticFilter`; pure data, nesting depth bounded by
+    `MAX_FILTER_DEPTH`.
+  - **Query model** (`query.py`): `NodeSelector` (entity lookup), `TraversalStep`
+    / `SemanticTraversal` (bounded relationship traversal), `SemanticProjection`,
+    `SortKey` / `SemanticOrdering`, `Pagination`, and the composed `SemanticQuery`
+    — all frozen and self-validating; traversal depth ≤ `MAX_TRAVERSAL_DEPTH` and
+    page size within `[MIN_PAGE_LIMIT, MAX_PAGE_LIMIT]` by construction.
+  - **Planner** (`planner.py`): `plan(query)` compiles a query into an immutable,
+    deterministic `SemanticPlan` (canonical order
+    `SELECT → TRAVERSE → FILTER → ORDER → PAGINATE → PROJECT`) — the execution
+    *semantics*, without executing. Raises `SemanticQueryError` on a semantic
+    violation.
+  - **Result model** (`result.py`): `SemanticResult` + `PageInfo` — the immutable
+    output shape a conforming executor returns.
+  - **Extension point** (`execution.py`): the `SemanticQueryExecutor` protocol —
+    the **only** integration seam; a future storage binding (e.g. a Neo4j adapter)
+    implements it. This library implements nothing and connects to nothing. It is
+    a distinct **read-query** seam, complementary to FEAT-05-2's append-only
+    `GraphStore` **persistence** contract (a future adapter may implement both).
+  - **Deep immutability** (Sprint 12 review fix): `SemanticNode` /
+    `SemanticRelationship` `properties` is stored as a read-only mapping over a
+    private copy, so it cannot be mutated indirectly nor aliased to a caller's
+    dict.
+  - **Full size bounds** (review fix): centrally-defined caps for page offset
+    (`MAX_PAGE_OFFSET`), selector ids (`MAX_SELECTOR_IDS`), filter width
+    (`MAX_FILTER_CONDITIONS`, `MAX_FILTER_GROUPS`), projection fields
+    (`MAX_PROJECTION_FIELDS`), and ordering keys (`MAX_ORDERING_KEYS`), in addition
+    to the existing depth/limit/fan-out caps.
+  - **Identifier/label validation** (review fix): a reusable `ensure_safe_label`
+    (exported) rejects empty/whitespace-only strings and any NUL, ASCII control,
+    CR/LF, or Unicode bidi override/control character across all ids, type names,
+    relationship-type names, filter/projection/ordering fields, and property keys;
+    legitimate Unicode is preserved.
+  - **Planner** framed as a deterministic **canonical step-order** plan (review
+    fix): `PlanStep.detail` is human-readable text, not an executable form.
+  - **Tests**: 126 tests — the original 68 plus 58 adversarial tests (nested-
+    property mutation and input-dict aliasing, offset/collection bounds at and
+    above the limit, control/NUL/CR-LF/bidi identifier rejection, extreme integers,
+    filter nesting/width limits, deterministic/repeated planning, the documented
+    result-forgery trust boundary, and executor-protocol misuse).
+  - **Dependencies**: `emg-common-types`, `emg-errors`, `pydantic` only — **not**
+    `emg-ontology`, `emg-knowledge-pipeline`, or `emg-trust-scoring` (clean
+    dependency direction; integration only via the extension point).
+  - Quality gates: `ruff` clean, `black` clean, `mypy --strict` clean, full
+    regression green. Not wired into any service; `services/knowledge-graph`
+    remains scaffolded.
+
+### Sprint 11 — EPIC-05 Knowledge Graph — Knowledge Validation & Trust Scoring (FEAT-05-3) — complete (merged — PR #12, `d27ab59`)
 
 - **New `libs/python/emg-trust-scoring`** (Module 7, EPIC-05, FEAT-05-3) — a
   **deterministic, storage-independent** trust-scoring + advanced-validation

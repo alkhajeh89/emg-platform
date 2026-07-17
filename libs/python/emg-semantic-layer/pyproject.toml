@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-semantic-layer"
+version = "0.1.0"
+description = "Storage-independent Semantic Layer (Module 7 — Knowledge Graph, EPIC-05, FEAT-05-4): immutable, deterministic query/traversal/projection abstractions that decouple every knowledge consumer from the underlying persistence technology. Defines semantics only — no persistence, no database driver, no networking, no Neo4j. Executes nothing; storage bindings implement a single extension point. Added Sprint 12."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = ["emg-common-types", "emg-errors", "pydantic>=2.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_semantic_layer"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
