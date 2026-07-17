@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-ontology"
+version = "0.1.0"
+description = "Core Ontology model + conformance layer (Module 7 — Knowledge Graph, EPIC-05, FEAT-05-1): governed entity/relationship types, classification + trust-score + provenance-reference by construction, a pure storage-independent conformance validator, and a deterministic versioned ontology descriptor. Library-first; no persistence, no Neo4j binding (FEAT-05-2/05-4). Added Sprint 9."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = ["emg-common-types", "emg-errors", "pydantic>=2.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_ontology"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

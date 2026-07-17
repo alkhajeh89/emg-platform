@@ -5,7 +5,60 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
-### Sprint 8 — EPIC-04 Audit Query & Reporting Interface (FEAT-04-4) — complete, pending merge
+### Sprint 9 — EPIC-05 Knowledge Graph — Core Ontology (FEAT-05-1) — in progress
+
+- **New `libs/python/emg-ontology`** (Module 7, EPIC-05, FEAT-05-1) — the
+  governed **Core Ontology** as a **library-first** model + conformance layer,
+  the same contract-first pattern as `emg-policy-engine` and `emg-audit-client`.
+  No persistence, no live service, no Neo4j binding this sprint (those are
+  FEAT-05-2 / FEAT-05-4).
+  - **Core archetypes**: an abstract `Entity` and the `Actor`, `Artifact`,
+    `Event` archetypes, plus a governed `Relationship` model. Every concrete
+    entity requires, by construction, an `entity_id`, `entity_type`,
+    `classification` (reused `emg_common_types.Classification`), `trust_score`,
+    `provenance_reference` (a *reference* into Module 6, never a copy), `owner`,
+    `lifecycle_status`, `version`, and effective dating.
+  - **Organizational domain**: Organization, BusinessUnit, Person, Role, System,
+    Project, Process. **Risk & Safety domain**: Risk, Control, Policy,
+    Regulation, Incident, Evidence. Minimal Module-6 **reference** types
+    (AuditEvent / ProvenanceRecord / CustodyRecord) for linkage only — no audit
+    content copied.
+  - **Governed relationship catalog**: HOLDS, OWNED_BY, MITIGATED_BY, GOVERNS,
+    REQUIRES, DERIVED_FROM, REFERENCES, IMPACTS — each with source/target types,
+    direction, cardinality, classification, provenance, effective dating,
+    version, and mutability/supersession semantics. No traversal or query
+    execution.
+  - **Conformance validator** (`conformance.py`) — pure, storage-independent,
+    returning typed machine-readable errors; rejects unknown entity/relationship
+    types, missing classification/trust_score/provenance, out-of-range trust
+    score, invalid lifecycle state, invalid source/target types, cardinality
+    violations, an edge classification below either endpoint, dangling
+    endpoints, prohibited self-loops, invalid effective dates, and mass-assigned
+    extra fields.
+  - **Versioning**: a pinned `ontology_schema_version`, per-entity and
+    per-relationship `version`, supersession references, effective dating, and
+    immutable historical versions (no delete path, no silent mutation). Full
+    lifecycle-state management is FEAT-05-5 (deferred).
+  - **Deterministic ontology descriptor** generated from the code models
+    (the models are authoritative — no RDF/OWL/SHACL/YAML authority), guarded by
+    a **golden descriptor compatibility test**.
+  - **Audit contract** (definition only): the future graph-mutation event names
+    (`entity.created`, `entity.superseded`, `relationship.created`,
+    `relationship.superseded`) and correlation/provenance representation are
+    defined in the models; live audit delivery is deferred to the FEAT-05-2
+    write service (Sprint 9 has no write path).
+- Scope note: Sprint 9 implements **FEAT-05-1 only**. **FEAT-05-2 (Knowledge
+  Ingestion Pipeline), FEAT-05-3 (Validation & Trust Scoring), FEAT-05-4
+  (Semantic Layer), and FEAT-05-5 (Knowledge Lifecycle & Versioning) are
+  deferred.** `services/knowledge-graph` remains scaffolded. No Neo4j binding,
+  no Modules 8–10 work, **no new role, no new ADR**, and no policy-engine /
+  classification-clearance enforcement (Sprint 9 provides classification
+  *tagging by construction* only). No Module 6 record or hash is modified.
+- New docs: `docs/engineering/sprint-9-design.md`, `libs/python/emg-ontology/README.md`;
+  Sprint 9 sections added to `docs/engineering/testing-strategy.md` and
+  `docs/engineering/security-limitations.md`.
+
+### Sprint 8 — EPIC-04 Audit Query & Reporting Interface (FEAT-04-4) — complete (merged, PR #8, `79eaae6`)
 
 - `libs/python/emg-audit-client` (0.3.0): **richer, backward-compatible query
   models (FEAT-04-4)** — `AuditQuery` gains optional `module`, `action`,

@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 8 (EPIC-04 Audit Platform completion: FEAT-04-4 Audit Query & Reporting Interface, complete — pending merge) |
+| Engineering Phase | Active — Sprint 9 (EPIC-05 Knowledge Graph: FEAT-05-1 Core Ontology, library-first, in progress) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -72,25 +72,44 @@ hash chain, per-evidence custody sequence, tamper/gap detection, and
 `(source_principal, custody_event_id)` idempotency). See
 `docs/engineering/sprint-7-design.md` and `SPRINT-7-STATUS.md`.
 
-**Sprint 8** (EPIC-04 Audit Platform completion, FEAT-04-4 — complete, pending
-merge): the **Audit Query & Reporting Interface** — classification-aware audit
-and custody query filters (actor, module, action, outcome, correlation id,
-source system, classification, provenance-presence; evidence id / custodian for
-custody), stable **opaque-cursor keyset pagination** (deterministic, no
-duplicates, no skipped records), and **backend JSON/CSV report export** (no
-HTML, no UI). Reuses the existing `svc-audit` role; a new index migration
-(`004`) is index-only and changes no stored hash (the golden gate stays green).
-Classification is a *filter* dimension this sprint — clearance-based read
-authorization is a documented follow-up. With FEAT-04-4 delivered, **EPIC-04
-(Audit Platform) is functionally complete** (FEAT-04-1 → FEAT-04-4). See
+**Sprint 8** (EPIC-04 Audit Platform completion, FEAT-04-4 — complete, merged as
+PR #8, merge commit `79eaae6`): the **Audit Query & Reporting Interface** —
+classification-aware audit and custody query filters (actor, module, action,
+outcome, correlation id, source system, classification, provenance-presence;
+evidence id / custodian for custody), stable **opaque-cursor keyset pagination**
+(deterministic, no duplicates, no skipped records), and **backend JSON/CSV
+report export** (no HTML, no UI). Reuses the existing `svc-audit` role; a new
+index migration (`004`) is index-only and changes no stored hash (the golden
+gate stays green). Classification is a *filter* dimension this sprint —
+clearance-based read authorization is a documented follow-up. With FEAT-04-4
+delivered, **EPIC-04 (Audit Platform) is complete** (FEAT-04-1 → FEAT-04-4). See
 `docs/engineering/sprint-8-design.md` and `SPRINT-8-STATUS.md`.
 
-No business logic beyond Module 4 (Identity), Module 5 (Authorization
-PEP/ABAC/RBAC), and Module 6's FEAT-04-1 through FEAT-04-4 audit platform exists
-yet — no Knowledge Graph, no AI orchestration, and no frontend code. Those land
-in later sprints per `docs/architecture/EMG_Engineering_Backlog_v1.0.md`,
-Section 6 (Sprint Planning). EPIC-05 (Module 7 Knowledge Graph) is now unblocked
-but has not been started.
+**Sprint 9** (EPIC-05 Knowledge Graph, FEAT-05-1 — in progress): the **Core
+Ontology**, delivered **library-first** as `libs/python/emg-ontology`. It defines
+the governed ontology model — an abstract `Entity` and the
+`Actor`/`Artifact`/`Event`/`Relationship` archetypes, plus the **Organizational**
+(Organization, BusinessUnit, Person, Role, System, Project, Process) and **Risk &
+Safety** (Risk, Control, Policy, Regulation, Incident, Evidence) domains — where
+every entity carries `classification`, `trust_score`, and a `provenance_reference`
+**by construction**, alongside a pure, storage-independent **conformance
+validator** and a deterministic, pinned-version ontology descriptor
+(golden-tested). It reuses `emg_common_types.Classification`; the trust-score is
+a required *field* only (scoring is FEAT-05-3), and provenance is a *reference*
+into Module 6, never a copy. `services/knowledge-graph` **remains scaffolded** —
+no live service, no HTTP surface, and no Neo4j binding this sprint (persistence
+and ingestion are FEAT-05-2; the storage-independent semantic layer is
+FEAT-05-4). See `docs/engineering/sprint-9-design.md` and `SPRINT-9-STATUS.md`.
+
+Business logic so far covers Module 4 (Identity), Module 5 (Authorization
+PEP/ABAC/RBAC), Module 6's complete FEAT-04-1 through FEAT-04-4 audit platform,
+and — beginning in Sprint 9 — Module 7's **FEAT-05-1 Core Ontology as a
+governed model library** (`emg-ontology`). There is still no knowledge
+ingestion pipeline, no graph persistence/Neo4j binding, no search or retrieval,
+no AI orchestration, and no frontend code. Those land in later sprints per
+`docs/architecture/EMG_Engineering_Backlog_v1.0.md`, Section 6 (Sprint
+Planning). FEAT-05-2 through FEAT-05-5, EPIC-06+, and Modules 8–10 have not been
+started.
 
 ## Repository Structure
 
@@ -114,9 +133,11 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
                   (emg-auth-client) and the ABAC policy engine
                   (emg-policy-engine), Sprint 5 with the RBAC baseline
                   role catalog and authorization testing harness
-                  (emg-policy-engine), and Sprint 6 with the audit event
+                  (emg-policy-engine), Sprint 6 with the audit event
                   contract (emg-audit-client) and pipeline
-                  (emg-audit-pipeline).
+                  (emg-audit-pipeline), and Sprint 9 with the Module 7
+                  Core Ontology model + conformance library
+                  (emg-ontology, FEAT-05-1 — library-first, no persistence).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).
