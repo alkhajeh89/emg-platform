@@ -3,6 +3,13 @@
 Target: a new engineer completes full local setup in under one working day
 (Engineering Master Plan §13).
 
+> **Before you clone — repository location matters.** Do **not** put the working
+> clone inside a cloud-synced folder (iCloud Drive, including `~/Documents` /
+> `~/Desktop` with Desktop & Documents sync, Dropbox, OneDrive, Google Drive).
+> Those daemons corrupt editable installs and spawn conflict-copy directories.
+> Use an unsynced path like `~/Developer/`. See
+> `docs/engineering/repository-location-and-cloud-sync.md`.
+
 ## Prerequisites
 
 - **Python 3.10, 3.11, or 3.12** (required). The toolchain targets 3.10 and is

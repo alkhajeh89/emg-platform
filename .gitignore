@@ -31,3 +31,19 @@ dist/
 *.zip
 *.tar
 *.tar.gz
+
+# Cloud-sync conflict artifacts (defense-in-depth only)
+# -----------------------------------------------------
+# The real fix is never developing inside a synced folder (iCloud Drive,
+# Dropbox, OneDrive) — see docs/engineering/repository-location-and-cloud-sync.md.
+# Only PRECISE, unambiguous conflict markers are listed here; broad patterns
+# (e.g. any name ending in a space + number) are deliberately NOT used because
+# they could hide legitimate files.
+#
+# iCloud not-yet-downloaded placeholders — always ".<name>.icloud", never a
+# real source file:
+*.icloud
+.*.icloud
+# Dropbox conflicted copies — filename literally contains "conflicted copy",
+# e.g. "graph (Sara's conflicted copy 2026-01-01).py":
+*conflicted copy*

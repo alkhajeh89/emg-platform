@@ -1,0 +1,60 @@
+name: CI
+
+# Mirrors the local quality gates (make lint / make test / pre-commit) so a
+# fresh clone and a PR are held to exactly the same bar as a developer's
+# machine. Deliberately conservative: it installs the toolchain from
+# requirements-dev.txt as-is (no version upgrades), uses the repo's own
+# install/lint/test scripts, and pins the interpreter to the supported floor
+# (3.10, per .python-version). No dependency-lock strategy is introduced here.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint & test (Python 3.10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Create virtual environment
+        run: python -m venv .venv
+
+      - name: Install developer toolchain (requirements-dev.txt, unmodified)
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-dev.txt
+
+      - name: Editable-install all local packages (libs, then services)
+        run: |
+          ./tools/scripts/install-libs.sh
+          ./tools/scripts/install-services.sh
+
+      - name: Environment diagnostic (informational, incl. editable-install integrity)
+        run: ./tools/scripts/setup-check.sh || true
+
+      - name: Lint (ruff + black --check)
+        run: make lint
+
+      - name: Test (pytest across libs + services)
+        run: make test
+
+      - name: Pre-commit hooks (all files)
+        run: .venv/bin/pre-commit run --all-files
