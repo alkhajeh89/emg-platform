@@ -626,6 +626,66 @@ Limitations / non-goals (by design this sprint):
   `emg-trust-scoring`, or `emg-semantic-layer` — integration happens only through
   future extension points, none implemented yet.
 
+## Controls and limitations (Sprint 14, EPIC-13 / FEAT-13-1 Universal Connector Framework)
+
+Sprint 14 delivers the Universal Connector Framework **library-first** and
+**storage-, vendor-, and protocol-independent** as `libs/python/emg-connectors`. It
+is **contracts-only and executes nothing external**, so its posture concerns the
+*validity and boundedness of connector/plugin declarations*, not runtime data
+access (which a future storage binding / connector plugin owns).
+
+> **Additive epic — frozen Backlog unchanged.** Filed under the next free ids
+> (EPIC-13 / FEAT-13-1); `EPIC-06 = Search` / `FEAT-06-1 = Lexical Search` are
+> untouched.
+
+Controls:
+
+- **No external anything.** No networking, persistence, authentication, HTTP
+  client, message queue, cloud/vendor SDK, CLI, or UI. Verified by a
+  clean-subprocess check that importing the framework pulls in **no** third-party
+  network/SDK client or sibling package.
+- **No vendor branching in the core.** A test strips string literals and comments
+  from every core module and asserts no vendor token (`sap`, `oracle`,
+  `sharepoint`, `jira`, …) appears in executable code — so there is no `if SAP`
+  path; connectors are added only as plugins.
+- **Immutable, self-validating models.** Descriptors, capabilities, configurations,
+  events, decisions, and results are frozen (`extra="forbid"`) and validated at
+  construction; nested mappings (`ConnectorConfiguration.values`,
+  `ConnectorChange.attributes`, mapped attributes) are read-only.
+- **No injection surface.** All identifiers/labels pass `ensure_safe_label`
+  (empty/whitespace-only and NUL/ASCII-control/CR-LF/Unicode-bidi rejected;
+  legitimate Unicode preserved). Values are plain scalars; nothing is `eval`'d.
+- **No secrets.** `ConnectorAuthentication` records a mechanism + an **opaque
+  credential reference**; a `secret` config field must be a string reference and
+  cannot carry an inline default. The framework performs no auth and stores no
+  secret.
+- **Extensible capabilities without weakening validation.** Vendor-specific
+  `extension_capabilities` are free-form but pass the same `ensure_safe_label`
+  check (control/bidi/NUL rejected), are bounded by `MAX_EXTENSION_CAPABILITIES`,
+  and cannot collide with a standard `ConnectorCapability` value — so the open
+  extension point adds no injection or ambiguity surface.
+- **Single source of truth for connectors.** `ConnectorPluginLoader` owns one
+  registry and auto-publishes/withdraws a plugin's connectors atomically, so there
+  is no second store to drift out of sync and no way to leave a partial
+  registration after a rejected (colliding) plugin.
+- **Bounded.** Every collection and string is length-capped (`limits.py`); version
+  numbers are bounded; registries reject overflow.
+- **Deterministic, fixed lifecycle machines.** Connector/plugin transitions come
+  from fixed closed tables; negotiation, registration, discovery, and validation
+  are pure and deterministic.
+- **Static, in-memory plugin registration only.** No dynamic filesystem scanning,
+  entry-point loading, package installation, remote marketplaces, or runtime code
+  execution — so there is no arbitrary-code-loading surface this sprint.
+
+Limitations / non-goals (by design this sprint):
+
+- The framework validates and models; it does not connect, authenticate,
+  synchronize, schedule, or persist. Those belong to future connector plugins and
+  a synchronization runtime.
+- Output/mapping DTOs are constructable (a documented trust boundary — obtain them
+  from a connector, never fabricate one).
+- Not wired into any service; `services/*` untouched.
+
 ## Deferred to later sprints (not started)
 
 - Module 5 Authorization Platform: a live network-reachable authorization

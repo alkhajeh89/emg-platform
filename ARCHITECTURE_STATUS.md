@@ -6,10 +6,11 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `feature/sprint-13-knowledge-lifecycle`
+Current Branch: `feature/sprint-14-universal-connector-framework`
 
-Current Sprint: Sprint 13 (in progress) — EPIC-05 Knowledge Graph, FEAT-05-5
-(Knowledge Lifecycle & Versioning — storage-independent managed state machine)
+Current Sprint: Sprint 14 (in progress) — **EPIC-13 Enterprise Integration
+Platform**, FEAT-13-1 (Universal Connector Framework — storage/vendor/protocol-
+independent, contracts-only). See "Additive roadmap" note below.
 
 ---
 
@@ -100,11 +101,36 @@ under `docs/architecture/`.
 | Sprint 10 | Complete (merged — PR #10, `bf8d460`) (EPIC-05 — FEAT-05-2 Knowledge Ingestion Pipeline, library-first) |
 | Sprint 11 | Complete (merged — PR #12, `d27ab59`) (EPIC-05 — FEAT-05-3 Knowledge Validation & Trust Scoring, library-first) |
 | Sprint 12 | Complete (merged — PR #13, `734aa2a`) (EPIC-05 — FEAT-05-4 Semantic Layer, storage-independent, library-first) |
-| Sprint 13 | In Progress (EPIC-05 — FEAT-05-5 Knowledge Lifecycle & Versioning, storage-independent, library-first) |
+| Sprint 13 | Complete (merged — PR #14, `a2ecbfe`) (EPIC-05 — FEAT-05-5 Knowledge Lifecycle & Versioning, storage-independent, library-first) |
+| Sprint 14 | In Progress (**EPIC-13** — FEAT-13-1 Universal Connector Framework, storage/vendor/protocol-independent, library-first; additive roadmap — see note) |
 
 Sprint scope for Sprint 4 onward follows the approved
 `docs/architecture/EMG_Engineering_Backlog_v1.0.md` Sprint Planning table
 (§6), not any simplified or alternate roadmap.
+
+**Additive roadmap note — EPIC-13 (Sprint 14).** The frozen Engineering Backlog
+defines EPIC-01 … EPIC-12 and, in particular, **EPIC-06 = Search** with
+**FEAT-06-1 = Lexical Search**. The Universal Connector Framework is a **new,
+additive** roadmap item: it was filed under the **next free identifiers
+(EPIC-13 "Enterprise Integration Platform" / FEAT-13-1)** so that no existing
+Backlog item is modified, renumbered, or overwritten. The frozen Backlog file
+(`docs/architecture/EMG_Engineering_Backlog_v1.0.md`) is **unchanged** by this
+sprint; EPIC-13 is recorded here (engineering status) and in the new library's
+docs only. Delivered library-first as `libs/python/emg-connectors`: a
+storage-, vendor-, and protocol-independent, contracts-only connector/plugin
+framework — **no** networking, persistence, authentication, HTTP client, message
+queue, cloud/vendor SDK, CLI, or UI, and **no vendor branching** in the core.
+Real connectors (SAP, Oracle, SharePoint, Microsoft 365, Salesforce, ServiceNow,
+Jira, …) are added as independently registered plugins without modifying the
+framework. This sprint deliberately excludes dynamic plugin loading (filesystem
+scanning, entry points, package installation, marketplaces, runtime code
+execution); registration is in-memory only. Not wired into any service.
+Post-review-fix refinements: standard capabilities stay the closed
+`ConnectorCapability` enum while vendors declare additional capabilities via
+free-form, namespaced `extension_capabilities` (no core change); and
+`ConnectorPluginLoader` is the single source of truth for connector registration
+and discovery (it auto-publishes/withdraws a plugin's connectors, eliminating the
+loader/registry split).
 
 **Sprint 5 scope note — FEAT-04-1 rescheduling.** The Backlog's Sprint 5 row
 (§6) groups three features: FEAT-03-3, FEAT-03-4, and FEAT-04-1 (Audit Event

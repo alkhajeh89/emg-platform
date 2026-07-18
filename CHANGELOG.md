@@ -5,6 +5,76 @@ generated from Conventional Commits (`CONTRIBUTING.md`).
 
 ## [Unreleased]
 
+### Sprint 14 — EPIC-13 Enterprise Integration Platform — Universal Connector Framework (FEAT-13-1) — in progress
+
+> **Additive roadmap.** The frozen Engineering Backlog's `EPIC-06 = Search` /
+> `FEAT-06-1 = Lexical Search` are **unchanged**. This is a new item filed under
+> the next free identifiers **EPIC-13 / FEAT-13-1**; the frozen Backlog file was
+> not modified or renumbered.
+
+- **New `libs/python/emg-connectors`** (EPIC-13, FEAT-13-1) — a **storage-,
+  vendor-, and protocol-independent, contracts-only** Universal Connector
+  Framework, delivered **library-first**. It implements **no real system and
+  executes nothing external**: no networking, persistence, authentication, HTTP
+  client, message queue, cloud/vendor SDK, CLI, or UI, and **no vendor branching**
+  in the core.
+  - **Contracts**: the `Connector` protocol + a vendor-neutral `AbstractConnector`
+    base; `ConnectorDescriptor` (the central static declaration); `ConnectorPlugin`
+    protocol + `ConnectorPluginDescriptor` (the plugin contract).
+  - **Capabilities & negotiation**: `ConnectorCapabilities`, `CapabilityRequirement`,
+    `negotiate() -> CapabilityNegotiation`, and `CapabilityRegistry` (feature
+    discovery). Standard capabilities are the closed `ConnectorCapability` enum;
+    **extensible** vendor capabilities are declared via free-form, namespaced
+    `extension_capabilities` (cannot reuse a standard value; safe-label validated)
+    with no framework change, and are negotiated symmetrically
+    (`required_extension_capabilities` / `missing_extension_capabilities`).
+  - **Configuration & auth**: `ConnectorConfigurationSchema` / `ConfigField` /
+    `ConnectorConfiguration`, and `ConnectorAuthentication` (mechanism + **opaque
+    credential reference**, never a raw secret).
+  - **Context/session, health/statistics/status, events/changes/snapshots,
+    mapping** value objects and mapper protocols (`EntityMapper`,
+    `RelationshipMapper`, `MetadataMapper`) over neutral `SourceRecord` /
+    `MappedEntity` / `MappedRelationship` / `MappedMetadata` (no ontology
+    dependency).
+  - **Synchronization contracts**: `SynchronizationContract`,
+    `SynchronizationPolicy`, `FullSynchronization`, `IncrementalSynchronization`
+    (contracts only — no sync engine, no scheduler).
+  - **Lifecycle**: fixed, deterministic `ConnectorLifecycle` and `PluginLifecycle`
+    state machines.
+  - **Plugin architecture**: `PluginValidation`, `PluginCompatibility`
+    (version-range checks against `FRAMEWORK_VERSION`), and the **in-memory**
+    `ConnectorPluginLoader` — **no** filesystem scanning, entry-point loading,
+    package installation, marketplaces, or runtime code execution (deliberately
+    deferred). The loader is the **single source of truth**: it owns one internal
+    `ConnectorRegistry`, auto-publishes a plugin's connectors on registration and
+    withdraws them on unregistration (no drift; cross-plugin id collisions rejected
+    atomically), and exposes `discovery()` / `connector_ids()` /
+    `connector_descriptors()` / `get_connector()` / `plugin_id_for_connector()`.
+  - **Registry / factory / discovery / validation**: `ConnectorRegistry`,
+    `ConnectorFactory`, `ConnectorDiscovery`, `ConnectorValidator`; a
+    `ConnectorError` exception hierarchy.
+  - **Security**: frozen self-validating models; identifiers validated against
+    control/bidi characters (no injection surface); opaque credential references
+    (no secrets); bounded collections; deterministic negotiation/registration.
+  - **Tests**: 115 tests covering validation, registry, factory, capability
+    negotiation (standard **and** extension capabilities), configuration validation,
+    lifecycle, plugin discovery/registration, loader auto-publication + plugin-removal
+    consistency + cross-plugin collision atomicity + loader isolation, statistics,
+    metadata, synchronization contracts, compatibility, immutability, adversarial
+    identifier/bounds cases, and a **no-vendor-branching guard** (strips
+    strings/comments and asserts no vendor token in executable code).
+  - **Review fixes (post-implementation architecture review)**: (1) replaced the
+    closed capability model with an extensible one (`extension_capabilities`) while
+    keeping standard capabilities strongly typed; (2) eliminated the loader/registry
+    split — `ConnectorPluginLoader` is now the single source of truth for connector
+    registration and discovery.
+  - **Dependencies**: `emg-common-types`, `emg-errors`, `pydantic` only — **not**
+    `emg-ontology` / `emg-semantic-layer` / `emg-knowledge-pipeline` /
+    `emg-trust-scoring`. Zero reverse deps; not wired into any service.
+  - **Docs**: package README + `docs/engineering/connectors-{architecture,lifecycle,
+    extension-guide,plugin-author-guide,synchronization-concepts}.md`.
+
+
 ### Sprint 13 — EPIC-05 Knowledge Graph — Knowledge Lifecycle & Versioning (FEAT-05-5) — in progress
 
 - **New `libs/python/emg-knowledge-lifecycle`** (Module 7, EPIC-05, FEAT-05-5) — a

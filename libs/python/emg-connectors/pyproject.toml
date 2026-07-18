@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-connectors"
+version = "0.1.0"
+description = "Universal Connector Framework (EPIC-13 Enterprise Integration Platform, FEAT-13-1): a storage-, vendor-, and protocol-independent, contracts-only foundation for every future enterprise integration. Defines connector/plugin contracts, an in-memory registry + factory, capability negotiation, version compatibility, lifecycle state machines, and synchronization contracts — with NO networking, persistence, authentication, HTTP client, or vendor SDK. Real connectors are added as independently registered plugins without modifying the core. Added Sprint 14."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = ["emg-common-types", "emg-errors", "pydantic>=2.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_connectors"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
