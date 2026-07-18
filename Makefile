@@ -1,4 +1,4 @@
-.PHONY: bootstrap setup-check up down logs lint fmt test pre-commit new-service branch-protection
+.PHONY: bootstrap setup-check up down logs lint fmt typecheck test pre-commit new-service branch-protection
 
 VENV_BIN := .venv/bin
 
@@ -22,6 +22,9 @@ lint: ## Run lint/static analysis across all workspace packages
 
 fmt: ## Auto-format all workspace packages
 	./tools/scripts/run-fmt.sh
+
+typecheck: ## Static type-check (mypy --strict) per package; separate from lint
+	./tools/scripts/run-typecheck.sh
 
 test: ## Run unit tests across all workspace packages
 	./tools/scripts/run-tests.sh

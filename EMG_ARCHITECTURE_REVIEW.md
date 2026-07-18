@@ -483,11 +483,18 @@ Each phase lists objective, deliverables, repo changes, tests, docs, complexity 
 - **Tests:** CI runs the full 984-test suite on every push/PR.
 - **Docs:** update onboarding with the "never develop in cloud-synced folders" guardrail.
 
-### Phase 1 — Persistence Binding *(XL, risk Med, value Critical)*
+### Phase 1 — Platform Foundation *(M, risk Low, value High)* — ✅ COMPLETE (2026-07-19)
+- **Re-sequencing note:** the original roadmap merged "foundation" and "persistence" into one XL Phase 1. Under the Phase 1 constraints (foundation only; preserve all tests/behaviour; no breaking changes), these were split: Phase 1 delivers the *storage seam* (ports + in-memory adapter) + identity value types + the TD-001 typecheck gate; **real Neo4j/Postgres binding moved to Phase 2** (below). Grounded in Freeze §32 (port + in-memory adapter now; Neo4j "for durability" next). Ordering change only — no frozen boundary altered.
+- **Delivered:** `libs/python/emg-platform-core` — `GraphStore`/`GraphTransaction` ports, `InMemoryGraphStore`, `TenantId`/`PrincipalRef`/`WriteReceipt`; `make typecheck` (per-package mypy) + CI job (TD-001 resolved); docs (`platform-foundation-architecture.md`, `storage-ports.md`).
+- **Validated:** ruff/black clean (315 files); pytest **1024 passed / 16 skipped** (984 preserved + 40 new); mypy --strict clean on 18 packages; new package **100% coverage**; setup-check OK. Purely additive — zero existing source changed.
+
+### Phase 2 — Persistence Binding *(XL, risk Med, value Critical)*
 - **Objective:** durable memory graph.
-- **Deliverables:** `GraphStore` port + Neo4j adapter + in-memory adapter; Postgres metadata/outbox/evidence-ledger; migrations; transactional write path; store contract tests.
-- **Tests:** store contract tests (in-memory ↔ Neo4j parity), migration tests, integrity tests against a real Postgres/Neo4j in CI (docker services).
+- **Deliverables:** Neo4j adapter + Postgres metadata/outbox/evidence-ledger behind the Phase 1 `GraphStore` port; migrations; transactional write path; `tenant_id`/`principal` retrofit onto domain models; store contract tests (in-memory ↔ Neo4j parity).
+- **Tests:** store contract tests, migration tests, integrity tests against a real Postgres/Neo4j in CI (docker services).
 - **Docs:** persistence architecture, data-model-to-store mapping, ADR.
+
+*(Subsequent phases 3–8 renumber accordingly; scope unchanged. The Roadmap ⇄ Freeze reconciliation table above still holds — only the persistence work shifts from "Phase 1" to "Phase 2".)*
 
 ### Phase 2 — Knowledge-Graph Service + Core APIs *(XL, risk Med, value Critical)*
 - **Objective:** first real platform surface.

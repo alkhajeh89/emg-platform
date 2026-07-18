@@ -58,3 +58,31 @@ jobs:
 
       - name: Pre-commit hooks (all files)
         run: .venv/bin/pre-commit run --all-files
+
+  typecheck:
+    name: Type-check (mypy --strict, per package)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Create virtual environment
+        run: python -m venv .venv
+
+      - name: Install developer toolchain (requirements-dev.txt, unmodified)
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-dev.txt
+
+      - name: Editable-install all local packages (libs, then services)
+        run: |
+          ./tools/scripts/install-libs.sh
+          ./tools/scripts/install-services.sh
+
+      - name: Type-check (make typecheck — TD-001, separate from lint)
+        run: make typecheck

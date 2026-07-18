@@ -8,7 +8,7 @@ markers in `src`; debt is documented, not scattered.)
 
 | ID | Title | Severity | Status | Target phase |
 |----|-------|----------|--------|--------------|
-| TD-001 | `mypy --strict` not enforced in `make lint` / CI | Low | Open (accepted) | Phase 1 (Platform Foundation), or earlier DX task before Phase 2 |
+| TD-001 | `mypy --strict` not enforced in `make lint` / CI | Low | **RESOLVED in Phase 1** | — |
 
 ---
 
@@ -97,3 +97,16 @@ should land while the platform is still small, giving type-safety enforcement
 from the foundation onward. It was correctly **not** a Phase 0 blocker (wiring it
 into `make lint` would have changed current behavior), but it should be paid down
 at the start of platform work rather than at the end.
+
+### Resolution (Phase 1)
+
+Resolved as planned. `tools/scripts/run-typecheck.sh` runs `mypy --strict`
+(config from the root `pyproject.toml`) **per package** — iterating each
+`libs/python/*/src` and `services/*/src` separately — which sidesteps the
+duplicate-`tests` collision entirely. It is exposed as `make typecheck` and runs
+as a **separate CI job** (`.github/workflows/ci.yml` → `typecheck`), leaving
+`make lint` (ruff + black) unchanged. Verified green across all **18 packages**
+(16 libraries incl. `emg-platform-core` + 2 services): "Type-check passed
+(mypy --strict) for 18 package(s)." No application code required changes — the
+tree was already type-clean per package; the debt was purely the missing
+enforcement, now closed.
