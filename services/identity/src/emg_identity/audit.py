@@ -52,17 +52,13 @@ class AuditEventSink(Protocol):
         self, *, username: str, reason: str, correlation_id: str | None
     ) -> None: ...
 
-    def record_token_refresh_failure(
-        self, *, reason: str, correlation_id: str | None
-    ) -> None: ...
+    def record_token_refresh_failure(self, *, reason: str, correlation_id: str | None) -> None: ...
 
     def record_service_auth_success(
         self, *, client_id: str, service_name: str, correlation_id: str | None
     ) -> None: ...
 
-    def record_service_auth_failure(
-        self, *, reason: str, correlation_id: str | None
-    ) -> None: ...
+    def record_service_auth_failure(self, *, reason: str, correlation_id: str | None) -> None: ...
 
     def record_authorization_decision(
         self,

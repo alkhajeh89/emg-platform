@@ -264,19 +264,32 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
 
 ## Getting Started (Local Development)
 
-See `docs/engineering/onboarding.md`. Quick start:
+Requires **Python 3.10–3.12** (pinned to 3.10 in `.python-version`). Docker and
+Node are optional (Docker only for local infra; Node only for `apps/`). See
+`docs/engineering/onboarding.md` for details and troubleshooting.
 
 ```bash
-make bootstrap   # installs pre-commit hooks, brings up local infra containers
-make up          # start local orchestration (Postgres, Redis, Keycloak, Neo4j, Qdrant)
-make down        # stop local orchestration
+git clone <repo-url> emg-platform
+cd emg-platform
+make bootstrap                 # .venv + dev toolchain + editable installs + hooks + .env
+source .venv/bin/activate      # activate the project virtual environment
+make test                      # pytest across /libs, /services
+make lint                      # ruff + black --check across /libs, /services
 ```
+
+Other targets: `make setup-check` (diagnose the environment), `make up` / `make
+down` (start/stop local orchestration — Postgres, Redis, Keycloak, Neo4j,
+Qdrant), `make pre-commit` (run all hooks). `make bootstrap` is idempotent —
+safe to re-run after a pull or to repair `.venv`.
 
 ## Contributing
 
 See `CONTRIBUTING.md`. All changes are reviewed per `CODEOWNERS`
-(ADR-016-derived) and must pass the CI pipeline (`.github/workflows/ci.yml`)
-before merge. Direct pushes to `main` are blocked (see `.github/settings.yml`).
+(ADR-016-derived). The intended CI pipeline (`.github/workflows/ci.yml`) and
+branch-protection settings (`.github/settings.yml`) are **not yet present in the
+repository**; the lint/test/build/audit steps they will run are already the
+`Makefile` targets and `tools/scripts/*` documented here, so local and future-CI
+checks stay identical.
 
 ## Classification
 
