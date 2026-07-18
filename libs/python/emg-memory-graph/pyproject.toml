@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-memory-graph"
+version = "0.1.0"
+description = "Enterprise Memory Graph Core Engine (Module 7 — Knowledge Graph, EPIC-05, FEAT-05-6): transforms the structured knowledge objects produced by ingestion + lifecycle into a persistent, temporal, evidence-linked, versioned graph of entities, relationships, evidence, observations and decisions. Deterministic, immutable, storage-independent; composes emg-ontology, emg-knowledge-pipeline, emg-knowledge-lifecycle, emg-trust-scoring and emg-semantic-layer without duplicating them. No ML, no networking, no persistence engine, no UI. Added Sprint 15."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = [
+  "emg-common-types",
+  "emg-errors",
+  "emg-ontology",
+  "emg-knowledge-pipeline",
+  "emg-knowledge-lifecycle",
+  "emg-trust-scoring",
+  "emg-semantic-layer",
+  "pydantic>=2.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_memory_graph"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
