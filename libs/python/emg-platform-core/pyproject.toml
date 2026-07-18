@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.14,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-platform-core"
+version = "0.1.0"
+description = "EMG Platform Foundation (Phase 1): storage-independence seam for the Enterprise Memory Graph. Defines the GraphStore/GraphTransaction ports (hexagonal, one-writer-per-store), an in-memory adapter over emg-memory-graph for tests/dev, and the cross-cutting TenantId/PrincipalRef identity value types. Pure, deterministic, no I/O and no ML in the core — real database adapters (Neo4j/Postgres) plug in during Phase 2. Conforms to EMG_PRODUCT_ARCHITECTURE_FREEZE.md sections 9, 11, 12 and 32."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = [
+  "emg-common-types",
+  "emg-errors",
+  "emg-memory-graph",
+  "pydantic>=2.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_platform_core"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
