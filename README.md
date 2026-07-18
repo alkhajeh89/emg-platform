@@ -9,7 +9,7 @@ and **Engineering Backlog v1.0**.
 | Phase | Status |
 | --- | --- |
 | Architecture Phase | Closed — Architecture Baseline v1.0 frozen |
-| Engineering Phase | Active — Sprint 13 (EPIC-05 Knowledge Graph: FEAT-05-5 Knowledge Lifecycle & Versioning, storage-independent, library-first, in progress) |
+| Engineering Phase | Active — Sprint 14 (EPIC-13 Enterprise Integration Platform: FEAT-13-1 Universal Connector Framework, storage/vendor/protocol-independent, library-first, in progress — additive roadmap item; frozen Backlog EPIC-06 = Search unchanged) |
 
 **Sprint 1** (EPIC-01 Foundation — complete): repository bootstrap, monorepo
 structure, local development environment, CI pipeline skeleton, branch
@@ -234,11 +234,15 @@ Per Engineering Master Plan §3 (Monorepo Structure), operationalizing Module 1
                   Sprint 12 with the Module 7 storage-independent
                   Semantic Layer (emg-semantic-layer, FEAT-05-4 —
                   query/traversal abstraction, executes nothing, no Neo4j),
-                  and Sprint 13 with the Module 7 storage-independent
+                  Sprint 13 with the Module 7 storage-independent
                   Knowledge Lifecycle & Versioning library
                   (emg-knowledge-lifecycle, FEAT-05-5 — managed state
                   machine + version chains + retention, executes nothing,
-                  stores nothing).
+                  stores nothing), and Sprint 14 with the storage/vendor/
+                  protocol-independent Universal Connector Framework
+                  (emg-connectors, EPIC-13/FEAT-13-1 — contracts + plugin
+                  registry only; no networking, SDKs, or vendor branching;
+                  an additive roadmap epic, frozen Backlog unchanged).
 /infra            Infrastructure-as-code, per environment tier. Folder
                   structure only this sprint; IaC content lands EPIC-11.
 /observability    Shared dashboards and alerting definitions (ADR-015).

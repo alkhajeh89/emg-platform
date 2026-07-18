@@ -379,3 +379,59 @@ descriptor** regressions run unchanged; FEAT-05-5 is a new isolated library that
 touches no Module 1–6 code, record, or hash, does not modify `emg-ontology`,
 `emg-knowledge-pipeline`, `emg-trust-scoring`, or `emg-semantic-layer`, and is not
 wired into any service this sprint.
+
+## Universal Connector Framework testing (Sprint 14, EPIC-13 / FEAT-13-1)
+
+`libs/python/emg-connectors/tests` — pure unit tests (no Docker, no database, no
+service, no network; the framework is contracts-only and executes nothing). Test
+doubles are neutral fakes in `_helpers.py` (no vendor, no I/O); the library ships
+no connector.
+
+- `test_version.py` — semantic-version parse/compare/`is_compatible_with`,
+  `VersionRange.contains`, inverted-range rejection, immutability.
+- `test_capabilities.py` — capability set normalisation (sorted-unique,
+  deterministic), support helpers, capability **negotiation** (satisfied + every
+  missing dimension), determinism, the `CapabilityRegistry` feature-discovery
+  catalogue, and **extensible vendor capabilities** (`extension_capabilities`
+  supported alongside standard, sorted-unique normalisation, may-not-reuse-a-
+  standard-value, control/bidi rejection, extension negotiation + determinism).
+- `test_configuration.py` — schema/field validation, **configuration validation**
+  against a schema (missing-required, type mismatch, unknown key, bool-not-int,
+  secret-must-be-string), duplicate-field rejection, value immutability, and the
+  **authentication contract** (opaque credential reference; `none` vs non-`none`
+  rules) — asserting no raw secret is modelled.
+- `test_lifecycle.py` — the connector and plugin transition tables as **golden
+  sets**, no self-transitions, terminal `retired`, and typed rejection.
+- `test_registry_factory.py` — **registry** register/get/duplicate/unknown/
+  unregister/deterministic-order and **factory** create/compatibility/unknown-id/
+  identity-mismatch.
+- `test_plugin.py` — plugin-descriptor validation, `PluginValidation` (coherence),
+  `PluginCompatibility` (version range), and the in-memory `ConnectorPluginLoader`
+  (register/enable, duplicate, incompatible, unregister, lifecycle transitions).
+  Also covers the loader as **single source of truth**: registering a plugin
+  **auto-publishes** its connectors (no separate registry call), unregistering
+  **withdraws** them (plugin-removal consistency, no drift), cross-plugin
+  `connector_id` collisions are rejected **atomically** (no partial state), and two
+  loaders keep **independent** connector state.
+- `test_discovery.py` — discovery by capability/entity-type/vendor/sync-mode/auth
+  and by full requirement (negotiation); deterministic results.
+- `test_synchronization.py` — sync **contracts** (incremental requires cursor),
+  **policy** bounds, full/incremental **plan** mode validation, and
+  `ConnectorValidator.validate_synchronization`.
+- `test_models.py` — descriptor helpers, health/statistics/status, events/change/
+  snapshot, `AbstractConnector` lifecycle+status, mapper protocols (structural),
+  and nested-mapping immutability.
+- `test_adversarial.py` — control/NUL/CR-LF/bidi and empty/whitespace identifier
+  rejection (legitimate Unicode preserved), attribute-key validation, input-dict
+  non-aliasing, oversized-collection bounds, extreme version numbers,
+  unknown-field rejection, determinism.
+- `test_import.py` — version, the full public surface, a clean-subprocess
+  **dependency-direction / forbidden-technology** check (no networking/SDK/sibling
+  module is imported), and a **no-vendor-branching guard** that strips strings and
+  comments from every core module and asserts no vendor token appears in
+  executable code.
+
+The **Module 6 golden audit-hash** and **Sprint 9 golden ontology descriptor**
+regressions run unchanged; FEAT-13-1 is a new isolated library that touches no
+Module 1–6 code, record, or hash, does not modify any sibling library, and is not
+wired into any service this sprint.
