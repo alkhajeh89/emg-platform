@@ -56,9 +56,7 @@ def test_service_session_endpoint_requires_bearer_token(settings, rsa_keypair):
     assert response.status_code == 401
 
 
-def test_service_session_endpoint_returns_service_principal_for_valid_token(
-    settings, rsa_keypair
-):
+def test_service_session_endpoint_returns_service_principal_for_valid_token(settings, rsa_keypair):
     private_key, public_key = rsa_keypair
     client = _make_client(settings, public_key)
     token = _issue_service_token(settings, private_key)

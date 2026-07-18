@@ -1,12 +1,12 @@
-.PHONY: bootstrap up down logs lint fmt test pre-commit new-service branch-protection
+.PHONY: bootstrap setup-check up down logs lint fmt test pre-commit new-service branch-protection
 
-bootstrap: ## One-time local setup: pre-commit hooks + local infra
-	@echo "==> Installing pre-commit hooks"
-	pip install --quiet pre-commit || true
-	pre-commit install
-	@echo "==> Bootstrapping local infrastructure"
-	$(MAKE) up
-	@echo "==> Bootstrap complete. See docs/engineering/onboarding.md"
+VENV_BIN := .venv/bin
+
+bootstrap: ## One-time local setup: venv, dev toolchain, editable installs, hooks, infra
+	./tools/scripts/bootstrap.sh
+
+setup-check: ## Diagnose the local dev environment (venv, interpreter, tools, imports)
+	./tools/scripts/setup-check.sh
 
 up: ## Start local orchestration (Postgres, Redis, Keycloak, Neo4j, Qdrant)
 	docker compose -f docker-compose.yml up -d
@@ -26,8 +26,8 @@ fmt: ## Auto-format all workspace packages
 test: ## Run unit tests across all workspace packages
 	./tools/scripts/run-tests.sh
 
-pre-commit: ## Run pre-commit hooks against all files
-	pre-commit run --all-files
+pre-commit: ## Run pre-commit hooks against all files (uses .venv)
+	$(VENV_BIN)/pre-commit run --all-files
 
 new-service: ## Scaffold a new backend service: make new-service NAME=identity
 	./tools/scripts/new-service.sh $(NAME)

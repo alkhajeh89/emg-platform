@@ -80,9 +80,7 @@ class ServiceTokenValidator:
         scopes = tuple(str(raw_scope).split()) if raw_scope else ()
 
         scope_satisfied = (
-            required_scope is None
-            or required_scope in scopes
-            or required_scope in entry.roles
+            required_scope is None or required_scope in scopes or required_scope in entry.roles
         )
         if not scope_satisfied:
             raise AuthorizationError(

@@ -88,9 +88,11 @@ def create_app() -> FastAPI:
 def _envelope_dict(envelope: ApiResponse[None]) -> dict[str, object]:
     return {
         "data": envelope.data,
-        "error": None
-        if envelope.error is None
-        else {"error_code": envelope.error.error_code, "message": envelope.error.message},
+        "error": (
+            None
+            if envelope.error is None
+            else {"error_code": envelope.error.error_code, "message": envelope.error.message}
+        ),
         "correlation_id": envelope.correlation_id,
     }
 

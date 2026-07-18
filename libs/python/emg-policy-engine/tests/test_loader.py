@@ -19,7 +19,8 @@ def test_load_policy_config_missing_file_falls_back_to_default(tmp_path: Path):
 
 def test_load_policy_config_reads_a_real_file(tmp_path: Path):
     policy_path = tmp_path / "policy.yaml"
-    policy_path.write_text("""
+    policy_path.write_text(
+        """
 rules:
   - rule_id: diag-read
     resource_type: identity.diagnostics
@@ -28,7 +29,8 @@ rules:
     required_roles: [platform-user]
     required_attributes:
       classification_clearance: [INTERNAL, CONFIDENTIAL, SECRET]
-""")
+"""
+    )
     config = load_policy_config(policy_path)
     assert len(config.rules) == 1
     assert config.rules[0].rule_id == "diag-read"
@@ -115,14 +117,16 @@ def test_unknown_role_is_advisory_only_and_does_not_block_loading(tmp_path: Path
     (default-deny ABAC is unaffected). The unknown role is surfaced only via
     validate_policy_config — a documented known limitation."""
     policy_path = tmp_path / "policy.yaml"
-    policy_path.write_text("""
+    policy_path.write_text(
+        """
 rules:
   - rule_id: unknown-role-rule
     resource_type: identity.diagnostics
     action: read
     effect: allow
     required_roles: [not-a-real-role]
-""")
+"""
+    )
     config = load_policy_config(policy_path)  # must not raise
     assert len(config.rules) == 1
     problems = validate_policy_config(config)

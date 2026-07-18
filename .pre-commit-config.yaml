@@ -1,0 +1,37 @@
+# EMG Platform — pre-commit hooks
+# ================================
+# Installed by `make bootstrap` (pre-commit install) and runnable across the
+# whole tree with `make pre-commit` (.venv/bin/pre-commit run --all-files).
+#
+# Tool versions are kept in lock-step with requirements-dev.txt and the tool
+# configuration in the root pyproject.toml ([tool.ruff], [tool.black]) so a
+# hook can never disagree with `make lint`. Ruff and Black both read their
+# settings (line-length 100, target py310, rule selection) from pyproject.toml,
+# so no arguments are duplicated here.
+#
+# NOTE: the first run provisions each hook's environment (one-time network
+# fetch from github). After that, hooks run fully offline.
+minimum_pre_commit_version: "3.5.0"
+default_language_version:
+  python: python3.10
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black

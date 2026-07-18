@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     # committed to source control.
     session_signing_key: str = "emg_local_dev_session_signing_key_do_not_use_in_prod"
     session_signing_algorithm: str = "HS256"
-    access_token_ttl_seconds: int = 900        # 15 minutes
-    refresh_token_ttl_seconds: int = 43200      # 12 hours
+    access_token_ttl_seconds: int = 900  # 15 minutes
+    refresh_token_ttl_seconds: int = 43200  # 12 hours
     token_issuer: str = "emg-identity-service"
     token_audience: str = "emg-platform"
 

@@ -1,0 +1,49 @@
+# EMG Platform — root development toolchain
+# =========================================
+# Single source of truth for the developer/CI tooling used across the whole
+# monorepo (lint, format, type-check, test, build, audit, git hooks). Installed
+# into the repository .venv by `make bootstrap` (tools/scripts/bootstrap.sh).
+#
+# This is DEV/CI TOOLING ONLY. Runtime dependencies of each package live in that
+# package's own pyproject.toml and are installed editable by
+# tools/scripts/install-libs.sh and install-services.sh — do NOT duplicate
+# runtime deps here.
+#
+# Versioning policy
+# -----------------
+# We use lower-bound floors (>=) rather than exact pins. Rationale:
+#   * The floors match the versions already declared in the packages' own
+#     [project.optional-dependencies].dev tables (pytest>=8.0, pytest-asyncio
+#     >=0.24, mypy>=1.10, ruff>=0.6, types-PyYAML>=6.0), so the root toolchain
+#     can never resolve BELOW what a package expects and cause a split toolchain.
+#   * Floors (not exact pins) keep the single-.venv install compatible with the
+#     libraries' own `requires-python`/dependency ranges and avoid resolver
+#     conflicts as packages evolve, while still guaranteeing the features the
+#     repo relies on (ruff 0.6 rule set E/F/I/UP/B/SIM; pytest 8 import-modes).
+#   * Upper bounds are intentionally omitted so security patches flow in; the
+#     `.python-version` pin + bootstrap interpreter check are what keep the
+#     environment reproducible. Teams needing byte-for-byte reproducibility can
+#     layer a `pip freeze > requirements-dev.lock` on top without changing this
+#     file's intent.
+
+# --- Test runners -----------------------------------------------------------
+pytest>=8.0
+pytest-asyncio>=0.24        # services/{identity,audit} use asyncio_mode="auto"
+
+# --- Lint / format / type-check (must match root pyproject.toml tool config) -
+ruff>=0.6                   # [tool.ruff] select = E,F,I,UP,B,SIM; line-length 100
+# Black's "stable style" changes across calendar-year majors (whitespace, string
+# handling), so formatting results are version-sensitive. We cap Black to the
+# 24.x line so requirements-dev.txt agrees EXACTLY with .pre-commit-config.yaml
+# (black 24.10.0) and `make lint` == `make pre-commit` == how the tree is
+# formatted. Bump both together when intentionally adopting a newer style.
+black>=24.0,<25.0           # [tool.black] line-length 100, target py310; matches pre-commit pin
+mypy>=1.10                  # [tool.mypy] strict, python_version 3.10
+types-PyYAML>=6.0           # stubs for emg-policy-engine (pyyaml) under mypy --strict
+
+# --- Git hooks --------------------------------------------------------------
+pre-commit>=3.5             # runs .pre-commit-config.yaml (make pre-commit)
+
+# --- Packaging / supply-chain (used by tools/scripts) -----------------------
+build>=1.2                  # tools/scripts/build-libs.sh (python -m build)
+pip-audit>=2.7              # tools/scripts/dependency-audit.sh
