@@ -10,6 +10,7 @@ source "$SCRIPT_DIR/_venv.sh"
 cd "$ROOT_DIR"
 
 emg_require_venv
+emg_print_env_banner
 
 # Note: `-print -quit` (not `find ... | grep -q`) avoids a SIGPIPE/pipefail race
 # that could make the guard spuriously report "no tests".

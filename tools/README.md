@@ -10,6 +10,7 @@ Master Plan §6).
 | `scripts/_venv.sh` | Sourced helper: resolves repo root + `.venv` interpreter paths and the supported-Python check used by the other scripts (not executed directly) |
 | `scripts/bootstrap.sh` | One-command local environment setup, invoked by `make bootstrap` (creates `.venv`, installs the dev toolchain + all editable packages, git hooks, `.env`, optional docker infra) |
 | `scripts/setup-check.sh` | Non-destructive diagnostic of the local environment, invoked by `make setup-check` |
+| `scripts/diagnose_editable_installs.py` | Reproduces CPython `site.py`'s exact `.pth`-processing algorithm to pinpoint why an editable-installed local package fails to import (see `docs/engineering/editable-install-troubleshooting.md`); run automatically by both `make setup-check` and `make bootstrap` |
 | `scripts/install-libs.sh` | Installs all `libs/python/*` packages editable in a single resolver pass so proprietary sibling deps resolve locally |
 | `scripts/install-services.sh` | Installs all installable `services/*` packages (those with a `pyproject.toml`) editable with dev extras |
 | `scripts/build-libs.sh` | Builds all `libs/python/*` packages (sdist + wheel) |

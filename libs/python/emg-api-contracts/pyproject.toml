@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.14,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -13,6 +13,9 @@ dependencies = ["emg-common-types"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/emg_api_contracts"]

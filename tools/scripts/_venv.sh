@@ -33,3 +33,27 @@ emg_require_venv() {
     exit 1
   fi
 }
+
+# Prints exactly which interpreter/cwd/path this script is about to run Python
+# with, BEFORE it does so. Exists so "everything imports here, nothing imports
+# there" discrepancies are never a mystery: every consumer (bootstrap.sh,
+# setup-check.sh, run-tests.sh) prints this immediately before invoking
+# $VENV_PY, so the terminal output itself always shows which interpreter,
+# which cwd, and which sys.path were actually used for that run.
+emg_print_env_banner() {
+  echo "--- environment ---"
+  echo "pwd:            $(pwd)"
+  echo "ROOT_DIR:       $ROOT_DIR"
+  echo "which python:   $(command -v python || echo 'not on PATH')"
+  echo "which pytest:   $(command -v pytest || echo 'not on PATH')"
+  echo "VENV_PY:        $VENV_PY $([ -x "$VENV_PY" ] && echo '(exists)' || echo '(MISSING)')"
+  if [ -x "$VENV_PY" ]; then
+    "$VENV_PY" -c "
+import sys, os
+print('sys.executable:', sys.executable)
+print('os.getcwd():   ', os.getcwd())
+print('sys.path[:5]:  ', sys.path[:5])
+"
+  fi
+  echo "-------------------"
+}

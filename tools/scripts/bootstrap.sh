@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/scripts/_venv.sh
 source "$SCRIPT_DIR/_venv.sh"
 cd "$ROOT_DIR"
+emg_print_env_banner
 
 SUPPORTED="3.10, 3.11, or 3.12"
 PIN_FILE="$ROOT_DIR/.python-version"
@@ -93,6 +94,7 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Base tooling + dev toolchain
 # ---------------------------------------------------------------------------
+emg_print_env_banner
 log "Upgrading pip / setuptools / wheel"
 "$VENV_PY" -m pip install --quiet --upgrade pip setuptools wheel
 
@@ -104,6 +106,25 @@ log "Installing developer toolchain (requirements-dev.txt)"
 # ---------------------------------------------------------------------------
 "$SCRIPT_DIR/install-libs.sh"
 "$SCRIPT_DIR/install-services.sh"
+
+# ---------------------------------------------------------------------------
+# 5b. Verify every editable install actually resolves on THIS machine.
+# ---------------------------------------------------------------------------
+# `pip install -e` can report success while still leaving an unimportable
+# package: hatchling's .pth file bakes in an absolute path, and CPython's
+# site.py silently drops any .pth line whose path fails os.path.exists() (no
+# error, no warning). That is a real, distinct failure mode from "install
+# failed" — see tools/scripts/diagnose_editable_installs.py and
+# docs/engineering/editable-install-troubleshooting.md. Since bootstrap just
+# ran a fresh install-libs.sh/install-services.sh against the CURRENT repo
+# path above, any drift from a previous install is already corrected; this
+# step exists purely to make that fact loud and verified rather than assumed.
+log "Verifying editable installs resolve on this machine"
+if ! "$VENV_PY" "$SCRIPT_DIR/diagnose_editable_installs.py"; then
+  warn "one or more editable installs still do not resolve — see the detail above."
+  warn "This is not fixed by recreating .venv; it means a package's pyproject.toml"
+  warn "packages=[...] entry does not match its real src/ layout. Investigate before continuing."
+fi
 
 # ---------------------------------------------------------------------------
 # 6. Pre-commit hooks

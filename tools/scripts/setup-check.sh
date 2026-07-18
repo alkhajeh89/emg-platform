@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/scripts/_venv.sh
 source "$SCRIPT_DIR/_venv.sh"
 cd "$ROOT_DIR"
+emg_print_env_banner
 
 fail=0
 pass_line() { printf '  [ OK ] %s\n' "$*"; }
@@ -60,9 +61,28 @@ if [ -x "$VENV_PY" ]; then
     if "$VENV_PY" -c "import ${mod}" 2>/dev/null; then
       pass_line "$mod importable"
     else
-      fail_line "$mod NOT importable — re-run 'make bootstrap'"
+      fail_line "$mod NOT importable — see diagnostic below, then re-run 'make bootstrap'"
     fi
   done
+else
+  warn_line "skipped (no .venv)"
+fi
+
+# --- Editable-install integrity ---------------------------------------------
+# A local package can be "editable-installed" (per pip show / direct_url.json)
+# yet fail to import: site.py's .pth processing has exactly one silent-failure
+# gate (os.path.exists() on the recorded src path — see
+# tools/scripts/diagnose_editable_installs.py for the full mechanism). Run the
+# same check that just ran above through that exact lens so a failure here
+# always comes with a root cause, never a bare ModuleNotFoundError.
+echo "Editable-install integrity (.venv):"
+if [ -x "$VENV_PY" ]; then
+  if diag_out="$("$VENV_PY" "$SCRIPT_DIR/diagnose_editable_installs.py" 2>&1)"; then
+    pass_line "all local editable installs resolve to their current on-disk path"
+  else
+    fail_line "one or more editable installs are stale or broken (see detail below)"
+    echo "$diag_out" | sed 's/^/         /'
+  fi
 else
   warn_line "skipped (no .venv)"
 fi

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.14,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -32,6 +32,9 @@ dev = [
   "mypy>=1.10",
   "ruff>=0.6",
 ]
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/emg_audit_service"]
