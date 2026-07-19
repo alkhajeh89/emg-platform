@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from emg_persistence import PersistenceError, PersistenceSettings, build_graph_store
+from emg_persistence import PersistenceSettings, build_graph_store
 from emg_platform_core import GraphStore, InMemoryGraphStore
 
 
@@ -18,12 +18,14 @@ def test_explicit_unconfigured_settings_return_in_memory() -> None:
     assert isinstance(store, InMemoryGraphStore)
 
 
-def test_configured_persistence_raises_until_backend_lands() -> None:
+def test_configured_persistence_hits_unimplemented_placeholder() -> None:
     # PostgreSQL configured => persistence requested, but the persistent backend
-    # is not part of Sprint 1. The factory must refuse rather than silently hand
-    # back an in-memory store when durability was requested.
+    # is a Sprint 1 scaffold placeholder (delivered in a later sprint). The
+    # factory delegates to the placeholder, which raises NotImplementedError —
+    # a neutral "structure, not behavior" signal rather than a fixed runtime
+    # policy.
     settings = PersistenceSettings(postgres_dsn="postgresql://u@h/db")
-    with pytest.raises(PersistenceError):
+    with pytest.raises(NotImplementedError):
         build_graph_store(settings)
 
 

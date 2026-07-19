@@ -5,15 +5,18 @@
 configuration, so callers depend on the *interface* and never construct a
 concrete store directly.
 
-Sprint 1 wires only the in-memory backend:
+Sprint 1 is a **scaffolding** sprint: it establishes *structure*, not final
+runtime behavior. Accordingly:
 
 * **No persistence configured** (no ``postgres_dsn``) → the deterministic
   Phase 1 ``InMemoryGraphStore`` (dev/tests).
-* **Persistence configured** → the persistent ``PostgresNeo4jGraphStore`` is not
-  part of this build (it is delivered in later Phase 2 sprints), so a
-  ``PersistenceError`` is raised rather than silently returning an in-memory
-  store when durability was requested — a silent fallback would be an unsafe
-  data-loss footgun.
+* **Persistence configured** → construction is delegated to the internal
+  placeholder :func:`_build_persistent_store`, which is **not implemented yet**
+  and raises ``NotImplementedError``. This is a passive placeholder seam, not a
+  persistence *policy*: no runtime decision is fixed here that a later sprint
+  would have to undo. The persistent ``PostgresNeo4jGraphStore`` is built by
+  replacing the placeholder's body in a later Phase 2 sprint (per PHASE2_PLAN.md,
+  the backend lands in Sprint 4+).
 """
 
 from __future__ import annotations
@@ -21,7 +24,24 @@ from __future__ import annotations
 from emg_platform_core import GraphStore, InMemoryGraphStore
 
 from .config import PersistenceSettings
-from .errors import PersistenceError
+
+
+def _build_persistent_store(settings: PersistenceSettings) -> GraphStore:
+    """Placeholder for the persistent (PostgreSQL + Neo4j) ``GraphStore``.
+
+    Intentionally unimplemented in Sprint 1 — a structural seam only. A later
+    Phase 2 sprint replaces this body with the real ``PostgresNeo4jGraphStore``
+    construction (using ``settings``); until then it raises
+    ``NotImplementedError`` so the scaffold makes no premature runtime decision.
+
+    Raises:
+        NotImplementedError: always, in Sprint 1.
+    """
+    raise NotImplementedError(
+        "The persistent GraphStore backend is not implemented yet; it is "
+        "delivered in a later Phase 2 sprint. This is a Sprint 1 scaffold "
+        "placeholder that will be filled in when the backend lands."
+    )
 
 
 def build_graph_store(settings: PersistenceSettings | None = None) -> GraphStore:
@@ -37,17 +57,11 @@ def build_graph_store(settings: PersistenceSettings | None = None) -> GraphStore
         configured.
 
     Raises:
-        PersistenceError: when a persistent datastore is configured but the
-            persistent backend is not available in this build (delivered in a
+        NotImplementedError: when persistence is configured — the persistent
+            backend placeholder is not implemented in Sprint 1 (delivered in a
             later Phase 2 sprint).
     """
     settings = settings if settings is not None else PersistenceSettings()
     if settings.is_persistence_configured:
-        raise PersistenceError(
-            "A persistent datastore is configured (postgres_dsn is set), but the "
-            "persistent GraphStore backend is not available in this build; it is "
-            "delivered in a later Phase 2 sprint. Unset the datastore DSN to use "
-            "the in-memory store, or install a build that includes the persistent "
-            "backend."
-        )
+        return _build_persistent_store(settings)
     return InMemoryGraphStore()
