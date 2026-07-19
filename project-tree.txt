@@ -1,0 +1,562 @@
+.
+├── .coverage
+├── .env
+├── .env.example
+├── .github
+│   └── workflows
+│       └── ci.yml
+├── .gitignore
+├── .pre-commit-config.yaml
+├── .python-version
+├── .ruff_cache
+│   ├── .gitignore
+│   ├── 0.15.21
+│   │   ├── 10820008117090484054
+│   │   ├── 14087032829881348581
+│   │   ├── 2425866624830306248
+│   │   └── 3175025656340776142
+│   ├── 0.15.22
+│   │   ├── 10205131533053248294
+│   │   ├── 10277643456748757767
+│   │   ├── 10492549854101959010
+│   │   ├── 1051036161223679471
+│   │   ├── 10714406517924792283
+│   │   ├── 10776416284358147619
+│   │   ├── 10878846199406296202
+│   │   ├── 10955948154067876907
+│   │   ├── 11000820289738188094
+│   │   ├── 11010566878562628791
+│   │   ├── 11019313902530379503
+│   │   ├── 11187430572813373701
+│   │   ├── 11226371130593423543
+│   │   ├── 11385705384574205597
+│   │   ├── 11505769425959908294
+│   │   ├── 11571821614834552444
+│   │   ├── 11810619104396807677
+│   │   ├── 12032188283746647158
+│   │   ├── 12039123040498267618
+│   │   ├── 12152279097546280551
+│   │   ├── 12222924821346387912
+│   │   ├── 12924047843799454343
+│   │   ├── 1293913939033255401
+│   │   ├── 13226094504960986388
+│   │   ├── 13568638792041997941
+│   │   ├── 1380526993367180034
+│   │   ├── 13849206751710967676
+│   │   ├── 13896865491427692200
+│   │   ├── 14060178359592349995
+│   │   ├── 14151133045883213907
+│   │   ├── 14625492736231040885
+│   │   ├── 14744973034556780491
+│   │   ├── 14932996331760551977
+│   │   ├── 1540768389063737290
+│   │   ├── 15530019375925012312
+│   │   ├── 15575213256073996486
+│   │   ├── 15787692929672695183
+│   │   ├── 15973197953563875974
+│   │   ├── 16028995337310940829
+│   │   ├── 1614024409372200957
+│   │   ├── 16142923582879761049
+│   │   ├── 16193235537842809235
+│   │   ├── 1630600087867979346
+│   │   ├── 16418531528825125655
+│   │   ├── 16689878765581080287
+│   │   ├── 17050693537808959824
+│   │   ├── 1741876326532585466
+│   │   ├── 17450239261933224152
+│   │   ├── 17571037638150210357
+│   │   ├── 18201979502519527057
+│   │   ├── 18331262943152692668
+│   │   ├── 18333585463150208815
+│   │   ├── 197035573457493465
+│   │   ├── 1994878730198765046
+│   │   ├── 2194354323044941252
+│   │   ├── 2285623619292787753
+│   │   ├── 2385229420983163089
+│   │   ├── 242758011698115289
+│   │   ├── 2444778859018965670
+│   │   ├── 2451558882594458336
+│   │   ├── 2534978349895964169
+│   │   ├── 2591946225389601927
+│   │   ├── 2665521385384301116
+│   │   ├── 2762164178659258511
+│   │   ├── 2800514267748464863
+│   │   ├── 2837068264032168991
+│   │   ├── 3060932037220495130
+│   │   ├── 3116151723546785372
+│   │   ├── 3195341657546631773
+│   │   ├── 3456440867741663722
+│   │   ├── 3543223435979913761
+│   │   ├── 4247089832304364970
+│   │   ├── 445268944027308295
+│   │   ├── 4568258754488640710
+│   │   ├── 4831609282249272686
+│   │   ├── 4973761049548926886
+│   │   ├── 5079405038201978283
+│   │   ├── 5121497399717363081
+│   │   ├── 5378632825019219048
+│   │   ├── 5562545651406783851
+│   │   ├── 5618709408027556482
+│   │   ├── 5753097227008718654
+│   │   ├── 575689669520408561
+│   │   ├── 607877266137829505
+│   │   ├── 6753271594867921967
+│   │   ├── 713136344517632239
+│   │   ├── 7171452650008672811
+│   │   ├── 7307341085106417935
+│   │   ├── 7461133751619993714
+│   │   ├── 7465307312659474395
+│   │   ├── 7508250444074415252
+│   │   ├── 7609244551206401992
+│   │   ├── 7907542823740928243
+│   │   ├── 8717943241270151810
+│   │   ├── 8871947585668404107
+│   │   ├── 8932640348658967018
+│   │   ├── 9125517742945316643
+│   │   ├── 9146199696353665126
+│   │   ├── 9368372227573447127
+│   │   ├── 9444856224448227914
+│   │   ├── 950521593605757260
+│   │   ├── 9591775812263581115
+│   │   └── 9778556108804533519
+│   ├── 0.6.9
+│   │   ├── 10028736577982094800
+│   │   ├── 10074798463566181608
+│   │   ├── 10150304334438293299
+│   │   ├── 10418441029398039117
+│   │   ├── 10421386945775242697
+│   │   ├── 10595102102083670977
+│   │   ├── 10602832486938746575
+│   │   ├── 11418250596865990195
+│   │   ├── 11485779732527318262
+│   │   ├── 11656330290136115067
+│   │   ├── 1199206475171274005
+│   │   ├── 12067710888374204636
+│   │   ├── 12070120805729787624
+│   │   ├── 12192993522242963992
+│   │   ├── 12304133668935593019
+│   │   ├── 1240948477539907964
+│   │   ├── 12545937616054569779
+│   │   ├── 1277846403613108582
+│   │   ├── 12835619008043966810
+│   │   ├── 13029107864486468316
+│   │   ├── 13154617273999468556
+│   │   ├── 13420806702940161902
+│   │   ├── 13461820256450862444
+│   │   ├── 1377232371973801060
+│   │   ├── 13803302560646554181
+│   │   ├── 1392488831187484003
+│   │   ├── 13951340445612029970
+│   │   ├── 13957002338471411672
+│   │   ├── 13993889388768423757
+│   │   ├── 14279588295739132717
+│   │   ├── 14527700253247978600
+│   │   ├── 14642620511528622446
+│   │   ├── 14839346273370763511
+│   │   ├── 14904204389610052722
+│   │   ├── 14963518024844100784
+│   │   ├── 15330698304153367059
+│   │   ├── 15364951601546236500
+│   │   ├── 15521391866478379755
+│   │   ├── 15722664434385295383
+│   │   ├── 15825055524865724684
+│   │   ├── 15860434150980184244
+│   │   ├── 16052276000961380569
+│   │   ├── 16247932398147462006
+│   │   ├── 16397364844396802762
+│   │   ├── 16592070424702567075
+│   │   ├── 16819521889256684977
+│   │   ├── 17042767448529376348
+│   │   ├── 17591098197117782218
+│   │   ├── 17833503808331090955
+│   │   ├── 18077109203082901241
+│   │   ├── 18178636551759568649
+│   │   ├── 18197699836893901543
+│   │   ├── 18227012124232353016
+│   │   ├── 18302008954745080893
+│   │   ├── 18367253490225631491
+│   │   ├── 18410434044993361763
+│   │   ├── 18437144383663626781
+│   │   ├── 18438810487985522075
+│   │   ├── 187873893328639191
+│   │   ├── 2350438479508533476
+│   │   ├── 2789659876800094292
+│   │   ├── 2824693915647317380
+│   │   ├── 2929146639460579402
+│   │   ├── 3047859992255072109
+│   │   ├── 319881181941996710
+│   │   ├── 3455749114068798634
+│   │   ├── 3456984253001803563
+│   │   ├── 3466605048219237723
+│   │   ├── 3690976733249917697
+│   │   ├── 3719382248885412586
+│   │   ├── 3758920740896878701
+│   │   ├── 3776150631228861747
+│   │   ├── 4120837795163926191
+│   │   ├── 4211291676612633789
+│   │   ├── 4226475253328876375
+│   │   ├── 4245504686764839571
+│   │   ├── 4647549316910522154
+│   │   ├── 4761020430293750302
+│   │   ├── 4843767774801673112
+│   │   ├── 564213132730665251
+│   │   ├── 6435611243076652636
+│   │   ├── 6506249977639190985
+│   │   ├── 6897493830575454577
+│   │   ├── 7106166904548091092
+│   │   ├── 7123842837119702249
+│   │   ├── 7149909497884139802
+│   │   ├── 7530148380460685337
+│   │   ├── 7576561131730471018
+│   │   ├── 7722770305790928067
+│   │   ├── 7778770395437880889
+│   │   ├── 7890623783482315511
+│   │   ├── 7927726909889192142
+│   │   ├── 7990558974915841590
+│   │   ├── 7991031681431862007
+│   │   ├── 8131717229346740273
+│   │   ├── 8294234820235293942
+│   │   ├── 8414338822624351091
+│   │   ├── 8647342627842850680
+│   │   ├── 8863517934604777612
+│   │   ├── 8899076465767951660
+│   │   ├── 8933088160897204084
+│   │   ├── 9383018271542217808
+│   │   ├── 9606705452014349709
+│   │   ├── 971029054028455158
+│   │   ├── 9726006011917252849
+│   │   ├── 9763448109558151915
+│   │   ├── 9768660550985609860
+│   │   ├── 9772287620480657294
+│   │   ├── 9823559729559574118
+│   │   ├── 9932735683266004306
+│   │   └── 9975355555662833417
+│   └── CACHEDIR.TAG
+├── ARCHITECTURE_STATUS.md
+├── CHANGELOG.md
+├── CLAUDE_WORKFLOW.md
+├── CODEOWNERS
+├── CONTRIBUTING.md
+├── EMG_ARCHITECTURE_REVIEW.md
+├── EMG_PRODUCT_ARCHITECTURE_FREEZE.md
+├── EMG_PRODUCT_VISION.md
+├── LICENSE
+├── Makefile
+├── NOTICE.md
+├── PHASE0_COMPLETION.md
+├── PHASE1_COMPLETION.md
+├── PHASE1_PLAN.md
+├── README.md
+├── SPRINT-1-STATUS.md
+├── SPRINT-10-STATUS.md
+├── SPRINT-11-STATUS.md
+├── SPRINT-12-STATUS.md
+├── SPRINT-13-STATUS.md
+├── SPRINT-14-REVIEW-FIXES-REPORT.md
+├── SPRINT-14-STATUS.md
+├── SPRINT-14.5-STATUS.md
+├── SPRINT-15-STATUS.md
+├── SPRINT-2-STATUS.md
+├── SPRINT-3-STATUS.md
+├── SPRINT-4-STATUS.md
+├── SPRINT-5-STATUS.md
+├── SPRINT-6-STATUS.md
+├── SPRINT-7-PROPOSAL.md
+├── SPRINT-7-STATUS.md
+├── SPRINT-8-STATUS.md
+├── SPRINT-9-STATUS.md
+├── apps
+│   ├── .gitkeep
+│   └── README.md
+├── docker-compose.yml
+├── docs
+│   ├── IMPLEMENTATION_RULES.md
+│   ├── PHASE2_ARCHITECTURE.md
+│   ├── PHASE2_PLAN.md
+│   ├── PROJECT_UNDERSTANDING.md
+│   ├── architecture
+│   │   ├── EMG_ADR-014_Enterprise_Presentation_Architecture.md
+│   │   ├── EMG_ADR-015_Unified_Enterprise_Observability.md
+│   │   ├── EMG_ADR-016_Enterprise_Ownership_Registry.md
+│   │   ├── EMG_ADR-017_Enterprise_Capacity_Scalability_Model.md
+│   │   ├── EMG_Architecture_Baseline_v1.0_Final.md
+│   │   ├── EMG_Engineering_Backlog_v1.0.md
+│   │   ├── EMG_Engineering_Master_Plan.md
+│   │   └── README.md
+│   ├── engineering
+│   │   ├── coding-standards.md
+│   │   ├── connectors-architecture.md
+│   │   ├── connectors-extension-guide.md
+│   │   ├── connectors-lifecycle.md
+│   │   ├── connectors-plugin-author-guide.md
+│   │   ├── connectors-synchronization-concepts.md
+│   │   ├── definition-of-done.md
+│   │   ├── editable-install-troubleshooting.md
+│   │   ├── feat-05-3-integration-seam.md
+│   │   ├── federation-readiness.md
+│   │   ├── memory-graph-api.md
+│   │   ├── memory-graph-architecture.md
+│   │   ├── memory-graph-data-model.md
+│   │   ├── memory-graph-developer-guide.md
+│   │   ├── memory-graph-integration.md
+│   │   ├── onboarding.md
+│   │   ├── platform-foundation-architecture.md
+│   │   ├── repository-location-and-cloud-sync.md
+│   │   ├── security-limitations.md
+│   │   ├── service-identity-registration.md
+│   │   ├── sprint-10-design.md
+│   │   ├── sprint-11-design.md
+│   │   ├── sprint-12-design.md
+│   │   ├── sprint-13-design.md
+│   │   ├── sprint-4-design.md
+│   │   ├── sprint-5-design.md
+│   │   ├── sprint-6-design.md
+│   │   ├── sprint-7-design.md
+│   │   ├── sprint-8-design.md
+│   │   ├── sprint-9-design.md
+│   │   ├── storage-ports.md
+│   │   ├── technical-debt.md
+│   │   └── testing-strategy.md
+│   └── repo-structure.md
+├── infra
+│   ├── README.md
+│   ├── environments
+│   │   ├── air-gapped-production
+│   │   │   ├── .gitkeep
+│   │   │   └── README.md
+│   │   ├── development
+│   │   │   ├── .gitkeep
+│   │   │   └── README.md
+│   │   ├── local
+│   │   │   ├── .gitkeep
+│   │   │   └── README.md
+│   │   ├── production
+│   │   │   ├── .gitkeep
+│   │   │   └── README.md
+│   │   └── staging
+│   │       ├── .gitkeep
+│   │       └── README.md
+│   ├── kubernetes
+│   │   ├── .gitkeep
+│   │   └── README.md
+│   └── modules
+│       ├── .gitkeep
+│       └── README.md
+├── libs
+│   ├── README.md
+│   └── python
+│       ├── emg-api-contracts
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-audit-client
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-audit-pipeline
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-auth-client
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-common-types
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-connectors
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-errors
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-knowledge-lifecycle
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-knowledge-pipeline
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-memory-graph
+│       │   ├── .coverage
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-ontology
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-persistence
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-platform-core
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-policy-engine
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-semantic-layer
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       ├── emg-telemetry
+│       │   ├── README.md
+│       │   ├── pyproject.toml
+│       │   ├── src
+│       │   └── tests
+│       └── emg-trust-scoring
+│           ├── README.md
+│           ├── pyproject.toml
+│           ├── src
+│           └── tests
+├── observability
+│   ├── README.md
+│   ├── alerts
+│   │   ├── .gitkeep
+│   │   └── README.md
+│   └── dashboards
+│       ├── .gitkeep
+│       └── README.md
+├── package.json
+├── project-tree.txt
+├── pyproject.toml
+├── requirements-dev.txt
+├── services
+│   ├── README.md
+│   ├── ai-orchestration
+│   │   ├── README.md
+│   │   ├── service.yaml
+│   │   ├── src
+│   │   │   └── .gitkeep
+│   │   └── tests
+│   │       └── .gitkeep
+│   ├── audit
+│   │   ├── Dockerfile
+│   │   ├── README.md
+│   │   ├── __init__.py
+│   │   ├── pyproject.toml
+│   │   ├── service.yaml
+│   │   ├── src
+│   │   │   ├── .gitkeep
+│   │   │   └── emg_audit_service
+│   │   └── tests
+│   │       ├── .gitkeep
+│   │       ├── __init__.py
+│   │       ├── conftest.py
+│   │       ├── test_audit_api.py
+│   │       ├── test_custody_api.py
+│   │       ├── test_provenance_api.py
+│   │       └── test_reporting_api.py
+│   ├── authz
+│   │   ├── README.md
+│   │   ├── service.yaml
+│   │   ├── src
+│   │   │   └── .gitkeep
+│   │   └── tests
+│   │       └── .gitkeep
+│   ├── decision-intelligence
+│   │   ├── README.md
+│   │   ├── service.yaml
+│   │   ├── src
+│   │   │   └── .gitkeep
+│   │   └── tests
+│   │       └── .gitkeep
+│   ├── identity
+│   │   ├── Dockerfile
+│   │   ├── README.md
+│   │   ├── config
+│   │   │   ├── federation.example.yaml
+│   │   │   └── policy.example.yaml
+│   │   ├── pyproject.toml
+│   │   ├── service.yaml
+│   │   ├── src
+│   │   │   ├── .gitkeep
+│   │   │   └── emg_identity
+│   │   └── tests
+│   │       ├── .gitkeep
+│   │       ├── conftest.py
+│   │       ├── test_audit_pipeline.py
+│   │       ├── test_auth_router.py
+│   │       ├── test_authz_router.py
+│   │       ├── test_authz_scenarios.py
+│   │       ├── test_federation.py
+│   │       ├── test_federation_router.py
+│   │       ├── test_integration_live_keycloak.py
+│   │       ├── test_keycloak_client.py
+│   │       ├── test_rate_limit.py
+│   │       ├── test_redaction.py
+│   │       ├── test_separation_human_vs_service.py
+│   │       ├── test_service_auth_router.py
+│   │       ├── test_service_token_validator.py
+│   │       └── test_session.py
+│   ├── knowledge-graph
+│   │   ├── README.md
+│   │   ├── service.yaml
+│   │   ├── src
+│   │   │   └── .gitkeep
+│   │   └── tests
+│   │       └── .gitkeep
+│   └── retrieval
+│       ├── README.md
+│       ├── service.yaml
+│       ├── src
+│       │   └── .gitkeep
+│       └── tests
+│           └── .gitkeep
+└── tools
+    ├── README.md
+    ├── ci-templates
+    │   └── service-ci-template.yml
+    ├── scripts
+    │   ├── _venv.sh
+    │   ├── bootstrap.sh
+    │   ├── build-libs.sh
+    │   ├── configure-branch-protection.sh
+    │   ├── dependency-audit.sh
+    │   ├── diagnose_editable_installs.py
+    │   ├── install-libs.sh
+    │   ├── install-services.sh
+    │   ├── new-service.sh
+    │   ├── run-fmt.sh
+    │   ├── run-integration-tests.sh
+    │   ├── run-lint.sh
+    │   ├── run-tests.sh
+    │   ├── run-typecheck.sh
+    │   └── setup-check.sh
+    └── seed-data
+        ├── README.md
+        ├── keycloak
+        │   ├── .gitkeep
+        │   └── emg-realm.json
+        ├── neo4j
+        │   └── .gitkeep
+        └── postgres
+            ├── .gitkeep
+            ├── 001_audit_events.sql
+            ├── 002_audit_provenance.sql
+            ├── 003_evidence_custody.sql
+            └── 004_audit_reporting_indexes.sql
+
+108 directories, 452 files
