@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.14,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-persistence"
+version = "0.1.0"
+description = "EMG Persistence Binding (Phase 2): durable GraphStore adapters for the Enterprise Memory Graph. PostgreSQL is the authoritative revision log; Neo4j is a rebuildable serving projection (never on the write path). Sprint 1 delivers only the package scaffold — configuration (PersistenceSettings), the dependency-injection factory (build_graph_store), and the error hierarchy. Conforms to PHASE2_ARCHITECTURE.md Revision 3 (ADR-1..ADR-6) and EMG_PRODUCT_ARCHITECTURE_FREEZE.md."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = [
+  "emg-platform-core",
+  "emg-errors",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_persistence"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
