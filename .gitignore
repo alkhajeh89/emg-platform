@@ -47,3 +47,7 @@ dist/
 # Dropbox conflicted copies — filename literally contains "conflicted copy",
 # e.g. "graph (Sara's conflicted copy 2026-01-01).py":
 *conflicted copy*
+
+# Local repository inspection reports
+project-tree.txt
+markdown-files.txt
