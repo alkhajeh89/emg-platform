@@ -14,6 +14,8 @@ dependencies = [
   "emg-errors",
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
+  "psycopg[binary]>=3.1",
+  "neo4j>=5.0",
 ]
 
 [project.optional-dependencies]
