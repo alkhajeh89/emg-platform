@@ -9,5 +9,6 @@ from __future__ import annotations
 
 from .migration_executor import PostgresMigrationExecutor
 from .pool import connect
+from .revision_repository import PostgresRevisionRepository
 
-__all__ = ["PostgresMigrationExecutor", "connect"]
+__all__ = ["PostgresMigrationExecutor", "PostgresRevisionRepository", "connect"]
