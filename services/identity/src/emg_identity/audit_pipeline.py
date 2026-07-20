@@ -283,6 +283,7 @@ class PipelineAuditSink:
         outcome: DecisionOutcome,
         reason: str,
         correlation_id: str | None,
+        policy_id: str | None = None,
     ) -> None:
         self._telemetry.record_authorization_decision(
             subject=subject,
@@ -291,6 +292,7 @@ class PipelineAuditSink:
             outcome=outcome,
             reason=reason,
             correlation_id=correlation_id,
+            policy_id=policy_id,
         )
         self._record(
             actor=subject,
@@ -300,6 +302,7 @@ class PipelineAuditSink:
             resource_type=resource_type,
             reason=reason,
             correlation_id=correlation_id,
+            policy_id=policy_id,
         )
 
     # --- durable forwarding (Decision C) -----------------------------------
@@ -314,6 +317,7 @@ class PipelineAuditSink:
         correlation_id: str | None,
         resource_type: str | None = None,
         reason: str = "",
+        policy_id: str | None = None,
     ) -> None:
         if not self._enabled:
             return
@@ -328,6 +332,7 @@ class PipelineAuditSink:
             resource_type=resource_type,
             source_system=_SERVICE_NAME,
             reason=reason,
+            policy_id=policy_id,
         )
         self._deliver(submitted)
 

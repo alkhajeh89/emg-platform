@@ -116,10 +116,14 @@ demonstrated in tests, not forced onto an existing route.
 
 `AuditEventSink` (Protocol, `services/identity/src/emg_identity/audit.py`)
 gains `record_authorization_decision(*, subject, resource_type, action,
-outcome, reason, correlation_id)`, additive to the Sprint 2/3 Protocol —
+outcome, reason, correlation_id, policy_id)`, additive to the Sprint 2/3 Protocol —
 every existing method keeps its exact signature. `StructuredLogAuditSink`
 implements it via the same `emg_telemetry` structured-logging path as every
 other audit event this platform emits.
+
+## Additional implementation components
+
+`roles.py` and `testing.py` are internal support modules present in the package. Their presence does not represent completion of FEAT-03-3 (RBAC Baseline Roles) or FEAT-03-4 (Authorization Testing Harness); both remain scheduled for Sprint 5.
 
 ## Explicit exclusions (this sprint)
 

@@ -62,6 +62,7 @@ async def policy_check(
         outcome=decision.outcome,
         reason=decision.reason,
         correlation_id=correlation_id,
+        policy_id=decision.policy_id,
     )
 
     return PolicyCheckResponse(

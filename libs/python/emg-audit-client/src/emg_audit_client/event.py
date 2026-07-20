@@ -78,6 +78,7 @@ class SubmittedAuditEvent(BaseModel):
     correlation_id: CorrelationId | None = None
     resource_type: str | None = None
     resource_id: str | None = None
+    policy_id: str | None = None
     classification: Classification = Classification.INTERNAL
     source_system: str
     source_component: str | None = None
@@ -127,6 +128,7 @@ class AuditEvent(BaseModel):
     correlation_id: CorrelationId | None = None
     resource_type: str | None = None
     resource_id: str | None = None
+    policy_id: str | None = None
     classification: Classification = Classification.INTERNAL
     source_system: str
     source_component: str | None = None

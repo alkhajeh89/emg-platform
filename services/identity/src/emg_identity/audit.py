@@ -69,6 +69,7 @@ class AuditEventSink(Protocol):
         outcome: DecisionOutcome,
         reason: str,
         correlation_id: str | None,
+        policy_id: str | None = None,
     ) -> None: ...
 
 
@@ -147,14 +148,18 @@ class StructuredLogAuditSink:
         outcome: DecisionOutcome,
         reason: str,
         correlation_id: str | None,
+        policy_id: str | None = None,
     ) -> None:
         log_method = _log.info if outcome == "allow" else _log.warning
+        extra = {
+            "actor": subject,
+            "module": "identity",
+            "action": f"authorize:{resource_type}:{action}",
+            "outcome": "success" if outcome == "allow" else "denied",
+        }
+        if policy_id:
+            extra["policy_id"] = policy_id
         log_method(
             f"authorization {outcome}: {resource_type}/{action}: {reason}",
-            extra={
-                "actor": subject,
-                "module": "identity",
-                "action": f"authorize:{resource_type}:{action}",
-                "outcome": "success" if outcome == "allow" else "denied",
-            },
+            extra=extra,
         )
