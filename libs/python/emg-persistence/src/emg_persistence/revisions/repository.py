@@ -45,6 +45,21 @@ class RevisionRepository(Protocol):
         """Number of revisions recorded for ``tenant``."""
         ...
 
+    def tenants(self) -> tuple[TenantId, ...]:
+        """Return tenants with an authoritative head, sorted by identifier."""
+        ...
+
+    def revalidate_head(self, tenant: TenantId, expected: RevisionHead) -> bool:
+        """Re-read and lock ``tenant``'s head, returning whether it still
+        matches ``expected``.
+
+        Persistent implementations keep the matching row locked until their
+        surrounding transaction ends. This is the no-op write-path guard: a
+        receipt may be returned only when the head captured at open is still
+        authoritative at commit.
+        """
+        ...
+
     def compare_and_set_head(
         self, tenant: TenantId, expected: RevisionHead | None, desired: RevisionHead
     ) -> bool:

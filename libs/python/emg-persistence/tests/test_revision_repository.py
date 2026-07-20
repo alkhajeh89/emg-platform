@@ -43,6 +43,7 @@ def test_empty_tenant_reads() -> None:
     assert repo.get_revision(TENANT, 1) is None
     assert repo.revision_exists(TENANT, 1) is False
     assert repo.revision_count(TENANT) == 0
+    assert repo.tenants() == ()
 
 
 def test_first_revision() -> None:
@@ -121,6 +122,34 @@ def test_tenant_isolation() -> None:
     assert repo.revision_count(TENANT) == 1
     assert repo.revision_count(other) == 1
     assert repo.get_head(TENANT) != repo.get_head(other)
+
+
+def test_tenants_returns_sorted_tenants_with_heads() -> None:
+    repo = _repo()
+    zulu = TenantId.of("zulu")
+    alpha = TenantId.of("alpha")
+    repo.create_first_revision(make_revision(1, tenant=zulu, content_seed="z1"))
+    repo.create_first_revision(make_revision(1, tenant=alpha, content_seed="a1"))
+    assert repo.tenants() == (alpha, zulu)
+
+
+def test_revalidate_head_matches_only_current_authoritative_head() -> None:
+    repo = _repo()
+    r1 = make_revision(1)
+    head1 = repo.create_first_revision(r1)
+    assert repo.revalidate_head(TENANT, head1) is True
+
+    r2 = make_revision(2, parent_hash=r1.content_hash)
+    repo.append_revision(r2)
+    assert repo.revalidate_head(TENANT, head1) is False
+    assert repo.revalidate_head(TENANT, r2.head()) is True
+
+
+def test_revalidate_head_is_false_for_missing_or_different_tenant() -> None:
+    repo = _repo()
+    head = make_revision(1).head()
+    assert repo.revalidate_head(TENANT, head) is False
+    assert repo.revalidate_head(TenantId.of("other"), head) is False
 
 
 def test_concurrent_first_revision_single_winner() -> None:

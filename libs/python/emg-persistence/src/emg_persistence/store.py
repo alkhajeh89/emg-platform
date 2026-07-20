@@ -1,0 +1,303 @@
+"""PostgreSQL-authoritative direct graph persistence."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from enum import Enum
+from typing import TYPE_CHECKING, Any
+
+from emg_memory_graph import EMPTY_GRAPH, MemoryGraph, diff_graphs
+from emg_platform_core import (
+    GraphTransaction,
+    PrincipalRef,
+    TenantId,
+    TransactionStateError,
+    WriteReceipt,
+)
+from psycopg import Error as PsycopgError
+from pydantic import ValidationError
+
+from .errors import PersistenceConflictError, PersistenceError
+from .postgres.revision_repository import PostgresRevisionRepository
+from .postgres.transactions import TransactionProvider
+from .revisions import Revision, RevisionHead, RevisionRepository
+
+if TYPE_CHECKING:
+    from psycopg import Connection
+
+RevisionRepositoryFactory = Callable[["Connection[Any]"], RevisionRepository]
+Clock = Callable[[], datetime]
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class _TransactionState(Enum):
+    OPEN = "open"
+    COMMITTED = "committed"
+    ABORTED = "aborted"
+
+
+class _PersistentGraphTransaction:
+    """Internal staged graph transaction; database ownership stays in the store."""
+
+    def __init__(self, tenant: TenantId, principal: PrincipalRef, current: MemoryGraph) -> None:
+        self._tenant = tenant
+        self._principal = principal
+        self._staged = current
+        self._state = _TransactionState.OPEN
+        self._receipt: WriteReceipt | None = None
+
+    @property
+    def tenant(self) -> TenantId:
+        return self._tenant
+
+    @property
+    def principal(self) -> PrincipalRef:
+        return self._principal
+
+    @property
+    def receipt(self) -> WriteReceipt:
+        if self._state is not _TransactionState.COMMITTED or self._receipt is None:
+            raise TransactionStateError(
+                "receipt is only available after a successful commit "
+                f"(transaction is {self._state.value})"
+            )
+        return self._receipt
+
+    def read(self) -> MemoryGraph:
+        self._require_open()
+        return self._staged
+
+    def stage(self, graph: MemoryGraph) -> None:
+        self._require_open()
+        self._staged = graph
+
+    def commit(self, receipt: WriteReceipt) -> None:
+        self._require_open()
+        self._receipt = receipt
+        self._state = _TransactionState.COMMITTED
+
+    def abort(self) -> None:
+        self._require_open()
+        self._state = _TransactionState.ABORTED
+
+    def _abort_if_open(self) -> None:
+        if self._state is _TransactionState.OPEN:
+            self._state = _TransactionState.ABORTED
+
+    def _require_open(self) -> None:
+        if self._state is not _TransactionState.OPEN:
+            raise TransactionStateError(
+                f"transaction is {self._state.value}; operation is no longer permitted"
+            )
+
+
+class PostgresNeo4jGraphStore:
+    """Persistent store with PostgreSQL-authoritative direct read/write paths.
+
+    The name reflects the complete Phase 2 adapter described by the architecture;
+    Neo4j is not constructed or consulted by this implementation.
+    """
+
+    def __init__(
+        self,
+        transactions: TransactionProvider,
+        *,
+        repository_factory: RevisionRepositoryFactory = PostgresRevisionRepository,
+        clock: Clock = _utcnow,
+    ) -> None:
+        self._transactions = transactions
+        self._repository_factory = repository_factory
+        self._clock = clock
+
+    def read(self, tenant: TenantId) -> MemoryGraph:
+        """Load and verify ``tenant``'s authoritative PostgreSQL snapshot."""
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                return _read_from_repository(repository, tenant)
+        except PersistenceError:
+            raise
+        except PsycopgError as exc:
+            raise PersistenceError(
+                f"failed to read authoritative graph for tenant {tenant.value!r}"
+            ) from exc
+
+    def write(
+        self, tenant: TenantId, graph: MemoryGraph, *, principal: PrincipalRef
+    ) -> WriteReceipt:
+        """Durably persist ``graph`` and return proof only after commit."""
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                self._persist(repository, tenant, graph, principal)
+        except PersistenceConflictError:
+            raise
+        except PersistenceError:
+            raise
+        except PsycopgError as exc:
+            raise PersistenceError(
+                f"failed to write authoritative graph for tenant {tenant.value!r}"
+            ) from exc
+        return _receipt_for(tenant, graph, principal)
+
+    def tenants(self) -> tuple[TenantId, ...]:
+        """Return tenants with authoritative PostgreSQL heads."""
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                return repository.tenants()
+        except PersistenceError:
+            raise
+        except PsycopgError as exc:
+            raise PersistenceError("failed to list authoritative graph tenants") from exc
+
+    @contextmanager
+    def transaction(self, tenant: TenantId, principal: PrincipalRef) -> Iterator[GraphTransaction]:
+        """Open one PostgreSQL transaction for an atomic staged graph update."""
+        transaction: _PersistentGraphTransaction | None = None
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                current = _read_from_repository(repository, tenant)
+                transaction = _PersistentGraphTransaction(tenant, principal, current)
+                try:
+                    yield transaction
+                    self._persist(repository, tenant, transaction.read(), principal)
+                except BaseException:
+                    transaction.abort()
+                    raise
+        except PersistenceConflictError:
+            if transaction is not None:
+                transaction._abort_if_open()
+            raise
+        except PersistenceError:
+            if transaction is not None:
+                transaction._abort_if_open()
+            raise
+        except PsycopgError as exc:
+            if transaction is not None:
+                transaction._abort_if_open()
+            raise PersistenceError(
+                f"failed to transact on authoritative graph for tenant {tenant.value!r}"
+            ) from exc
+        except BaseException:
+            if transaction is not None:
+                transaction._abort_if_open()
+            raise
+        else:
+            assert transaction is not None
+            receipt = _receipt_for(tenant, transaction.read(), principal)
+            transaction.commit(receipt)
+
+    def _persist(
+        self,
+        repository: RevisionRepository,
+        tenant: TenantId,
+        graph: MemoryGraph,
+        principal: PrincipalRef,
+    ) -> None:
+        """Apply direct-write orchestration using an already-owned transaction."""
+        head = repository.get_head(tenant)
+        if head is None:
+            revision = self._revision_for(tenant, graph, principal, head)
+            repository.create_first_revision(revision)
+            return
+
+        opened = _load_head_snapshot(repository, tenant, head)
+        staged_hash = graph.content_hash()
+        graph_diff = diff_graphs(opened, graph)
+
+        if staged_hash == head.content_hash:
+            if not graph_diff.is_empty:
+                raise PersistenceError(
+                    "equal graph hashes produced a non-empty diff for " f"tenant {tenant.value!r}"
+                )
+            if not repository.revalidate_head(tenant, head):
+                raise PersistenceConflictError(
+                    f"authoritative head changed while confirming no-op "
+                    f"for tenant {tenant.value!r}"
+                )
+            return
+
+        if graph_diff.is_empty:
+            raise PersistenceError(
+                "different graph hashes produced an empty diff for " f"tenant {tenant.value!r}"
+            )
+        revision = self._revision_for(tenant, graph, principal, head)
+        repository.append_revision(revision)
+
+    def _revision_for(
+        self,
+        tenant: TenantId,
+        graph: MemoryGraph,
+        principal: PrincipalRef,
+        head: RevisionHead | None,
+    ) -> Revision:
+        return Revision(
+            tenant=tenant,
+            revision_number=1 if head is None else head.revision_number + 1,
+            content_hash=graph.content_hash(),
+            parent_hash=None if head is None else head.content_hash,
+            principal=principal,
+            node_count=graph.node_count,
+            edge_count=graph.edge_count,
+            graph_json=graph.model_dump(mode="json"),
+            created_at=self._clock(),
+        )
+
+
+def _deserialize_snapshot(revision: Revision) -> MemoryGraph:
+    try:
+        graph = MemoryGraph.model_validate(revision.graph_json)
+    except ValidationError as exc:
+        raise PersistenceError(
+            f"invalid graph snapshot at revision {revision.revision_number} "
+            f"for tenant {revision.tenant.value!r}"
+        ) from exc
+
+    actual_hash = graph.content_hash()
+    if actual_hash != revision.content_hash:
+        raise PersistenceError(
+            f"graph snapshot hash mismatch at revision {revision.revision_number} "
+            f"for tenant {revision.tenant.value!r}"
+        )
+    return graph
+
+
+def _read_from_repository(repository: RevisionRepository, tenant: TenantId) -> MemoryGraph:
+    head = repository.get_head(tenant)
+    if head is None:
+        return EMPTY_GRAPH
+    return _load_head_snapshot(repository, tenant, head)
+
+
+def _load_head_snapshot(
+    repository: RevisionRepository, tenant: TenantId, head: RevisionHead
+) -> MemoryGraph:
+    revision = repository.get_revision(tenant, head.revision_number)
+    if revision is None:
+        raise PersistenceError(
+            f"authoritative head revision {head.revision_number} is missing "
+            f"for tenant {tenant.value!r}"
+        )
+    if revision.content_hash != head.content_hash:
+        raise PersistenceError(
+            f"head/revision hash mismatch for tenant {tenant.value!r} "
+            f"at revision {head.revision_number}"
+        )
+    return _deserialize_snapshot(revision)
+
+
+def _receipt_for(tenant: TenantId, graph: MemoryGraph, principal: PrincipalRef) -> WriteReceipt:
+    return WriteReceipt(
+        tenant=tenant,
+        principal=principal,
+        content_hash=graph.content_hash(),
+        node_count=graph.node_count,
+        edge_count=graph.edge_count,
+    )
