@@ -43,6 +43,14 @@ class InMemoryRevisionRepository:
         with self._lock:
             return len(self._revisions.get(tenant.value, {}))
 
+    def tenants(self) -> tuple[TenantId, ...]:
+        with self._lock:
+            return tuple(self._heads[key].tenant for key in sorted(self._heads))
+
+    def revalidate_head(self, tenant: TenantId, expected: RevisionHead) -> bool:
+        with self._lock:
+            return self._heads.get(tenant.value) == expected
+
     # --- compare-and-set primitive ------------------------------------------
     def compare_and_set_head(
         self, tenant: TenantId, expected: RevisionHead | None, desired: RevisionHead

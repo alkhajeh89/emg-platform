@@ -16,6 +16,7 @@ def test_public_api_exports() -> None:
         "PersistenceError",
         "PersistenceConflictError",
         "ProjectionLagError",
+        "PostgresNeo4jGraphStore",
     }
     assert expected.issubset(set(pkg.__all__))
     for name in expected:

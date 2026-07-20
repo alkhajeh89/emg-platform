@@ -36,6 +36,11 @@ _EXISTS = (
     "SELECT 1 FROM graph_revisions WHERE tenant_id = %(t)s AND revision_number = %(n)s LIMIT 1"
 )
 _COUNT = "SELECT count(*) FROM graph_revisions WHERE tenant_id = %(t)s"
+_SELECT_TENANTS = "SELECT tenant_id FROM graph_head ORDER BY tenant_id"
+_REVALIDATE_HEAD = (
+    "SELECT head_revision_number, head_content_hash FROM graph_head "
+    "WHERE tenant_id = %(t)s FOR UPDATE"
+)
 _INSERT_HEAD = (
     "INSERT INTO graph_head (tenant_id, head_revision_number, head_content_hash) "
     "VALUES (%(t)s, %(n)s, %(h)s) ON CONFLICT (tenant_id) DO NOTHING"
@@ -98,6 +103,26 @@ class PostgresRevisionRepository:
             cur.execute(_COUNT, {"t": tenant.value})
             row = cur.fetchone()
         return int(row[0]) if row is not None else 0
+
+    def tenants(self) -> tuple[TenantId, ...]:  # pragma: no cover - live DB
+        with self._connection.cursor() as cur:
+            cur.execute(_SELECT_TENANTS)
+            rows = cur.fetchall()
+        return tuple(TenantId.of(row[0]) for row in rows)
+
+    def revalidate_head(
+        self, tenant: TenantId, expected: RevisionHead
+    ) -> bool:  # pragma: no cover - live DB
+        if expected.tenant != tenant:
+            return False
+        with self._connection.cursor() as cur:
+            cur.execute(_REVALIDATE_HEAD, {"t": tenant.value})
+            row = cur.fetchone()
+        return (
+            row is not None
+            and row[0] == expected.revision_number
+            and row[1] == expected.content_hash
+        )
 
     def compare_and_set_head(
         self, tenant: TenantId, expected: RevisionHead | None, desired: RevisionHead
