@@ -35,7 +35,7 @@ requires_neo4j = pytest.mark.skipif(
 
 _DROP_SQL = (
     "DROP TABLE IF EXISTS schema_migrations, tenants, graph_revisions, "
-    "graph_head, outbox, evidence_ledger CASCADE"
+    "graph_head, outbox, evidence_ledger, projection_checkpoints, t_x, t_ok CASCADE"
 )
 
 
@@ -80,7 +80,9 @@ def neo4j_executor() -> Iterator[object]:  # pragma: no cover - runs only with a
 @requires_postgres
 def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
     applied = run_migrations(pg_executor)
-    assert [a.version for a in applied] == [1]
+    assert [a.version for a in applied] == [1, 2]
+    assert applied[0].name == "baseline"
+    assert applied[1].name == "projection_checkpoints"
     assert run_migrations(pg_executor) == ()
     assert migration_status(pg_executor).is_up_to_date is True
 

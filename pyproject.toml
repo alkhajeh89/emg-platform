@@ -17,6 +17,18 @@ strict = true
 namespace_packages = true
 explicit_package_bases = true
 
+mypy_path = [
+    "libs/python",
+    "services/audit/src",
+    "services/identity/src"
+]
+
+exclude = [
+    "libs/python/.*/tests/",
+    "services/.*/tests/",
+    "tools/"
+]
+
 [tool.pytest.ini_options]
 testpaths = ["libs", "services"]
 python_files = "test_*.py"
