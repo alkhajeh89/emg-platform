@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 import pytest
+from _outbox_helpers import RecordingOutboxRepository
 from emg_memory_graph import (
     EMPTY_GRAPH,
     EvidenceRef,
@@ -85,6 +86,7 @@ def graph_store(request: pytest.FixtureRequest) -> _Harness:
         return _Harness(InMemoryGraphStore(), None)
 
     revisions = InMemoryRevisionRepository()
+    outbox = RecordingOutboxRepository()
 
     def repository_factory(_connection: Connection[Any]) -> RevisionRepository:
         return revisions
@@ -92,6 +94,7 @@ def graph_store(request: pytest.FixtureRequest) -> _Harness:
     store = PostgresNeo4jGraphStore(
         _ControlledTransactions(),
         repository_factory=repository_factory,
+        outbox_repository_factory=lambda _connection: outbox,
         clock=lambda: NOW,
     )
     return _Harness(store, revisions)

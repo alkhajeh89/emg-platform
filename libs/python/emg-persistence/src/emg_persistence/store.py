@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from emg_memory_graph import EMPTY_GRAPH, MemoryGraph, diff_graphs
 from emg_platform_core import (
@@ -20,6 +21,8 @@ from psycopg import Error as PsycopgError
 from pydantic import ValidationError
 
 from .errors import PersistenceConflictError, PersistenceError
+from .outbox import OutboxEvent, OutboxRepository
+from .postgres.outbox_repository import PostgresOutboxRepository
 from .postgres.revision_repository import PostgresRevisionRepository
 from .postgres.transactions import TransactionProvider
 from .revisions import Revision, RevisionHead, RevisionRepository
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
     from psycopg import Connection
 
 RevisionRepositoryFactory = Callable[["Connection[Any]"], RevisionRepository]
+OutboxRepositoryFactory = Callable[["Connection[Any]"], OutboxRepository]
 Clock = Callable[[], datetime]
 
 
@@ -108,10 +112,12 @@ class PostgresNeo4jGraphStore:
         transactions: TransactionProvider,
         *,
         repository_factory: RevisionRepositoryFactory = PostgresRevisionRepository,
+        outbox_repository_factory: OutboxRepositoryFactory = PostgresOutboxRepository,
         clock: Clock = _utcnow,
     ) -> None:
         self._transactions = transactions
         self._repository_factory = repository_factory
+        self._outbox_repository_factory = outbox_repository_factory
         self._clock = clock
 
     def read(self, tenant: TenantId) -> MemoryGraph:
@@ -134,7 +140,8 @@ class PostgresNeo4jGraphStore:
         try:
             with self._transactions.transaction() as connection:
                 repository = self._repository_factory(connection)
-                self._persist(repository, tenant, graph, principal)
+                outbox = self._outbox_repository_factory(connection)
+                self._persist(repository, outbox, tenant, graph, principal)
         except PersistenceConflictError:
             raise
         except PersistenceError:
@@ -163,11 +170,12 @@ class PostgresNeo4jGraphStore:
         try:
             with self._transactions.transaction() as connection:
                 repository = self._repository_factory(connection)
+                outbox = self._outbox_repository_factory(connection)
                 current = _read_from_repository(repository, tenant)
                 transaction = _PersistentGraphTransaction(tenant, principal, current)
                 try:
                     yield transaction
-                    self._persist(repository, tenant, transaction.read(), principal)
+                    self._persist(repository, outbox, tenant, transaction.read(), principal)
                 except BaseException:
                     transaction.abort()
                     raise
@@ -197,6 +205,7 @@ class PostgresNeo4jGraphStore:
     def _persist(
         self,
         repository: RevisionRepository,
+        outbox: OutboxRepository,
         tenant: TenantId,
         graph: MemoryGraph,
         principal: PrincipalRef,
@@ -206,6 +215,7 @@ class PostgresNeo4jGraphStore:
         if head is None:
             revision = self._revision_for(tenant, graph, principal, head)
             repository.create_first_revision(revision)
+            outbox.append(self._outbox_event_for(revision))
             return
 
         opened = _load_head_snapshot(repository, tenant, head)
@@ -230,6 +240,7 @@ class PostgresNeo4jGraphStore:
             )
         revision = self._revision_for(tenant, graph, principal, head)
         repository.append_revision(revision)
+        outbox.append(self._outbox_event_for(revision))
 
     def _revision_for(
         self,
@@ -248,6 +259,31 @@ class PostgresNeo4jGraphStore:
             edge_count=graph.edge_count,
             graph_json=graph.model_dump(mode="json"),
             created_at=self._clock(),
+        )
+
+    @staticmethod
+    def _outbox_event_for(revision: Revision) -> OutboxEvent:
+        """Build the single baseline event owned by a committed revision."""
+        return OutboxEvent(
+            event_id=uuid4(),
+            tenant=revision.tenant,
+            revision_number=revision.revision_number,
+            content_hash=revision.content_hash,
+            event_type="graph.revision.committed",
+            schema_version=1,
+            idempotency_key=f"{revision.tenant.value}:{revision.revision_number}",
+            payload={
+                "tenant_id": revision.tenant.value,
+                "revision_number": revision.revision_number,
+                "content_hash": revision.content_hash,
+                "parent_hash": revision.parent_hash,
+                "principal_id": revision.principal.principal_id,
+                "principal_kind": revision.principal.kind.value,
+                "node_count": revision.node_count,
+                "edge_count": revision.edge_count,
+                "created_at": revision.created_at.isoformat(),
+            },
+            created_at=revision.created_at,
         )
 
 

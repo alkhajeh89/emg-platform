@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 import pytest
+from _outbox_helpers import RecordingOutboxRepository
 from emg_memory_graph import (
     EMPTY_GRAPH,
     EvidenceRef,
@@ -126,6 +127,7 @@ def _store(
     commit_failure: BaseException | None = None,
 ) -> tuple[PostgresNeo4jGraphStore, _Transactions]:
     transactions = _Transactions(events, commit_failure=commit_failure)
+    outbox = RecordingOutboxRepository(events)
 
     def repository_factory(_connection: Connection[Any]) -> RevisionRepository:
         return cast(RevisionRepository, repository)
@@ -134,6 +136,7 @@ def _store(
         PostgresNeo4jGraphStore(
             transactions,
             repository_factory=repository_factory,
+            outbox_repository_factory=lambda _connection: outbox,
             clock=lambda: NOW,
         ),
         transactions,
@@ -162,6 +165,7 @@ def test_transaction_is_open_and_staged_reads_are_consistent() -> None:
         "get_head",
         "get_revision",
         "append",
+        "outbox",
         "commit",
         "close",
     ]
