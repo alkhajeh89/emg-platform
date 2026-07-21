@@ -84,7 +84,7 @@ def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: 
     connection = connect(settings)
     run_migrations(PostgresMigrationExecutor(connection))
     with connection.cursor() as cursor:
-        cursor.execute("TRUNCATE graph_revisions, graph_head")
+        cursor.execute("TRUNCATE outbox, graph_revisions, graph_head")
     connection.commit()
     connection.close()
     try:
@@ -92,7 +92,7 @@ def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: 
     finally:
         connection = connect(settings)
         with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE graph_revisions, graph_head")
+            cursor.execute("TRUNCATE outbox, graph_revisions, graph_head")
         connection.commit()
         connection.close()
 

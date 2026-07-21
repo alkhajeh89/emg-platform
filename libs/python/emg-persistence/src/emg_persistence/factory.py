@@ -18,6 +18,7 @@ from emg_platform_core import GraphStore, InMemoryGraphStore
 from .config import PersistenceSettings
 from .postgres import (
     DirectConnectionProvider,
+    PostgresOutboxRepository,
     PostgresRevisionRepository,
     PostgresTransactionProvider,
 )
@@ -31,6 +32,7 @@ def _build_persistent_store(settings: PersistenceSettings) -> GraphStore:
     return PostgresNeo4jGraphStore(
         transactions,
         repository_factory=PostgresRevisionRepository,
+        outbox_repository_factory=PostgresOutboxRepository,
     )
 
 

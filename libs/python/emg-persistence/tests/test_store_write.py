@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 import pytest
+from _outbox_helpers import RecordingOutboxRepository
 from emg_memory_graph import (
     EMPTY_GRAPH,
     EvidenceRef,
@@ -147,6 +148,7 @@ def _store(
     commit_failure: BaseException | None = None,
 ) -> tuple[PostgresNeo4jGraphStore, _Transactions]:
     transactions = _Transactions(events, commit_failure=commit_failure)
+    outbox = RecordingOutboxRepository(events)
 
     def repository_factory(_connection: Connection[Any]) -> RevisionRepository:
         return cast(RevisionRepository, repository)
@@ -155,6 +157,7 @@ def _store(
         PostgresNeo4jGraphStore(
             transactions,
             repository_factory=repository_factory,
+            outbox_repository_factory=lambda _connection: outbox,
             clock=lambda: NOW,
         ),
         transactions,
@@ -180,7 +183,15 @@ def test_first_write_returns_receipt_after_commit_and_persists_revision_one() ->
 
     _assert_receipt(receipt, graph)
     assert transactions.calls == 1
-    assert events == ["begin", "get_head", "create_first", "commit", "close", "returned"]
+    assert events == [
+        "begin",
+        "get_head",
+        "create_first",
+        "outbox",
+        "commit",
+        "close",
+        "returned",
+    ]
     assert len(repository.created) == 1
     revision = repository.created[0]
     assert revision.revision_number == 1
@@ -231,7 +242,15 @@ def test_changed_graph_appends_complete_snapshot_with_correct_receipt_and_diff(
     assert revision.node_count == 1
     assert revision.edge_count == 0
     assert revision.graph_json == graph.model_dump(mode="json")
-    assert events == ["begin", "get_head", "get_revision", "append", "commit", "close"]
+    assert events == [
+        "begin",
+        "get_head",
+        "get_revision",
+        "append",
+        "outbox",
+        "commit",
+        "close",
+    ]
 
 
 def test_confirmed_no_op_revalidates_head_creates_no_revision_and_returns_receipt() -> None:
@@ -335,11 +354,19 @@ def test_repository_driver_failure_is_translated_and_rolls_back() -> None:
     assert events == ["begin", "get_head", "rollback", "close"]
 
 
-def test_direct_write_has_no_neo4j_or_outbox_behavior() -> None:
+def test_direct_write_has_no_neo4j_and_enqueues_outbox_before_commit() -> None:
     events: list[str] = []
     repository = _Repository(events, current=_revision(EMPTY_GRAPH))
     store, _ = _store(repository, events)
 
     store.write(TENANT, _graph(), principal=PRINCIPAL)
 
-    assert events == ["begin", "get_head", "get_revision", "append", "commit", "close"]
+    assert events == [
+        "begin",
+        "get_head",
+        "get_revision",
+        "append",
+        "outbox",
+        "commit",
+        "close",
+    ]

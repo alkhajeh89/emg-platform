@@ -8,6 +8,7 @@ arrive in later sprints.
 from __future__ import annotations
 
 from .migration_executor import PostgresMigrationExecutor
+from .outbox_repository import PostgresOutboxRepository
 from .pool import ConnectionProvider, DirectConnectionProvider, connect
 from .revision_repository import PostgresRevisionRepository
 from .transactions import PostgresTransactionProvider, TransactionProvider
@@ -16,6 +17,7 @@ __all__ = [
     "ConnectionProvider",
     "DirectConnectionProvider",
     "PostgresMigrationExecutor",
+    "PostgresOutboxRepository",
     "PostgresRevisionRepository",
     "PostgresTransactionProvider",
     "TransactionProvider",
