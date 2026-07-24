@@ -15,11 +15,11 @@ ROOT = Path(__file__).parents[2]
 def get_pyproject_dependencies(path: Path):
     data = tomllib.loads(path.read_text())
 
-    dependencies = data.get("project", {}).get("dependencies", [])
+    deps = data.get("project", {}).get("dependencies", [])
 
     result = set()
 
-    for dep in dependencies:
+    for dep in deps:
         name = dep.split(">")[0].split("=")[0].split("<")[0].strip()
 
         if name.startswith("emg-"):
@@ -32,11 +32,10 @@ def main():
 
     manifest = ROOT / "docker" / "dependencies.yaml"
 
-    with manifest.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+    data = yaml.safe_load(manifest.read_text())
 
-    if not data or "services" not in data:
-        print("❌ Invalid dependency manifest format")
+    if "services" not in data:
+        print("❌ Invalid dependency manifest: missing services section")
         sys.exit(1)
 
     failed = False
@@ -48,18 +47,20 @@ def main():
         pyproject = path / "pyproject.toml"
 
         if not pyproject.exists():
+            print(f"⚠️ {name}: no pyproject.toml, skipped")
             continue
 
-        declared = set(service.get("dependencies", []))
-
         actual = get_pyproject_dependencies(pyproject)
+
+        declared = set(service.get("dependencies", []))
 
         missing = actual - declared
 
         if missing:
-            print(f"❌ {name}: missing dependencies:")
-            for item in sorted(missing):
-                print(f"   - {item}")
+            print(f"❌ {name}: missing from manifest")
+
+            for dep in sorted(missing):
+                print(f"   - {dep}")
 
             failed = True
 
