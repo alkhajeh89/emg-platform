@@ -5,6 +5,7 @@ try:
     import tomllib
 except ModuleNotFoundError:
     import tomli as tomllib
+
 import yaml
 
 ROOT = Path(__file__).parents[2]
@@ -13,50 +14,67 @@ ROOT = Path(__file__).parents[2]
 def get_pyproject_dependencies(path: Path):
     data = tomllib.loads(path.read_text())
 
-    deps = data.get("project", {}).get("dependencies", [])
+    dependencies = data.get("project", {}).get("dependencies", [])
 
-    result = []
+    result = set()
 
-    for dep in deps:
-        name = dep.split(">")[0].split("=")[0].split("<")[0].strip()
+    for dependency in dependencies:
+        name = dependency.split(">")[0].split("=")[0].split("<")[0].strip()
+
         if name.startswith("emg-"):
-            result.append(name)
+            result.add(name)
 
-    return set(result)
+    return result
 
 
 def main():
-    manifest = ROOT / "docker" / "dependencies.yaml"
 
-    data = yaml.safe_load(manifest.read_text())
+    manifest_path = ROOT / "docker" / "dependencies.yaml"
+
+    if not manifest_path.exists():
+        print("❌ Missing docker/dependencies.yaml")
+        sys.exit(1)
+
+    data = yaml.safe_load(manifest_path.read_text())
+
+    if not data or "services" not in data:
+        print("❌ Invalid dependency manifest: missing services section")
+        sys.exit(1)
 
     failed = False
 
-    for name, service in data["components"].items():
+    for service_name, service in data["services"].items():
 
-        path = ROOT / service["path"]
+        service_path = ROOT / service.get("path", "")
 
-        pyproject = path / "pyproject.toml"
+        pyproject = service_path / "pyproject.toml"
 
+        # Skip services without pyproject
         if not pyproject.exists():
+            print(f"⚪ {service_name}: no pyproject.toml (skipped)")
             continue
 
         declared = set(service.get("dependencies", []))
+
         actual = get_pyproject_dependencies(pyproject)
 
         missing = actual - declared
 
         if missing:
-            print(f"❌ {name}: missing dependencies in manifest:")
-            for item in sorted(missing):
-                print(f"   - {item}")
+            print(f"❌ {service_name}: missing dependencies in manifest:")
+
+            for dependency in sorted(missing):
+                print(f"   - {dependency}")
+
             failed = True
 
         else:
-            print(f"✅ {name}: dependencies aligned")
+            print(f"✅ {service_name}: dependencies aligned")
 
     if failed:
         sys.exit(1)
+
+    print("\n✅ Dependency drift check passed")
 
 
 if __name__ == "__main__":
