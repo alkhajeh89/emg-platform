@@ -1,0 +1,31 @@
+name: Dependency Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - phase2/*
+
+jobs:
+  dependency-check:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validation dependencies
+        run: |
+          pip install pyyaml
+
+      - name: Validate dependency manifest
+        run: |
+          python tools/ci/check_dependency_manifest.py
