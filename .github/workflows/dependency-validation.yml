@@ -5,10 +5,13 @@ on:
     branches:
       - main
       - develop
+      - phase2/sprint5-outbox-event-persistence
+
   push:
     branches:
       - main
       - develop
+      - phase2/sprint5-outbox-event-persistence
 
 jobs:
   dependency-check:

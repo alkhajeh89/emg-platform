@@ -57,3 +57,15 @@ services:
       - emg-ontology
       - emg-semantic-layer
       - emg-trust-scoring
+
+entity-resolution:
+  path: libs/python/emg-entity-resolution
+
+  type: library
+
+  dependencies:
+    - emg-common-types
+    - emg-errors
+    - emg-ontology
+    - emg-semantic-layer
+    - emg-memory-graph
