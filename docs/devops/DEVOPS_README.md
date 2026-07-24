@@ -16,3 +16,4 @@ This directory contains the DevOps and CI/CD architecture documentation for the 
 10. [Rollback Strategy](ROLLBACK_STRATEGY.md)
 11. [DevOps Decision Register](DEVOPS_DECISION_REGISTER.md)
 12. [DevOps Glossary](DEVOPS_GLOSSARY.md)
+13. [Dependency Governance](DEPENDENCY_GOVERNANCE.md)
