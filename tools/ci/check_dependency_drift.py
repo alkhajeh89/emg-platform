@@ -1,75 +1,83 @@
 import sys
 from pathlib import Path
 
-import yaml
-
 try:
     import tomllib
 except ModuleNotFoundError:
     import tomli as tomllib
 
+import yaml
 
 ROOT = Path(__file__).parents[2]
 
 
-def get_pyproject_dependencies(path: Path):
+def load_pyproject_dependencies(path: Path):
     data = tomllib.loads(path.read_text())
 
-    deps = data.get("project", {}).get("dependencies", [])
+    dependencies = data.get("project", {}).get("dependencies", [])
 
     result = set()
 
-    for dep in deps:
-        name = dep.split(">")[0].split("=")[0].split("<")[0].strip()
+    for dependency in dependencies:
+        package = dependency.split(">")[0].split("=")[0].split("<")[0].strip()
 
-        if name.startswith("emg-"):
-            result.add(name)
+        if package.startswith("emg-"):
+            result.add(package)
 
     return result
 
 
 def main():
-    manifest = ROOT / "docker" / "dependencies.yaml"
+    manifest_path = ROOT / "docker" / "dependencies.yaml"
 
-    print(f"Reading manifest: {manifest}")
-
-    data = yaml.safe_load(manifest.read_text())
-
-    print(data.keys())
-
-    if "services" not in data:
-        print("❌ Manifest missing services section")
+    if not manifest_path.exists():
+        print("❌ docker/dependencies.yaml not found")
         sys.exit(1)
+
+    data = yaml.safe_load(manifest_path.read_text())
+
+    # Support both:
+    # services:
+    #   identity:
+    #       ...
+    #
+    # and direct root mapping
+    services = data.get("services", data)
 
     failed = False
 
-    for name, service in data["services"].items():
+    for name, service in services.items():
 
-        service_path = ROOT / service["path"]
+        service_path = ROOT / service.get("path", "")
 
         pyproject = service_path / "pyproject.toml"
 
+        # Skip services without pyproject
         if not pyproject.exists():
-            print(f"⚪ {name}: no pyproject.toml")
+            print(f"⚠️ {name}: no pyproject.toml found, skipped")
             continue
 
-        actual = get_pyproject_dependencies(pyproject)
-        declared = set(service.get("dependencies", []))
+        manifest_dependencies = set(service.get("dependencies", []))
 
-        missing = actual - declared
+        project_dependencies = load_pyproject_dependencies(pyproject)
+
+        missing = project_dependencies - manifest_dependencies
 
         if missing:
-            print(f"❌ {name}: missing in manifest")
+            print(f"❌ {name}: missing dependencies in docker/dependencies.yaml:")
 
-            for item in sorted(missing):
-                print(f"   - {item}")
+            for dependency in sorted(missing):
+                print(f"   - {dependency}")
 
             failed = True
+
         else:
             print(f"✅ {name}: dependencies aligned")
 
     if failed:
         sys.exit(1)
+
+    print("\n✅ Dependency drift validation passed")
 
 
 if __name__ == "__main__":
