@@ -9,5 +9,12 @@ from __future__ import annotations
 
 from .driver import create_driver
 from .migration_executor import Neo4jMigrationExecutor, split_cypher_statements
+from .projection import Neo4jGraphProjection, ProjectionHead
 
-__all__ = ["Neo4jMigrationExecutor", "create_driver", "split_cypher_statements"]
+__all__ = [
+    "Neo4jGraphProjection",
+    "Neo4jMigrationExecutor",
+    "ProjectionHead",
+    "create_driver",
+    "split_cypher_statements",
+]
