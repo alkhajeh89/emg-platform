@@ -1,9 +1,9 @@
 # EMG Dependency Manifest
-# Source of truth for monorepo dependencies
+# Source of truth for service dependencies
 
 version: 1
 
-components:
+services:
 
   identity:
     type: service
