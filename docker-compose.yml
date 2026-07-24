@@ -69,7 +69,7 @@ services:
       - "7687:7687"
     volumes:
       - neo4j-data:/data
-      - ./tools/seed-data/neo4j:/var/lib/neo4j/import:ro
+      - neo4j-import:/var/lib/neo4j/import
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
       interval: 10s
@@ -131,3 +131,4 @@ volumes:
   keycloak-data:
   neo4j-data:
   qdrant-data:
+  neo4j-import:
