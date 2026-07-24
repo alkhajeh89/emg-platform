@@ -78,6 +78,7 @@ Only the following Architecture Decision Records are currently present in
 | ADR-015 | Unified Enterprise Observability | Approved — Frozen |
 | ADR-016 | Enterprise Ownership Registry | Approved — Frozen |
 | ADR-017 | Enterprise Capacity & Scalability Model | Approved — Frozen |
+| ADR-018 | Bilingual Enterprise Architecture (Arabic + English) | Accepted — Foundation invariant |
 
 ADR-001 through ADR-013 are **not present in this repository** and must not
 be described as approved, frozen, or existing until they are actually added

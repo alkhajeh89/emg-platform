@@ -16,6 +16,7 @@ Architecture Board, never as a pull request to this directory.
 | `EMG_ADR-015_Unified_Enterprise_Observability.md` | Shared logs/metrics/traces model, alerting, SLI/SLO/error budget (ADR-015) |
 | `EMG_ADR-016_Enterprise_Ownership_Registry.md` | Accountable Owner / Operational Steward registry — source for `/CODEOWNERS` (ADR-016) |
 | `EMG_ADR-017_Enterprise_Capacity_Scalability_Model.md` | Cross-layer capacity, HA, and disaster-recovery model (ADR-017) |
+| `EMG_ADR-018_Bilingual_Enterprise_Architecture.md` | Foundation bilingual (Arabic + English) platform invariant (ADR-018) |
 
 Modules 1–10 and ADR-012/013 are referenced throughout the above but are not
 separately reproduced here, as their source documents were not provided to

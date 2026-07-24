@@ -64,6 +64,7 @@ It captures:
 - Full auditability
 - Enterprise governance
 - Security by design
+- Bilingual by foundation (Arabic + English) — ADR-018
 
 ---
 
