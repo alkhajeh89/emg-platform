@@ -55,7 +55,7 @@ def main():
 
     failed = False
 
-    for name, component in manifest["components"].items():
+    for name, component in manifest["services"].items():
 
         if not check_component(name, component):
             failed = True
