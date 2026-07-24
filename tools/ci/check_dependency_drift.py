@@ -35,6 +35,8 @@ def main():
         sys.exit(1)
 
     data = yaml.safe_load(manifest_path.read_text())
+    print("Loaded manifest:")
+    print(data)
 
     # Support both:
     # services:
