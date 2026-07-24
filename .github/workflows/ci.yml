@@ -86,3 +86,29 @@ jobs:
 
       - name: Type-check (make typecheck — TD-001, separate from lint)
         run: make typecheck
+
+
+  dependency-validation:
+    name: Dependency Manifest Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validation dependencies
+        run: |
+          pip install pyyaml tomli
+
+      - name: Validate dependency manifest
+        run: |
+          python tools/ci/check_dependency_manifest.py
+
+      - name: Check dependency drift
+        run: |
+          python tools/ci/check_dependency_drift.py
