@@ -31,7 +31,15 @@ def get_pyproject_dependencies(path: Path):
 def main():
     manifest = ROOT / "docker" / "dependencies.yaml"
 
+    print(f"Reading manifest: {manifest}")
+
     data = yaml.safe_load(manifest.read_text())
+
+    print(data.keys())
+
+    if "services" not in data:
+        print("❌ Manifest missing services section")
+        sys.exit(1)
 
     failed = False
 
