@@ -1,0 +1,59 @@
+# EMG Dependency Manifest
+# Source of truth for monorepo dependencies
+
+version: 1
+
+components:
+
+  identity:
+    type: service
+    path: services/identity
+    dockerfile: services/identity/Dockerfile
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-telemetry
+      - emg-auth-client
+      - emg-api-contracts
+      - emg-audit-client
+      - emg-policy-engine
+
+
+  audit:
+    type: service
+    path: services/audit
+    dockerfile: services/audit/Dockerfile
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-telemetry
+      - emg-api-contracts
+      - emg-audit-client
+      - emg-audit-pipeline
+
+
+  persistence:
+    type: library
+    path: libs/python/emg-persistence
+
+    dependencies:
+      - emg-errors
+      - emg-platform-core
+      - neo4j
+      - psycopg
+
+
+  memory-graph:
+    type: library
+    path: libs/python/emg-memory-graph
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-knowledge-lifecycle
+      - emg-knowledge-pipeline
+      - emg-ontology
+      - emg-semantic-layer
+      - emg-trust-scoring
