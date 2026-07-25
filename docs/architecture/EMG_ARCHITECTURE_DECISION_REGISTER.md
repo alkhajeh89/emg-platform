@@ -83,6 +83,120 @@ otherwise be tempted to reference the empty package.
 
 ---
 
+## Observations
+
+Observations are short, evidence-based findings that do not require a
+binary accept/reject decision the way the Open Architecture Decisions above
+do. They record what was found and a recommendation, and are closed when the
+recommendation is actioned (or explicitly declined) — not left open-ended
+like D-A-001/D-A-002.
+
+| ID | Title | Recommendation | Evidence |
+| :--- | :--- | :--- | :--- |
+| OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation; track one adjacent finding as a future task | See below |
+
+### OBS-A-001 — Platform Core Dependency Direction Review
+
+**Trigger:** flagged in `IMPLEMENTATION_GAP_ANALYSIS.md` §4 (T-A-001 work) as
+"reads architecturally backwards" — that characterization was made from
+`pyproject.toml` alone, without reading the actual source. This observation
+corrects and supersedes that earlier, under-evidenced flag.
+
+**1. Current dependency direction (verified from source, not just
+`pyproject.toml`):**
+
+`emg-platform-core` → `emg-memory-graph`, one-directional, confirmed by:
+
+- `emg_platform_core/ports/graph_store.py:25` — `from emg_memory_graph import
+  MemoryGraph`. The `GraphStore`/`GraphTransaction` `Protocol`s are typed
+  directly in terms of `MemoryGraph`: `read() -> MemoryGraph`,
+  `write(..., graph: MemoryGraph, ...)`, `stage(graph: MemoryGraph)`.
+- `emg_platform_core/adapters/in_memory.py:28` — `from emg_memory_graph import
+  EMPTY_GRAPH, MemoryGraph`, used as the concrete in-memory representation
+  backing `InMemoryGraphStore`.
+- Confirmed **not circular**: `emg-memory-graph`'s own source has zero
+  references to `emg_platform_core`.
+
+**2. Whether this violates the intended layering model: No.**
+
+`EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §9 ("Domain Model") explicitly names
+the Memory Graph as *"the core"* bounded context (§10, item 3: "Memory Graph
+— nodes, edges, evidence, temporal, versioning, lineage (**the core**)"),
+and §11 ("Service Boundaries") states the "one writer per store" rule that
+`ports/graph_store.py`'s own docstring cites verbatim. A storage port
+(`GraphStore`) being expressed in terms of the domain aggregate it persists
+(`MemoryGraph`) is the standard Repository-pattern shape in DDD/hexagonal
+architecture — it is not a "core has zero dependencies" violation, because
+the Freeze does not define `emg-platform-core` as a dependency-free package;
+it defines it as the **storage-independence seam**, which by construction
+must speak the domain's snapshot type. The earlier "reads backwards"
+characterization was a naming-expectation mismatch (the word "core"/
+"foundation" suggesting zero dependencies), not an actual Freeze violation.
+
+**Citation discrepancy found (minor, documentation-only):**
+`ports/graph_store.py`'s docstring and `emg-platform-core`'s `pyproject.toml`
+description both cite "Freeze §32," but `EMG_PRODUCT_ARCHITECTURE_FREEZE.md`
+has only 26 numbered sections plus a "Freeze Control" section — §32 does not
+exist in the current document. §9 and §11 (also cited) do exist and do
+substantively support the design, as shown above. This stale citation should
+be corrected to reference an existing section (or removed) — a one-line
+documentation fix, not an architecture question.
+
+**3. Possible remediation options (for the citation issue and the
+naming-expectation tension; not for a real defect, since none was found):**
+
+- **Option A — Accept as-is, fix the citation (recommended).** Correct the
+  dangling "§32" reference in `ports/graph_store.py` and `pyproject.toml` to
+  cite §9/§11 only (both of which are already accurate). No structural
+  change. Lowest risk, matches frozen architecture as written.
+- **Option B — Clarify `emg-platform-core`'s package description** to state
+  explicitly that it is "a storage-independence seam built on the
+  `emg-memory-graph` domain snapshot type," not a zero-dependency foundation,
+  preventing future readers from making the same under-evidenced "backwards"
+  assumption this observation had to correct. Low risk, documentation-only.
+- **Option C — Split `emg-platform-core` into a dependency-free ports-only
+  package plus a separate in-memory-adapter package.** Would restore the
+  conventional "core has no outward dependencies" shape, but is a real
+  package split affecting every current and future consumer (`emg-persistence`,
+  and anything Phase 3 builds against `GraphStore`) for a problem that is
+  presently a naming concern, not a functional one. Not recommended unless a
+  concrete future need for a dependency-free port package emerges.
+
+**4. Risk level: Low**, for the platform-core/memory-graph direction itself
+— deliberate, non-circular, frozen-architecture-aligned.
+
+**Adjacent finding (Medium risk, separate from the question asked, tracked
+here only as a future candidate — not actioned):** `emg-persistence` directly
+imports `emg_memory_graph` in two files
+(`emg_persistence/store.py:12`, `emg_persistence/neo4j/projection.py:19`) but
+does **not** declare `emg-memory-graph` in its own `pyproject.toml`
+dependencies (only `emg-platform-core` and `emg-errors`). This currently
+works only because `emg-platform-core` transitively pulls in
+`emg-memory-graph` — if that transitive relationship ever changed,
+`emg-persistence` would break at import time despite its own declared
+dependencies appearing satisfied. Neither `check_dependency_manifest.py` nor
+`check_dependency_drift.py` catches this class of issue today (they compare
+a package's own declared deps against the manifest; they do not verify a
+package's source imports against its own `pyproject.toml`). This is noted as
+a candidate for a future tracked task (a new "implicit dependency" check),
+not decided or actioned in this pass.
+
+**5. Should this become an ADR or remain an implementation task?**
+**Remains an implementation/documentation task — no ADR needed.** The
+dependency direction is already authoritatively grounded in
+`EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §9/§11 (frozen); nothing here
+introduces a new architectural decision requiring board-level review. The
+only concrete action is Option A (fix the stale §32 citation), which is a
+small documentation correction, not an ADR-worthy decision. The adjacent
+`emg-persistence` finding, if pursued, would also be an implementation task
+(add the missing declared dependency, and optionally extend the drift
+checker), not an ADR.
+
+**Status:** Recorded, not yet actioned. No code was modified to produce this
+observation.
+
+---
+
 ## Tracked Tasks (Phase 3)
 
 | ID | Task | Status | Acceptance Criteria |

@@ -123,18 +123,20 @@ Dockerfile dependencies are validated," which only applies to `identity` and
 (unimplemented, per §3) — there is nothing for that criterion to check until
 those services exist.
 
-**Anomaly noted, not fixed:** `emg-platform-core`'s `pyproject.toml`
-declares `emg-memory-graph` as a dependency. Architecturally this reads
-backwards — `emg-platform-core` is the Phase 1 foundation package
-(`GraphStore` protocols) that `emg-persistence` and, transitively,
-`emg-memory-graph`'s own stack build on; a foundation package depending on a
-higher-level domain package is unusual. This is not a circular import
-(`emg-memory-graph`'s own dependencies do not include `emg-platform-core`),
-but it is worth an explicit architectural decision on whether it's
-intentional. The manifest entry for `platform-core` reflects what
-`pyproject.toml` actually declares (consistent with this analysis's rule of
-recording reality, not silently correcting it) — flagged here for review,
-not resolved.
+**Anomaly noted, then reviewed:** `emg-platform-core`'s `pyproject.toml`
+declares `emg-memory-graph` as a dependency. This was initially flagged here
+as reading "architecturally backwards," based on `pyproject.toml` alone. A
+follow-up architecture review — `EMG_ARCHITECTURE_DECISION_REGISTER.md`
+OBS-A-001 — read the actual source and the Freeze document and found this
+characterization was premature: the dependency is deliberate, non-circular,
+and explicitly grounded in `EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §9/§11
+(`MemoryGraph` is the frozen domain core; a storage port being typed in
+terms of the domain aggregate it persists is standard hexagonal/DDD shape,
+not a violation). See OBS-A-001 for the full analysis, a minor stale-citation
+fix it recommends, and one adjacent finding (an undeclared transitive
+`emg-persistence` → `emg-memory-graph` import) it surfaced but did not
+action. The manifest entry for `platform-core` reflects what `pyproject.toml`
+actually declares, which OBS-A-001 confirms is correct as-is.
 
 ### Gap 2 — Dependency drift detection covers roughly 20% of the monorepo (RESOLVED)
 
