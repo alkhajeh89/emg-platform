@@ -33,10 +33,16 @@ requires_neo4j = pytest.mark.skipif(
     not _NEO4J_URI, reason="requires EMG_PERSISTENCE_TEST_NEO4J_URI"
 )
 
-_DROP_SQL = (
-    "DROP TABLE IF EXISTS schema_migrations, tenants, graph_revisions, "
-    "graph_head, outbox, evidence_ledger, projection_checkpoints, t_x, t_ok CASCADE"
-)
+# Dedicated schema so this file's schema_migrations rows (and its synthetic
+# t_ok/t_x tables) can never collide with -- or be dropped by -- the shared
+# public.schema_migrations table every other integration file reads/writes.
+# The version numbers used below (1, 2) intentionally reuse the same integers
+# as the real baseline migrations; isolation here is by schema, not by
+# renumbering, so the dirty/checksum/forward-only assertions stay unchanged.
+_TEST_SCHEMA = "migration_test"
+_RESET_SCHEMA_SQL = f"DROP SCHEMA IF EXISTS {_TEST_SCHEMA} CASCADE"
+_CREATE_SCHEMA_SQL = f"CREATE SCHEMA {_TEST_SCHEMA}"
+_SET_SEARCH_PATH_SQL = f"SET search_path TO {_TEST_SCHEMA}"
 
 
 @pytest.fixture
@@ -46,13 +52,15 @@ def pg_executor() -> Iterator[object]:  # pragma: no cover - runs only with a li
     settings = PersistenceSettings(postgres_dsn=_PG_DSN)
     conn = connect(settings)
     with conn.cursor() as cur:
-        cur.execute(_DROP_SQL)
+        cur.execute(_RESET_SCHEMA_SQL)
+        cur.execute(_CREATE_SCHEMA_SQL)
+        cur.execute(_SET_SEARCH_PATH_SQL)
     conn.commit()
     try:
         yield PostgresMigrationExecutor(conn)
     finally:
         with conn.cursor() as cur:
-            cur.execute(_DROP_SQL)
+            cur.execute(_RESET_SCHEMA_SQL)
         conn.commit()
         conn.close()
 
