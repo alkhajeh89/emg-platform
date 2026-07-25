@@ -5,7 +5,11 @@ import inspect
 from pathlib import Path
 from typing import get_type_hints
 
-from emg_knowledge_graph import KnowledgeGraphApplication
+from emg_knowledge_graph import (
+    BuildRevisionCommand,
+    BuildRevisionResult,
+    KnowledgeGraphApplication,
+)
 from emg_platform_core import InMemoryGraphStore
 from emg_platform_core.ports.graph_store import GraphStore
 
@@ -41,6 +45,12 @@ def test_application_constructor_uses_platform_graph_store_boundary() -> None:
     assert hints["return"] is type(None)
     signature = inspect.signature(KnowledgeGraphApplication.__init__)
     assert "graph_store" in signature.parameters
+
+
+def test_revision_method_uses_application_contracts() -> None:
+    hints = get_type_hints(KnowledgeGraphApplication.build_revision)
+    assert hints["command"] is BuildRevisionCommand
+    assert hints["return"] is BuildRevisionResult
 
 
 def test_service_modules_do_not_import_forbidden_store_dependencies() -> None:
