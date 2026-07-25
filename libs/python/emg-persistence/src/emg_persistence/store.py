@@ -320,16 +320,16 @@ class PostgresNeo4jGraphStore:
         if pg_head is None:
             return EMPTY_GRAPH
         pg_revision, expected_hash = pg_head
-        proj_head = projection.get_projection_head(tenant)
-        if (
-            proj_head is not None
-            and proj_head.revision_number == pg_revision
-            and proj_head.content_hash == expected_hash
-        ):
-            graph = projection.reconstruct(tenant)
-            if graph.content_hash() == expected_hash:
-                return graph
         try:
+            proj_head = projection.get_projection_head(tenant)
+            if (
+                proj_head is not None
+                and proj_head.revision_number == pg_revision
+                and proj_head.content_hash == expected_hash
+            ):
+                graph = projection.reconstruct(tenant)
+                if graph.content_hash() == expected_hash:
+                    return graph
             return projection.read_repair(
                 tenant,
                 load_head=self._load_pg_head,
