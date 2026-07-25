@@ -35,7 +35,7 @@ free-form string, so this list can grow without breaking compatibility.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `edge_id` | `SafeLabel` | content-addressed |
+| `edge_id` | `SafeLabel` | canonical relationship assertion/version id; raw inputs may use the deterministic type/endpoints fallback |
 | `edge_type` | `SafeLabel` | relationship type (canonical vocab: `EdgeType`) |
 | `source_id` / `target_id` | `SafeLabel` | endpoints; self-loops rejected |
 | `direction` | `EdgeDirection` | `DIRECTED` \| `UNDIRECTED` |
@@ -47,7 +47,11 @@ free-form string, so this list can grow without breaking compatibility.
 | `metadata` | `Metadata` | |
 
 Adapter: `MemoryEdge.from_relationship(rel, evidence=…, confidence=…)` builds an
-edge from an ontology `Relationship`, reusing its endpoints and effective window.
+edge from an ontology `Relationship`, reusing its relationship id, endpoints and
+effective window. Distinct relationship versions remain distinct edges even when
+their type and endpoints are identical. Repeated observations merge evidence only
+when their canonical id and immutable relationship fields, including validity,
+agree.
 
 ## Evidence — `EvidenceRef`
 
