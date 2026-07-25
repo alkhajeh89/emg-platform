@@ -79,10 +79,22 @@ Only the following Architecture Decision Records are currently present in
 | ADR-016 | Enterprise Ownership Registry | Approved — Frozen |
 | ADR-017 | Enterprise Capacity & Scalability Model | Approved — Frozen |
 | ADR-018 | Bilingual Enterprise Architecture (Arabic + English) | Accepted — Foundation invariant |
+| ADR-019 | AI Orchestration Layer | Proposed |
+| ADR-020 | Knowledge Ingestion Layer | Proposed |
+| ADR-021 | Enterprise API Strategy | Proposed |
 
 ADR-001 through ADR-013 are **not present in this repository** and must not
 be described as approved, frozen, or existing until they are actually added
 under `docs/architecture/`.
+
+ADR-019/020/021 accompany `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` and
+`IMPLEMENTATION_GAP_ANALYSIS.md` (2026-07-25). They are architecture-only —
+no service or library referenced by them has been implemented as a result of
+their creation. This table entry is additive bookkeeping only; it does not
+update the stale "Current Branch" field or the Module/Sprint narrative below,
+which `IMPLEMENTATION_GAP_ANALYSIS.md` §7 (Gap 4) flags as out of date
+relative to the actual current branch,
+`phase2/sprint5-outbox-event-persistence`.
 
 ---
 

@@ -1,0 +1,136 @@
+# EMG Architecture Decision Register — Open Items
+
+**Status:** Living register — tracks unresolved architecture decisions
+**Date opened:** 2026-07-25
+**Purpose:** These items are identified gaps or ambiguities discovered during
+`IMPLEMENTATION_GAP_ANALYSIS.md` and the Phase 3 documentation pass. They are
+tracked here explicitly rather than resolved silently. An item only leaves
+this register when it is marked **Accepted** with a named decider and a
+dated decision — never by a later document simply assuming an answer.
+
+This register follows the same convention already established by
+`docs/architecture/backend/BACKEND_DECISION_REGISTER.md` and
+`docs/security/SECURITY_DECISION_REGISTER.md`: a decision recorded here does
+not constitute approved architecture unless explicitly marked Accepted.
+
+---
+
+## Open Architecture Decisions
+
+| ID | Decision Area | Status | Owner | Evidence | Blocking Questions |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| D-A-001 | Module Numbering Governance | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §6 (Gap 4a), §7 (Gap 4) | Which numbering scheme is canonical? |
+| D-A-002 | Entity Resolution Ownership | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §2 (Gap 1) | Standalone service, part of `emg-memory-graph`, or shared library? |
+
+### D-A-001 — Module Numbering Governance
+
+**Current conflicting schemes:**
+
+1. `ARCHITECTURE_STATUS.md` — Module 1–10 (Repository Structure through
+   Decision Intelligence), with EPIC-01…EPIC-13 and Sprint 1–14 tracking.
+2. Phase 0/1/2 roadmap structure (`docs/phases/phase-0`, `phase-1`,
+   `phase-2`; current branch `phase2/sprint5-outbox-event-persistence`) —
+   covers the `emg-platform-core`/`emg-persistence` foundation independent
+   of any single Module 1–10 entry.
+3. Reference architecture — `docs/architecture/reference/api/EMG-Enterprise-API-Architecture.md`
+   and the v2.0 Enterprise Intelligence Platform document tag API groups
+   `M01`–`Mxx` (observed: M02, M04, M05, M06, M09, M10, M12, M13, M16, M17,
+   M18), which does not map 1:1 to scheme 1 (e.g., scheme 3's M18 = Audit
+   APIs, while scheme 1's Module 6 = Audit).
+
+**Required future decision:** create a single canonical numbering model, or
+an explicit, published mapping table between all three, so that a reference
+to "Module 6," "M06," and "Phase 2" cannot be mistaken for describing the
+same or different things without checking source.
+
+**Status of dependent work:** `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md`
+§0 provides a working, non-authoritative reconciliation table so that
+document could be written without waiting on this decision — that
+reconciliation is scoped to Phase 3 only and does not substitute for a
+platform-wide canonical decision.
+
+**No implementation is blocked by this item** — it is a documentation-
+governance risk, not a code dependency.
+
+### D-A-002 — Entity Resolution Ownership
+
+**Current state:** `libs/python/emg-entity-resolution` is a scaffolded
+package with a 0-byte `pyproject.toml` and zero lines of source
+(`IMPLEMENTATION_GAP_ANALYSIS.md` §2, Gap 1). `emg-memory-graph` already
+contains its own, separately-built "Entity Resolution Engine
+(deterministic)" as part of its existing, completed scope.
+
+**Questions to resolve:**
+
+- Is entity resolution meant to be a **standalone service**, independent of
+  any single library?
+- Is it meant to be **part of `emg-memory-graph`** — i.e., is
+  `emg-entity-resolution` an abandoned or premature scaffold that should be
+  removed once `emg-memory-graph`'s resolver is confirmed as the single
+  implementation?
+- Should it become a **shared library** that `emg-memory-graph`'s resolver
+  is later extracted into, so that other future consumers (e.g., connector-
+  sourced cross-system entity matching, as `emg-connectors` integrations
+  mature) can use the same resolution logic without depending on the whole
+  of `emg-memory-graph`?
+
+**Binding constraint on future work:** no implementation may depend on
+`emg-entity-resolution` until this ownership question is explicitly
+approved. This applies to `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md`'s
+Recommended Implementation Sequence (§10, step 6) and any future Knowledge
+Graph Expansion (§8) or Knowledge Ingestion (ADR-020) work that might
+otherwise be tempted to reference the empty package.
+
+---
+
+## Tracked Tasks (Phase 3)
+
+| ID | Task | Status | Acceptance Criteria |
+| :--- | :--- | :--- | :--- |
+| T-A-001 | Extend dependency manifest coverage to all EMG Python components | **Open** | See below |
+
+### T-A-001 — Extend dependency manifest coverage to all EMG Python components
+
+**Current state:** `docker/dependencies.yaml` declares 5 of 25 total
+components (18 libraries + 7 services) — `identity`, `audit`, `persistence`,
+`memory-graph`, `entity-resolution`
+(`IMPLEMENTATION_GAP_ANALYSIS.md` §4, Gap 2; `docs/devops/DEPENDENCY_GOVERNANCE.md`
+Constraints).
+
+**Acceptance criteria:**
+
+- Every `libs/python/*` package is represented in `docker/dependencies.yaml`.
+- Every service's Dockerfile dependencies are validated by
+  `tools/ci/check_dependency_manifest.py` against its manifest entry.
+- CI (`.github/workflows/ci.yml`, `dependency-validation` job) fails the
+  build on dependency drift for every represented component, not only the
+  current 5.
+
+**Sequencing:** per `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` §10, this is
+implementation-sequence step 1 — it precedes any new Phase 3 service so that
+drift detection covers new work from the moment it is scaffolded, not
+retrofitted afterward.
+
+**No code has been written for this task.** It is tracked here as approved
+scope, pending its own implementation pass under the same sprint-by-sprint
+review discipline used for Phase 2.
+
+---
+
+## Approved Implementation Sequence (Reference)
+
+For traceability, the sequence approved alongside this register (no code
+changes made in this documentation pass):
+
+1. Extend dependency manifest coverage (T-A-001, above).
+2. Add `LanguageCode`/`Locale` to `emg-common-types`.
+3. Build `services/knowledge-graph`.
+4. Build Enterprise API Gateway.
+5. Build AI Orchestration service (`services/ai-orchestration`).
+6. Build Administration service (`services/administration`, to be
+   scaffolded).
+7. Resolve entity-resolution ownership (D-A-002, above) before any
+   integration depends on it.
+
+This sequence is recorded here as the currently-approved plan; it is
+detailed in full in `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` §10.
