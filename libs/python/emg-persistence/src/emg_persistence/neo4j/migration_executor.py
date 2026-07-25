@@ -47,14 +47,27 @@ _MERGE_DIRTY = (
 def split_cypher_statements(text: str) -> tuple[str, ...]:
     """Split a Cypher migration into individual statements on ``;``.
 
-    Line comments (``//``) and blank/whitespace-only statements are dropped. Pure
-    — no driver involvement — so migration authoring is unit-testable.
+    Comments are stripped *before* splitting on ``;``, not after: cutting each
+    line at its first ``//`` removes both full-line and inline trailing
+    comments, and — critically — removes a comment in its entirety before any
+    ``;`` inside that comment's prose can be mistaken for a statement
+    separator. Splitting first and filtering ``//``-prefixed lines per
+    resulting chunk (the previous approach) breaks exactly on that case: a
+    comment containing a semicolon gets cut in half, and the tail half no
+    longer starts with ``//`` so it leaks into the next statement.
+    Blank/whitespace-only statements are dropped. Pure — no driver
+    involvement — so migration authoring is unit-testable.
+
+    Known limitation: this is a line-oriented scan, not a Cypher-aware
+    tokenizer. A string literal containing ``//`` would be truncated as if it
+    were a comment. None of the packaged migrations do this; a future
+    migration that needs a literal ``//`` in a string should avoid this
+    helper or the helper should be upgraded to a proper tokenizer first.
     """
+    code_only = "\n".join(line.partition("//")[0] for line in text.splitlines())
     statements: list[str] = []
-    for chunk in text.split(";"):
-        body = "\n".join(
-            line for line in chunk.splitlines() if not line.strip().startswith("//")
-        ).strip()
+    for chunk in code_only.split(";"):
+        body = chunk.strip()
         if body:
             statements.append(body)
     return tuple(statements)
