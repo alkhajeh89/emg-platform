@@ -17,6 +17,8 @@ changing an internal `emg-*` dependency.
 - `docker/dependencies.yaml`
 - `tools/ci/check_dependency_manifest.py`
 - `tools/ci/check_dependency_drift.py`
+- `tools/ci/check_implicit_dependencies.py`
+- `tools/ci/tests/test_check_implicit_dependencies.py`
 - `.github/workflows/ci.yml` (`dependency-validation` job)
 - `services/identity/Dockerfile`
 - `services/audit/Dockerfile`
@@ -83,8 +85,8 @@ than invent a new shape:
 
 ## CI Enforcement
 The `dependency-validation` job in `.github/workflows/ci.yml` runs on every
-`push` and `pull_request`, installing `pyyaml` + `tomli` and then running, in
-order:
+`push` and `pull_request`, installing `pyyaml` + `tomli` + `pytest` and then
+running, in order:
 1. `tools/ci/check_dependency_manifest.py` — for every `type: service` entry,
    confirms its Dockerfile exists and contains a `COPY libs/python/{dependency}`
    line for each declared dependency. Libraries are skipped (they have no
@@ -92,9 +94,26 @@ order:
 2. `tools/ci/check_dependency_drift.py` — for every entry (service or
    library), parses its `pyproject.toml`, extracts the `emg-*` dependencies
    actually declared in code, and compares that set against the manifest's
-   `dependencies` list. Reports any dependency present in code but missing
-   from the manifest, and exits 1 if any are found. Supports Python 3.10+ via
-   a `tomllib`-with-`tomli`-fallback import.
+   `dependencies` list. Reports any dependency present in `pyproject.toml`
+   but missing from the manifest, and exits 1 if any are found. Supports
+   Python 3.10+ via a `tomllib`-with-`tomli`-fallback import.
+3. `pytest tools/ci/tests/ -v` — unit tests for the checker described below,
+   run against synthetic fixtures. This directory is deliberately outside
+   the root `pyproject.toml`'s `[tool.pytest.ini_options] testpaths` (which
+   scopes `make test` to `libs` and `services` only), so it is invoked here
+   with an explicit path rather than relying on `make test` to discover it.
+4. `tools/ci/check_implicit_dependencies.py` — parses every `.py` file under
+   each manifest component's `src/` with Python's `ast` module and compares
+   the `emg-*` packages actually imported by the code against that
+   component's own `pyproject.toml` dependencies. This is a different
+   direction of comparison than script 2: `check_dependency_drift.py`
+   compares `pyproject.toml` against the manifest; this script compares real
+   source imports against `pyproject.toml` itself. It is what would have
+   caught `emg-persistence`'s undeclared `emg-memory-graph` import (see
+   `EMG_ARCHITECTURE_DECISION_REGISTER.md`, OBS-A-001) before it was found
+   manually during an architecture review. Imports inside `if TYPE_CHECKING:`
+   blocks are reported separately (informational, does not fail the build) —
+   see "Implicit Dependency Detection" below.
 
 This job previously existed in triplicate — the same two scripts were also
 wired into two standalone workflow files
@@ -104,6 +123,49 @@ triggers and no behavioral difference from the `ci.yml` job. Both were
 removed; `ci.yml`'s `dependency-validation` job is the single enforcement
 point.
 
+## Implicit Dependency Detection
+`tools/ci/check_implicit_dependencies.py` (ECP-2) closes a gap that neither
+of the two original scripts covers: both of them only ever compare two
+*declared* lists against each other (`pyproject.toml` vs. the manifest).
+Neither reads a single line of actual source code, so a package that imports
+another `emg-*` package without declaring it anywhere would pass both checks
+silently — which is exactly what happened with `emg-persistence` and
+`emg-memory-graph` before it was manually found and fixed (ECP-1).
+
+How it works:
+- Walks the full AST of every `.py` file under a component's `src/`
+  (`ast.parse` + a full node walk, not a top-level-only scan), so a deferred
+  import inside a function body — a real, existing pattern in this repo,
+  e.g. `emg_persistence/neo4j/lazy.py` — is still caught.
+- Resolves each imported top-level module name to its dash-cased `emg-*`
+  package name (`emg_common_types` → `emg-common-types`); anything not
+  starting with `emg_` (third-party imports) is ignored.
+- Excludes self-imports and relative (`from .x import y`) intra-package
+  imports.
+- Distinguishes imports inside `if TYPE_CHECKING:` blocks from ordinary
+  runtime imports. A runtime import of an undeclared `emg-*` package fails
+  the build (`❌`). A `TYPE_CHECKING`-only import of an undeclared package is
+  reported as informational (`ℹ️`) rather than failing, since it doesn't
+  affect what gets installed at runtime — but if the same package is *also*
+  imported at runtime elsewhere in the same component, it is still treated
+  as a hard failure. As of this writing, no package in this repository has a
+  `TYPE_CHECKING`-guarded cross-package `emg-*` import (the existing
+  `TYPE_CHECKING` usage in `emg-persistence`, `emg-audit-pipeline`,
+  `emg-knowledge-lifecycle`, and `emg-telemetry` guards either third-party or
+  same-package relative imports), so this distinction is currently latent —
+  documented for when it first applies, not retrofitted to a real case.
+
+Known, deliberate limitations (v1 scope):
+- No support for dynamic imports (`importlib.import_module("emg_x")` with a
+  computed argument). No such usage exists anywhere in this repository today.
+- No optional-dependency (`try: import emg_x / except ImportError:`)
+  handling. No such pattern exists anywhere in this repository today. If one
+  is introduced later, it should be treated as a distinct, explicitly-allowed
+  category rather than retrofitted speculatively now.
+- Like `check_dependency_drift.py`, this script has no unit tests of its own
+  prior to ECP-2 — `tools/ci/tests/test_check_implicit_dependencies.py` is
+  the first pytest coverage for any script in `tools/ci/`.
+
 ## Developer Workflow
 When adding a new internal `emg-*` dependency to any package:
 1. Add it to the package's `pyproject.toml`.
@@ -111,10 +173,12 @@ When adding a new internal `emg-*` dependency to any package:
    (under `services:`, using the existing `type` for that package).
 3. If the package is a service, add the matching `COPY` and `pip install`
    lines to its Dockerfile, following the existing pattern above.
-4. Run the two checks locally before opening a PR:
+4. Run the checks locally before opening a PR:
    ```
    python tools/ci/check_dependency_manifest.py
    python tools/ci/check_dependency_drift.py
+   pytest tools/ci/tests/ -v
+   python tools/ci/check_implicit_dependencies.py
    ```
 5. When adding a brand-new service or library, add its entry directly under
    `services:` in `docker/dependencies.yaml` — never as a top-level sibling
@@ -122,18 +186,39 @@ When adding a new internal `emg-*` dependency to any package:
 
 ## Constraints
 - `check_dependency_drift.py` currently only detects dependencies present in
-  code but missing from the manifest (`actual - declared`). It does not flag
-  the reverse case — a dependency declared in the manifest that is no longer
-  used in code (stale/orphaned entries).
-- Drift detection is only as accurate as each package's `pyproject.toml`. A
-  package with an empty or unpopulated `pyproject.toml`
+  `pyproject.toml` but missing from the manifest (`actual - declared`). It
+  does not flag the reverse case — a dependency declared in the manifest
+  that is no longer used in code (stale/orphaned manifest entries). This gap
+  is distinct from what `check_implicit_dependencies.py` addresses (below)
+  and remains open — see Open Questions.
+- `check_implicit_dependencies.py` compares actual source imports against
+  `pyproject.toml`, which closes the specific gap that let
+  `emg-persistence`'s undeclared `emg-memory-graph` import go undetected.
+  It does **not** address the manifest-vs-code-usage direction above: a
+  package can still declare an `emg-*` dependency in its `pyproject.toml`
+  and manifest entry that its code no longer actually imports, and neither
+  script will flag that as stale.
+- Both drift-style checks are only as accurate as each package's
+  `pyproject.toml`. A package with an empty or unpopulated `pyproject.toml`
   (`libs/python/emg-entity-resolution/pyproject.toml` is currently a 0-byte
   file) will report as "aligned" with zero dependencies rather than flagging
-  that its manifest entry may be incomplete.
+  that its manifest entry may be incomplete — `check_implicit_dependencies.py`
+  would report a real finding here only if that package's code actually
+  imported something; today it does not (its `__init__.py` is empty), so it
+  currently reports clean by coincidence, not because the gap is resolved.
+- `check_implicit_dependencies.py` only detects statically-visible imports
+  (module-level or nested inside function bodies/`if` blocks, anything
+  `ast.walk` reaches). It does not detect dynamic imports
+  (`importlib.import_module` with a computed name) or optional
+  (`try/except ImportError`) imports — neither pattern exists anywhere in
+  this repository today.
 
 ## Dependencies
 - PyYAML (manifest parsing)
 - `tomllib` (Python 3.11+) / `tomli` (Python 3.10 fallback)
+- `ast` (Python standard library — implicit-dependency detection, no
+  third-party parsing library)
+- `pytest` (unit tests for `check_implicit_dependencies.py`)
 - GitHub Actions
 - Docker
 
@@ -146,26 +231,50 @@ dependency visible as a CI failure rather than a silent image-size or
 attack-surface change.
 
 ## Operational Considerations
-Both validation scripts run in seconds with no external services required
-(no database, no Docker daemon), so they run early in CI and give fast
-feedback on a manifest/Dockerfile/pyproject mismatch before the slower
-build/test jobs run.
+All three validation scripts (manifest, drift, implicit-dependency) run in
+seconds with no external services required (no database, no Docker daemon),
+so they run early in CI and give fast feedback on a manifest/Dockerfile/
+pyproject/source mismatch before the slower build/test jobs run.
+`check_implicit_dependencies.py` parses every `.py` file under `src/` for
+every manifest component on each run; at the current repo size (18 libraries
++ 2 services) this remains a sub-second operation, but it is the most
+expensive of the three checks and is sequenced last in the CI job for that
+reason.
 
 ## Open Questions
-- Should `check_dependency_drift.py` also detect stale manifest entries
-  (declared but unused)? Not currently required by any consumer, but noted
-  above as a known gap.
+- Should stale manifest entries (declared in `docker/dependencies.yaml` and
+  `pyproject.toml` but no longer imported by any code) be detected? Not
+  currently required by any consumer, and distinct from what ECP-2 added —
+  noted above as a known, still-open gap.
 - Should `libs/python/emg-entity-resolution/pyproject.toml` be populated with
   its real dependencies? Currently empty; out of scope for dependency
-  governance itself, but drift detection cannot do anything useful for this
-  package until it is.
+  governance itself, and blocked on `EMG_ARCHITECTURE_DECISION_REGISTER.md`
+  D-A-002 (Entity Resolution Ownership, Open) — no implementation should
+  depend on this package until that decision is resolved.
+- Should a package's `TYPE_CHECKING`-only reference to an undeclared `emg-*`
+  package require the same fix as a runtime one, or a lighter-weight one
+  (e.g. a `dev`/type-checking-only extra)? No real case exists yet to decide
+  against; `check_implicit_dependencies.py` reports it informationally today
+  rather than pre-deciding the policy.
 
 ## Cross References
 - [CI Pipeline](CI_PIPELINE.md)
 - [Build Pipeline](BUILD_PIPELINE.md)
+- `EMG_ARCHITECTURE_DECISION_REGISTER.md` — OBS-A-001 (the observation that
+  led to ECP-1 and ECP-2), D-A-002 (blocks populating
+  `emg-entity-resolution`'s `pyproject.toml`)
 
 ## Future Considerations
-- Extend `check_dependency_drift.py` to flag manifest entries with no
-  corresponding code usage (bidirectional drift detection).
-- Consider a `make check-dependencies` target so both scripts run as one
-  local command instead of two.
+- `check_implicit_dependencies.py` (ECP-2) still does not flag manifest
+  entries with no corresponding code usage — that remains a distinct,
+  unaddressed direction (stale/orphaned entries), noted under Open Questions.
+- Consider a `make check-dependencies` target so all four checks
+  (`check_dependency_manifest.py`, `check_dependency_drift.py`,
+  `pytest tools/ci/tests/`, `check_implicit_dependencies.py`) run as one
+  local command instead of four separate invocations.
+- Consider extracting the shared manifest/pyproject-loading logic currently
+  duplicated between `check_dependency_drift.py` and
+  `check_implicit_dependencies.py` into a small common helper module.
+  Deliberately not done as part of ECP-2 itself, to avoid touching the
+  already-approved, working `check_dependency_drift.py` for an unrelated
+  change.

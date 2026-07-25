@@ -93,7 +93,7 @@ like D-A-001/D-A-002.
 
 | ID | Title | Recommendation | Evidence |
 | :--- | :--- | :--- | :--- |
-| OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation (pending); adjacent finding resolved via ECP-1 (2026-07-25) | See below |
+| OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation (pending); adjacent finding resolved via ECP-1 (2026-07-25); systemic detection gap closed via ECP-2 (2026-07-25) | See below |
 
 ### OBS-A-001 — Platform Core Dependency Direction Review
 
@@ -186,10 +186,24 @@ Note that neither `check_dependency_manifest.py` nor
 `check_dependency_drift.py` would have caught this class of issue on its own
 (they compare a package's own declared deps against the manifest; they do
 not verify a package's source imports against its own `pyproject.toml`).
-ECP-2 (bidirectional/implicit dependency-drift detection, approved for
-planning, not yet implemented) is the systemic follow-up that would close
-this detection gap so a recurrence is caught automatically rather than by a
-manual architecture review.
+
+**ECP-2 — RESOLVED (2026-07-25):** `tools/ci/check_implicit_dependencies.py`
+now closes this detection gap. It walks every package's source with Python's
+`ast` module and compares actual `emg-*` imports against that package's own
+`pyproject.toml`, distinguishing runtime imports (build-failing) from
+`TYPE_CHECKING`-only imports (informational). Wired into
+`.github/workflows/ci.yml`'s `dependency-validation` job alongside its own
+unit test suite (`tools/ci/tests/test_check_implicit_dependencies.py`, 15
+tests against synthetic fixtures plus a live-repo zero-findings regression
+guard). Verified: 0 findings across all 20 manifest components (2 services +
+18 libraries), `ruff`/`black`/pre-commit clean, existing
+`check_dependency_manifest.py`/`check_dependency_drift.py` unaffected. Full
+detail in `docs/devops/DEPENDENCY_GOVERNANCE.md` ("Implicit Dependency
+Detection"). A recurrence of the `emg-persistence`-class gap will now be
+caught automatically in CI rather than requiring a manual architecture
+review. Note this does not close the *separate*, still-open stale-manifest-
+entry direction (a dependency declared but no longer used) — see that doc's
+Open Questions.
 
 **5. Should this become an ADR or remain an implementation task?**
 **Remains an implementation/documentation task — no ADR needed.** The
@@ -203,10 +217,11 @@ small documentation correction, not an ADR-worthy decision. The adjacent
 checker), not an ADR.
 
 **Status:** Partially actioned. The adjacent `emg-persistence` finding is
-**Resolved** (ECP-1, 2026-07-25). The stale "§32" citation fix (Option A)
-remains pending — a small, textual-only follow-up, not yet applied. The
-platform-core/memory-graph direction itself required no change (Accepted
-as-is).
+**Resolved** (ECP-1, 2026-07-25), and the systemic detection gap that let it
+go undetected is **Resolved** (ECP-2, 2026-07-25). The stale "§32" citation
+fix (Option A) remains pending — a small, textual-only follow-up, not yet
+applied. The platform-core/memory-graph direction itself required no change
+(Accepted as-is).
 
 ---
 

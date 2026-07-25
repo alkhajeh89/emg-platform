@@ -103,7 +103,7 @@ jobs:
 
       - name: Install validation dependencies
         run: |
-          pip install pyyaml tomli
+          pip install pyyaml tomli pytest
 
       - name: Validate dependency manifest
         run: |
@@ -112,3 +112,11 @@ jobs:
       - name: Check dependency drift
         run: |
           python tools/ci/check_dependency_drift.py
+
+      - name: Unit test the implicit-dependency checker itself
+        run: |
+          pytest tools/ci/tests/ -v
+
+      - name: Check implicit (undeclared) dependencies
+        run: |
+          python tools/ci/check_implicit_dependencies.py
