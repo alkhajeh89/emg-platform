@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .confidence import ConfidenceEngine
 from .edges import MemoryEdge
 from .enums import EdgeDirection, EvidenceSource
+from .errors import MergeConflictError
 from .evidence import EvidenceRef
 from .graph import MemoryGraph
 from .ids import edge_id_for
@@ -77,10 +78,12 @@ class EdgeInput(BaseModel):
     classification: Classification = Classification.INTERNAL
     conflict_count: int = Field(default=0, ge=0)
     metadata: Metadata = Metadata()
+    relationship_id: SafeLabel | None = None
 
     def edge_id(self) -> str:
-        """Deterministic edge id. Undirected edges canonicalize endpoint order so
-        both orientations collapse to one id."""
+        """Canonical relationship id, or a deterministic fallback for raw input."""
+        if self.relationship_id is not None:
+            return self.relationship_id
         a, b = self.source_id, self.target_id
         if self.direction is EdgeDirection.UNDIRECTED and b < a:
             a, b = b, a
@@ -201,6 +204,7 @@ class MemoryGraphBuilder:
                     created_at=rel.effective_from,
                     updated_at=as_of,
                     classification=rel.classification,
+                    relationship_id=rel.relationship_id,
                 )
             )
         if base is not None:
@@ -316,6 +320,7 @@ class MemoryGraphBuilder:
         existing: MemoryEdge | None,
         as_of: datetime,
     ) -> MemoryEdge:
+        self._validate_edge_group(edge_id, group, existing)
         evidence_groups: list[tuple[EvidenceRef, ...]] = [g.evidence for g in group]
         metadata_items: list[MetadataItem] = []
         created_candidates: list[datetime] = []
@@ -349,3 +354,36 @@ class MemoryGraphBuilder:
             classification=rep.classification,
             metadata=_merge_metadata(metadata_items),
         )
+
+    @staticmethod
+    def _validate_edge_group(
+        edge_id: str,
+        group: list[EdgeInput],
+        existing: MemoryEdge | None,
+    ) -> None:
+        candidates: list[EdgeInput | MemoryEdge] = [*group]
+        if existing is not None:
+            candidates.insert(0, existing)
+
+        expected = _edge_immutable_fields(candidates[0])
+        for candidate in candidates[1:]:
+            actual = _edge_immutable_fields(candidate)
+            conflicts = sorted(name for name in expected if expected[name] != actual[name])
+            if conflicts:
+                raise MergeConflictError(
+                    f"edge {edge_id!r} has conflicting immutable attributes: "
+                    f"{', '.join(conflicts)}"
+                )
+
+
+def _edge_immutable_fields(edge: EdgeInput | MemoryEdge) -> dict[str, object]:
+    source_id, target_id = edge.source_id, edge.target_id
+    if edge.direction is EdgeDirection.UNDIRECTED and target_id < source_id:
+        source_id, target_id = target_id, source_id
+    return {
+        "edge_type": edge.edge_type,
+        "endpoints": (source_id, target_id),
+        "direction": edge.direction,
+        "validity": edge.validity,
+        "classification": edge.classification,
+    }

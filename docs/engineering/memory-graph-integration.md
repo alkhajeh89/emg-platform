@@ -37,6 +37,11 @@ sequenceDiagram
 
 No ingestion logic is re-implemented; the builder only *reads* the pipeline's
 output. `from_ontology(..., base=existing_graph)` performs incremental updates.
+The builder preserves each ontology `Relationship.relationship_id` as the
+`MemoryEdge.edge_id`, so superseding versions with identical type/endpoints retain
+their separate effective windows. Evidence is merged only for repeated
+observations of the same canonical relationship assertion; incompatible immutable
+fields under one id are rejected.
 
 ## Knowledge Lifecycle (`emg-knowledge-lifecycle`)
 

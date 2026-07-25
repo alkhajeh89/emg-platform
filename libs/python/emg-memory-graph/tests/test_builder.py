@@ -2,10 +2,35 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+import pytest
 from _mg_helpers import ASOF, T0, edge_input, ev, node_input
-from emg_memory_graph import EvidenceSource, MemoryGraphBuilder
+from emg_common_types import Classification
+from emg_memory_graph import (
+    EdgeDirection,
+    EdgeInput,
+    EvidenceSource,
+    MemoryGraphBuilder,
+    MergeConflictError,
+    diff_graphs,
+    edge_id_for,
+)
+
+T1 = T0 + timedelta(days=30)
+T2 = T1 + timedelta(days=30)
+
+
+def relationship_edge(
+    edge_type: str, source_id: str, target_id: str, relationship_id: str, **kwargs: object
+) -> EdgeInput:
+    base = edge_input(edge_type, source_id, target_id, **kwargs)
+    return EdgeInput.model_validate(
+        {
+            **base.model_dump(),
+            "relationship_id": relationship_id,
+        }
+    )
 
 
 def test_build_basic() -> None:
@@ -53,8 +78,6 @@ def test_more_evidence_raises_confidence() -> None:
 
 
 def test_undirected_edge_orientation_collapses() -> None:
-    from emg_memory_graph import EdgeDirection
-
     b = MemoryGraphBuilder()
     e1 = edge_input("linked", "a", "b")
     e2 = edge_input("linked", "b", "a")
@@ -66,6 +89,144 @@ def test_undirected_edge_orientation_collapses() -> None:
         as_of=ASOF,
     )
     assert res.graph.edge_count == 1  # both orientations -> one edge id
+
+
+def test_edge_input_without_relationship_id_keeps_generated_id() -> None:
+    edge = edge_input("owns", "a", "b")
+    assert edge.edge_id() == edge_id_for("owns", "a", "b")
+
+
+def test_distinct_relationship_ids_preserve_adjacent_assertions() -> None:
+    b = MemoryGraphBuilder()
+    nodes = (node_input("a", "person", "A"), node_input("b", "project", "B"))
+    first = relationship_edge(
+        "owns",
+        "a",
+        "b",
+        "rel-1",
+        evidence=(ev("first"),),
+        valid_from=T0,
+        valid_until=T1,
+    )
+    second = relationship_edge(
+        "owns",
+        "a",
+        "b",
+        "rel-1#v2",
+        evidence=(ev("second"),),
+        valid_from=T1,
+        valid_until=T2,
+        created_at=T1,
+    )
+
+    result = b.build(nodes=nodes, edges=(first, second), as_of=ASOF)
+
+    assert result.graph.edge_count == 2
+    assert result.edge_inputs_merged == 0
+    assert [edge.edge_id for edge in result.graph.edges] == ["rel-1", "rel-1#v2"]
+    assert result.graph.edge("rel-1").validity == first.validity  # type: ignore[union-attr]
+    assert result.graph.edge("rel-1#v2").validity == second.validity  # type: ignore[union-attr]
+    assert [e.locator for e in result.graph.edge("rel-1").evidence] == [  # type: ignore[union-attr]
+        "first"
+    ]
+    assert [e.locator for e in result.graph.edge("rel-1#v2").evidence] == [  # type: ignore[union-attr]
+        "second"
+    ]
+
+
+def test_same_relationship_assertion_merges_evidence() -> None:
+    b = MemoryGraphBuilder()
+    nodes = (node_input("a", "person", "A"), node_input("b", "project", "B"))
+    first = relationship_edge("owns", "a", "b", "rel-1", evidence=(ev("first"),))
+    second = relationship_edge("owns", "a", "b", "rel-1", evidence=(ev("second"),))
+
+    result = b.build(nodes=nodes, edges=(first, second), as_of=ASOF)
+
+    assert result.graph.edge_count == 1
+    assert result.edge_inputs_merged == 1
+    assert {e.locator for e in result.graph.edges[0].evidence} == {"first", "second"}
+
+
+@pytest.mark.parametrize(
+    ("update", "field"),
+    [
+        ({"validity": edge_input("owns", "a", "b", valid_from=T1).validity}, "validity"),
+        ({"target_id": "c"}, "endpoints"),
+        ({"direction": EdgeDirection.UNDIRECTED}, "direction"),
+        ({"edge_type": "owned_by"}, "edge_type"),
+        ({"classification": Classification.CONFIDENTIAL}, "classification"),
+    ],
+)
+def test_same_relationship_id_rejects_conflicting_immutable_fields(
+    update: dict[str, object], field: str
+) -> None:
+    first = relationship_edge("owns", "a", "b", "rel-1")
+    conflicting = first.model_copy(update=update)
+
+    with pytest.raises(MergeConflictError, match=rf"rel-1.*{field}"):
+        MemoryGraphBuilder().build(edges=(first, conflicting), as_of=ASOF)
+
+
+def test_existing_edge_rejects_conflicting_validity() -> None:
+    b = MemoryGraphBuilder()
+    nodes = (node_input("a", "person", "A"), node_input("b", "project", "B"))
+    first = relationship_edge("owns", "a", "b", "rel-1")
+    base = b.build(nodes=nodes, edges=(first,), as_of=ASOF).graph
+    conflicting = relationship_edge("owns", "a", "b", "rel-1", valid_from=T1, created_at=T1)
+
+    with pytest.raises(MergeConflictError, match=r"rel-1.*validity"):
+        b.extend(base, edges=(conflicting,), as_of=ASOF)
+
+
+def test_relationship_versions_are_order_and_batch_independent() -> None:
+    b = MemoryGraphBuilder()
+    nodes = (node_input("a", "person", "A"), node_input("b", "project", "B"))
+    first = relationship_edge(
+        "owns",
+        "a",
+        "b",
+        "rel-1",
+        valid_until=T1,
+    )
+    second = relationship_edge(
+        "owns",
+        "a",
+        "b",
+        "rel-1#v2",
+        valid_from=T1,
+        created_at=T1,
+    )
+
+    forward = b.build(nodes=nodes, edges=(first, second), as_of=ASOF).graph
+    reverse = b.build(nodes=tuple(reversed(nodes)), edges=(second, first), as_of=ASOF).graph
+    incremental = b.extend(
+        b.build(nodes=nodes, edges=(first,), as_of=ASOF).graph,
+        edges=(second,),
+        as_of=ASOF,
+    ).graph
+
+    assert forward.content_hash() == reverse.content_hash()
+    assert forward.content_hash() == incremental.content_hash()
+
+
+def test_relationship_version_is_added_in_graph_diff() -> None:
+    b = MemoryGraphBuilder()
+    nodes = (node_input("a", "person", "A"), node_input("b", "project", "B"))
+    first = relationship_edge("owns", "a", "b", "rel-1", valid_until=T1)
+    second = relationship_edge(
+        "owns",
+        "a",
+        "b",
+        "rel-1#v2",
+        valid_from=T1,
+        created_at=T1,
+    )
+    before = b.build(nodes=nodes, edges=(first,), as_of=ASOF).graph
+    after = b.extend(before, edges=(second,), as_of=ASOF).graph
+
+    diff = diff_graphs(before, after)
+    assert diff.added_edges == ("rel-1#v2",)
+    assert diff.modified_edges == ()
 
 
 def test_created_updated_timestamps_min_max() -> None:

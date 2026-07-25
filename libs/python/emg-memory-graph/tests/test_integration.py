@@ -14,6 +14,7 @@ from emg_memory_graph import (
     MemoryQueryEngine,
     TemporalHistory,
     TemporalValidity,
+    active_edges_at,
     to_semantic_graph,
 )
 from emg_ontology import Entity, ProvenanceReference, Relationship
@@ -182,3 +183,83 @@ def test_valid_interval_from_relationship_effective_window() -> None:
     g = MemoryGraphBuilder().from_ontology(entities=ents, relationships=(rel,), as_of=ASOF).graph
     edge = g.edges[0]
     assert edge.validity == TemporalValidity(valid_from=T0, valid_until=T1)
+
+
+def test_ontology_relationship_versions_preserve_identity_and_temporal_boundary() -> None:
+    prov = _prov()
+    second_prov = ProvenanceReference(
+        source_principal="svc-ingest", event_id="evt-2", correlation_id="corr-2"
+    )
+    relationships = (
+        Relationship(
+            relationship_id="rel-1",
+            relationship_type="owns",
+            from_entity_id="p1",
+            from_entity_type="Person",
+            to_entity_id="pr1",
+            to_entity_type="Project",
+            classification=Classification.INTERNAL,
+            provenance_reference=prov,
+            effective_from=T0,
+            effective_to=T1,
+        ),
+        Relationship(
+            relationship_id="rel-1#v2",
+            relationship_type="owns",
+            from_entity_id="p1",
+            from_entity_type="Person",
+            to_entity_id="pr1",
+            to_entity_type="Project",
+            classification=Classification.INTERNAL,
+            provenance_reference=second_prov,
+            version=2,
+            effective_from=T1,
+            supersedes="rel-1",
+        ),
+    )
+    entities = (
+        Entity(
+            entity_id="p1",
+            entity_type="Person",
+            classification=Classification.INTERNAL,
+            trust_score=0.7,
+            provenance_reference=prov,
+            owner="u",
+            effective_from=T0,
+        ),
+        Entity(
+            entity_id="pr1",
+            entity_type="Project",
+            classification=Classification.INTERNAL,
+            trust_score=0.8,
+            provenance_reference=prov,
+            owner="u",
+            effective_from=T0,
+        ),
+    )
+
+    graph = (
+        MemoryGraphBuilder()
+        .from_ontology(entities=entities, relationships=relationships, as_of=T1)
+        .graph
+    )
+
+    assert [edge.edge_id for edge in graph.edges] == ["rel-1", "rel-1#v2"]
+    assert graph.edge("rel-1").validity == TemporalValidity(  # type: ignore[union-attr]
+        valid_from=T0, valid_until=T1
+    )
+    assert graph.edge("rel-1#v2").validity == TemporalValidity(  # type: ignore[union-attr]
+        valid_from=T1
+    )
+    first_edge = graph.edge("rel-1")
+    second_edge = graph.edge("rel-1#v2")
+    assert first_edge is not None
+    assert second_edge is not None
+    first_evidence_locators = {evidence.locator for evidence in first_edge.evidence}
+    second_evidence_locators = {evidence.locator for evidence in second_edge.evidence}
+    assert first_evidence_locators == {"rel-1"}
+    assert second_evidence_locators == {"rel-1#v2"}
+    assert first_evidence_locators.isdisjoint(second_evidence_locators)
+    assert [edge.edge_id for edge in active_edges_at(graph, T1)] == ["rel-1#v2"]
+    semantic = to_semantic_graph(graph)
+    assert [rel.relationship_id for rel in semantic.relationships] == ["rel-1", "rel-1#v2"]

@@ -43,7 +43,10 @@ are immutable pydantic v2.
   - `build(*, nodes=(), edges=(), as_of) -> BuildResult`.
   - `extend(base, *, nodes=(), edges=(), as_of) -> BuildResult`.
   - `from_ontology(*, entities=(), relationships=(), evidence_source=MANUAL_ENTRY, labels=None, as_of, base=None) -> BuildResult`.
-- `NodeInput`, `EdgeInput` (`.edge_id()`), `BuildResult(graph, nodes_created, edges_created, node_inputs_merged, edge_inputs_merged)`.
+- `NodeInput`, `EdgeInput` (`relationship_id` optional; `.edge_id()` prefers that
+  canonical assertion/version id and otherwise uses the deterministic
+  type/endpoints fallback), `BuildResult(graph, nodes_created, edges_created,
+  node_inputs_merged, edge_inputs_merged)`.
 
 ## Temporal traversal (Deliverable 4)
 
