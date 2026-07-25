@@ -12,6 +12,7 @@ license = { text = "Proprietary" }
 dependencies = [
   "emg-platform-core",
   "emg-errors",
+  "emg-memory-graph",
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
   "psycopg[binary]>=3.1",

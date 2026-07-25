@@ -132,11 +132,23 @@ characterization was premature: the dependency is deliberate, non-circular,
 and explicitly grounded in `EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §9/§11
 (`MemoryGraph` is the frozen domain core; a storage port being typed in
 terms of the domain aggregate it persists is standard hexagonal/DDD shape,
-not a violation). See OBS-A-001 for the full analysis, a minor stale-citation
-fix it recommends, and one adjacent finding (an undeclared transitive
-`emg-persistence` → `emg-memory-graph` import) it surfaced but did not
-action. The manifest entry for `platform-core` reflects what `pyproject.toml`
-actually declares, which OBS-A-001 confirms is correct as-is.
+not a violation). See OBS-A-001 for the full analysis and a minor
+stale-citation fix it recommends (not yet applied). The manifest entry for
+`platform-core` reflects what `pyproject.toml` actually declares, which
+OBS-A-001 confirms is correct as-is.
+
+**Adjacent finding resolved (ECP-1, 2026-07-25):** OBS-A-001 also surfaced
+that `emg-persistence` imported `emg_memory_graph` directly in
+`store.py`/`neo4j/projection.py` without declaring `emg-memory-graph` in its
+own `pyproject.toml`, relying on transitive resolution via
+`emg-platform-core`. A repo-wide undeclared-import scan (Principal Engineer
+architecture review) confirmed this was the only such case among all 17
+libraries and 2 services. ECP-1 added `emg-memory-graph` to
+`emg-persistence`'s declared dependencies and its `docker/dependencies.yaml`
+entry — verified: both manifest/drift checks pass, the repo-wide scan now
+reports zero undeclared imports, `emg-persistence`'s test suite is
+unchanged (156 passed / 26 skipped), and `mypy --strict` is clean. See
+`EMG_ARCHITECTURE_DECISION_REGISTER.md` OBS-A-001 for the resolution record.
 
 ### Gap 2 — Dependency drift detection covers roughly 20% of the monorepo (RESOLVED)
 

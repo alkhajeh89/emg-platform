@@ -93,7 +93,7 @@ like D-A-001/D-A-002.
 
 | ID | Title | Recommendation | Evidence |
 | :--- | :--- | :--- | :--- |
-| OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation; track one adjacent finding as a future task | See below |
+| OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation (pending); adjacent finding resolved via ECP-1 (2026-07-25) | See below |
 
 ### OBS-A-001 — Platform Core Dependency Direction Review
 
@@ -165,21 +165,31 @@ naming-expectation tension; not for a real defect, since none was found):**
 **4. Risk level: Low**, for the platform-core/memory-graph direction itself
 — deliberate, non-circular, frozen-architecture-aligned.
 
-**Adjacent finding (Medium risk, separate from the question asked, tracked
-here only as a future candidate — not actioned):** `emg-persistence` directly
-imports `emg_memory_graph` in two files
+**Adjacent finding — RESOLVED via ECP-1 (2026-07-25):** `emg-persistence`
+directly imported `emg_memory_graph` in two files
 (`emg_persistence/store.py:12`, `emg_persistence/neo4j/projection.py:19`) but
-does **not** declare `emg-memory-graph` in its own `pyproject.toml`
-dependencies (only `emg-platform-core` and `emg-errors`). This currently
-works only because `emg-platform-core` transitively pulls in
-`emg-memory-graph` — if that transitive relationship ever changed,
-`emg-persistence` would break at import time despite its own declared
-dependencies appearing satisfied. Neither `check_dependency_manifest.py` nor
-`check_dependency_drift.py` catches this class of issue today (they compare
-a package's own declared deps against the manifest; they do not verify a
-package's source imports against its own `pyproject.toml`). This is noted as
-a candidate for a future tracked task (a new "implicit dependency" check),
-not decided or actioned in this pass.
+did **not** declare `emg-memory-graph` in its own `pyproject.toml`
+dependencies (only `emg-platform-core` and `emg-errors`). This worked only
+because `emg-platform-core` transitively pulled in `emg-memory-graph` — if
+that transitive relationship ever changed, `emg-persistence` would have
+broken at import time despite its own declared dependencies appearing
+satisfied. A follow-up Principal Engineer architecture review confirmed via
+a repo-wide undeclared-import scan that this was the only such case among
+all 17 libraries and 2 services, and produced ECP-1 (approved) to fix it:
+`emg-memory-graph` is now declared in `emg-persistence/pyproject.toml` and
+its `docker/dependencies.yaml` entry. Verified: both dependency checks pass,
+the repo-wide scan now reports zero undeclared imports repo-wide,
+`emg-persistence`'s test suite is unchanged (156 passed / 26 skipped), and
+`mypy --strict` is clean.
+
+Note that neither `check_dependency_manifest.py` nor
+`check_dependency_drift.py` would have caught this class of issue on its own
+(they compare a package's own declared deps against the manifest; they do
+not verify a package's source imports against its own `pyproject.toml`).
+ECP-2 (bidirectional/implicit dependency-drift detection, approved for
+planning, not yet implemented) is the systemic follow-up that would close
+this detection gap so a recurrence is caught automatically rather than by a
+manual architecture review.
 
 **5. Should this become an ADR or remain an implementation task?**
 **Remains an implementation/documentation task — no ADR needed.** The
@@ -192,8 +202,11 @@ small documentation correction, not an ADR-worthy decision. The adjacent
 (add the missing declared dependency, and optionally extend the drift
 checker), not an ADR.
 
-**Status:** Recorded, not yet actioned. No code was modified to produce this
-observation.
+**Status:** Partially actioned. The adjacent `emg-persistence` finding is
+**Resolved** (ECP-1, 2026-07-25). The stale "§32" citation fix (Option A)
+remains pending — a small, textual-only follow-up, not yet applied. The
+platform-core/memory-graph direction itself required no change (Accepted
+as-is).
 
 ---
 
