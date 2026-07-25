@@ -87,33 +87,50 @@ otherwise be tempted to reference the empty package.
 
 | ID | Task | Status | Acceptance Criteria |
 | :--- | :--- | :--- | :--- |
-| T-A-001 | Extend dependency manifest coverage to all EMG Python components | **Open** | See below |
+| T-A-001 | Extend dependency manifest coverage to all EMG Python components | **Done (2026-07-25)** | See below |
 
 ### T-A-001 — Extend dependency manifest coverage to all EMG Python components
 
-**Current state:** `docker/dependencies.yaml` declares 5 of 25 total
+**Original state:** `docker/dependencies.yaml` declared 5 of 25 total
 components (18 libraries + 7 services) — `identity`, `audit`, `persistence`,
 `memory-graph`, `entity-resolution`
 (`IMPLEMENTATION_GAP_ANALYSIS.md` §4, Gap 2; `docs/devops/DEPENDENCY_GOVERNANCE.md`
 Constraints).
 
-**Acceptance criteria:**
+**Acceptance criteria (status):**
 
-- Every `libs/python/*` package is represented in `docker/dependencies.yaml`.
-- Every service's Dockerfile dependencies are validated by
-  `tools/ci/check_dependency_manifest.py` against its manifest entry.
-- CI (`.github/workflows/ci.yml`, `dependency-validation` job) fails the
-  build on dependency drift for every represented component, not only the
-  current 5.
+- ✅ Every `libs/python/*` package is represented in
+  `docker/dependencies.yaml` — all 18 libraries now have an entry, each
+  populated from its own `pyproject.toml`'s actual declared `emg-*`
+  dependencies.
+- 🟡 Every service's Dockerfile dependencies are validated by
+  `tools/ci/check_dependency_manifest.py` against its manifest entry — true
+  for the two services that have a Dockerfile (`identity`, `audit`); the
+  other five services (`authz`, `knowledge-graph`, `retrieval`,
+  `ai-orchestration`, `decision-intelligence`) remain scaffolded with no
+  Dockerfile, so there is nothing yet for this criterion to check for them.
+  This criterion will re-apply automatically as each is implemented.
+- ✅ CI (`.github/workflows/ci.yml`, `dependency-validation` job) fails the
+  build on dependency drift for every represented component — verified: both
+  `check_dependency_manifest.py` and `check_dependency_drift.py` now run
+  against all 20 declared entries (2 services + 18 libraries) and pass
+  cleanly.
 
-**Sequencing:** per `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` §10, this is
-implementation-sequence step 1 — it precedes any new Phase 3 service so that
-drift detection covers new work from the moment it is scaffolded, not
-retrofitted afterward.
+**Also fixed as part of this task:** `check_dependency_manifest.py` was
+hardened with the same missing-`services`-key guard
+`check_dependency_drift.py` already had (raised a raw `KeyError` otherwise).
 
-**No code has been written for this task.** It is tracked here as approved
-scope, pending its own implementation pass under the same sprint-by-sprint
-review discipline used for Phase 2.
+**Anomaly discovered, not resolved:** `emg-platform-core`'s `pyproject.toml`
+declares `emg-memory-graph` as a dependency, which reads architecturally
+backwards for a foundation package. Recorded in
+`IMPLEMENTATION_GAP_ANALYSIS.md` §4 as a flagged observation, not decided
+here — it did not block completing this task since the manifest reflects
+declared reality rather than an idealized dependency direction.
+
+**Sequencing:** this was implementation-sequence step 1
+(`PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` §10) — complete before any new
+Phase 3 service is scaffolded, so drift detection covers new work from day
+one.
 
 ---
 

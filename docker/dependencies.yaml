@@ -69,3 +69,136 @@ services:
       - emg-ontology
       - emg-semantic-layer
       - emg-memory-graph
+
+
+  common-types:
+    type: library
+    path: libs/python/emg-common-types
+
+    dependencies: []
+
+
+  errors:
+    type: library
+    path: libs/python/emg-errors
+
+    dependencies: []
+
+
+  telemetry:
+    type: library
+    path: libs/python/emg-telemetry
+
+    dependencies:
+      - emg-common-types
+
+
+  auth-client:
+    type: library
+    path: libs/python/emg-auth-client
+
+    dependencies:
+      - emg-errors
+
+
+  api-contracts:
+    type: library
+    path: libs/python/emg-api-contracts
+
+    dependencies:
+      - emg-common-types
+
+
+  audit-client:
+    type: library
+    path: libs/python/emg-audit-client
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+
+
+  audit-pipeline:
+    type: library
+    path: libs/python/emg-audit-pipeline
+
+    dependencies:
+      - emg-audit-client
+      - emg-common-types
+      - emg-errors
+
+
+  policy-engine:
+    type: library
+    path: libs/python/emg-policy-engine
+
+    dependencies:
+      - emg-auth-client
+      - emg-errors
+
+
+  ontology:
+    type: library
+    path: libs/python/emg-ontology
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+
+
+  knowledge-lifecycle:
+    type: library
+    path: libs/python/emg-knowledge-lifecycle
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+
+
+  knowledge-pipeline:
+    type: library
+    path: libs/python/emg-knowledge-pipeline
+
+    dependencies:
+      - emg-audit-client
+      - emg-common-types
+      - emg-errors
+      - emg-ontology
+
+
+  trust-scoring:
+    type: library
+    path: libs/python/emg-trust-scoring
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-ontology
+
+
+  semantic-layer:
+    type: library
+    path: libs/python/emg-semantic-layer
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+
+
+  connectors:
+    type: library
+    path: libs/python/emg-connectors
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+
+
+  platform-core:
+    type: library
+    path: libs/python/emg-platform-core
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-memory-graph

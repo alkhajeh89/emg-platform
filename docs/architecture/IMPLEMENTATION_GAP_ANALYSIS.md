@@ -97,11 +97,13 @@ consistent with the library-first pattern already used for Modules 4–7.
 
 ---
 
-## 4. Dependency Manifest Coverage — Architectural Gap
+## 4. Dependency Manifest Coverage — Architectural Gap (RESOLVED 2026-07-25)
 
-`docker/dependencies.yaml` currently declares 5 entries: `identity`, `audit`,
-`persistence`, `memory-graph`, `entity-resolution`. Of the 18 packages under
-`libs/python/`, **13 have no manifest entry at all**:
+**Update:** this gap is resolved. At the time this analysis was first written,
+`docker/dependencies.yaml` declared 5 entries (`identity`, `audit`,
+`persistence`, `memory-graph`, `entity-resolution`), leaving **15** of the 18
+`libs/python/` packages uncovered (the original text below undercounted this
+as 13 — corrected here for the record):
 
 ```
 api-contracts, audit-client, audit-pipeline, auth-client, common-types,
@@ -109,20 +111,37 @@ connectors, errors, knowledge-lifecycle, knowledge-pipeline, ontology,
 platform-core, policy-engine, semantic-layer, telemetry, trust-scoring
 ```
 
-### Gap 2 — Dependency drift detection covers roughly 20% of the monorepo
+T-A-001 (`EMG_ARCHITECTURE_DECISION_REGISTER.md`) has been completed: all 15
+libraries were added to `docker/dependencies.yaml`, each populated from its
+own `pyproject.toml`'s actual declared `emg-*` dependencies (verified via
+`tomllib`, not guessed). `docker/dependencies.yaml` now declares 20 entries
+(2 services + 18 libraries — every `libs/python/*` package); both
+`check_dependency_manifest.py` and `check_dependency_drift.py` pass cleanly
+against all 20. T-A-001's acceptance criteria are met except "every service
+Dockerfile dependencies are validated," which only applies to `identity` and
+`audit` today since the other five services have no Dockerfile yet
+(unimplemented, per §3) — there is nothing for that criterion to check until
+those services exist.
+
+**Anomaly noted, not fixed:** `emg-platform-core`'s `pyproject.toml`
+declares `emg-memory-graph` as a dependency. Architecturally this reads
+backwards — `emg-platform-core` is the Phase 1 foundation package
+(`GraphStore` protocols) that `emg-persistence` and, transitively,
+`emg-memory-graph`'s own stack build on; a foundation package depending on a
+higher-level domain package is unusual. This is not a circular import
+(`emg-memory-graph`'s own dependencies do not include `emg-platform-core`),
+but it is worth an explicit architectural decision on whether it's
+intentional. The manifest entry for `platform-core` reflects what
+`pyproject.toml` actually declares (consistent with this analysis's rule of
+recording reality, not silently correcting it) — flagged here for review,
+not resolved.
+
+### Gap 2 — Dependency drift detection covers roughly 20% of the monorepo (RESOLVED)
 
 `check_dependency_manifest.py` and `check_dependency_drift.py` (hardened
 earlier this session — see `docs/devops/DEPENDENCY_GOVERNANCE.md`) are
-correct and passing, but they can only validate what is listed in the
-manifest. Today that is 5 of 25 total components (18 libraries + 7 services).
-This is not a defect in the scripts; it is unfinished manifest coverage. It
-matters for Phase 3 specifically because the new service shells this phase
-will eventually need (`services/ai-orchestration`, `services/knowledge-graph`,
-etc.) will depend on `emg-ontology`, `emg-knowledge-pipeline`,
-`emg-trust-scoring`, `emg-semantic-layer`, and `emg-knowledge-lifecycle` —
-none of which are drift-checked today. Recommendation: extend
-`docker/dependencies.yaml` to cover every library before or alongside the
-first Phase 3 service implementation, not after.
+correct and passing, and now validate all 20 declared components rather than
+5. This is no longer a live gap; see the Update above.
 
 ---
 
@@ -318,7 +337,7 @@ No changes were made in this section; it is confirmed clean.
 | # | Gap | Blocking? | Owner decision needed | Tracked as |
 | --- | --- | --- | --- | --- |
 | 1 | `emg-entity-resolution` empty stub, unclear scope vs. `emg-memory-graph` | No | Product/ontology: delete, extract, or repurpose | `EMG_ARCHITECTURE_DECISION_REGISTER.md` D-A-002 (Open) |
-| 2 | Manifest covers 5/25 components | No (not for Phase 3 docs) | Engineering: extend manifest before first Phase 3 service lands | `EMG_ARCHITECTURE_DECISION_REGISTER.md` T-A-001 (Open task) |
+| 2 | Manifest covered 5/25 components | **Resolved 2026-07-25** | — | `EMG_ARCHITECTURE_DECISION_REGISTER.md` T-A-001 (Done) |
 | 3 | Most of `docs/frontend`, `security`, `infrastructure`, `enterprise-design` are placeholder-depth | No | None required now; treat as non-authoritative until filled | Not registered — no decision needed |
 | 4 | `ARCHITECTURE_STATUS.md` stale vs. current branch; two parallel tracking schemes | No | Documentation governance: reconcile Module/EPIC scheme with Phase 0/1/2 scheme | `EMG_ARCHITECTURE_DECISION_REGISTER.md` D-A-001 (Open) |
 | 4a | A third `(M##)` numbering scheme in the reference corpus conflicts with both of the above; v2.0 Enterprise Intelligence doc's "Draft" status conflicts with the SAD's claim it derives from an "approved" v2.0 | No | Documentation governance: designate one authoritative numbering scheme and resolve the draft/approved status conflict | `EMG_ARCHITECTURE_DECISION_REGISTER.md` D-A-001 (Open) |
