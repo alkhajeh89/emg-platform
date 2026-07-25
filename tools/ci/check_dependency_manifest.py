@@ -53,6 +53,10 @@ def main():
 
     manifest = load_manifest()
 
+    if "services" not in manifest:
+        print("❌ Invalid dependency manifest: missing services section")
+        sys.exit(1)
+
     failed = False
 
     for name, component in manifest["services"].items():
