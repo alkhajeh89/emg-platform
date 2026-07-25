@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.14,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emg-knowledge-graph-service"
+version = "0.1.0"
+description = "EMG Knowledge Graph Service — application/orchestration boundary over Module 7 graph-domain capabilities."
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "Proprietary" }
+dependencies = [
+  "emg-platform-core",
+  "emg-memory-graph",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "mypy>=1.10",
+  "ruff>=0.6",
+]
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/emg_knowledge_graph"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

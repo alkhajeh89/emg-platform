@@ -1,3 +1,12 @@
-"""Service-layer scaffold for the knowledge-graph package."""
+"""Application-service boundary for Module 7 orchestration."""
 
-# TODO: Add service orchestration implementation in the target sprint.
+from __future__ import annotations
+
+from emg_platform_core.ports import GraphStore
+
+
+class KnowledgeGraphApplication:
+    """Application/orchestration layer over the platform GraphStore boundary."""
+
+    def __init__(self, graph_store: GraphStore) -> None:
+        self._graph_store = graph_store

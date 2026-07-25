@@ -1,13 +1,17 @@
 # services/knowledge-graph
 
-Scaffolded in Sprint 1 (FEAT-01-1). Governing architecture: Module 7 — Knowledge Graph Platform. No
-business logic or API implementation exists yet — see /services/README.md
-for target Epic/Sprint.
+Scaffolded in Sprint 1 (FEAT-01-1). Governing architecture: Module 7 — Knowledge
+Graph Platform. No business logic or API implementation exists yet — see
+/services/README.md for target Epic/Sprint.
 
-## Python package scaffold
+## Boundary scope
 
-Initial package scaffold lives under `src/emg_knowledge_graph/` with matching
-tests under `tests/`.
+`services/knowledge-graph` is an application/orchestration boundary.
+Graph-domain models and behavior belong to `emg-memory-graph`.
 
-No application-service behavior exists yet.
-No runtime dependency contract is finalized in this scaffold task.
+Tenant-scoped graph persistence is accessed through the platform-core
+`emg_platform_core.ports.graph_store.GraphStore` port. Persistence adapters stay
+behind `emg-persistence`.
+
+This task introduces no public API surface and implements no graph reads,
+writes, or queries.
