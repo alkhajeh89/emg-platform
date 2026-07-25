@@ -67,6 +67,20 @@ by committed, tested code — never by this document alone.
 
 ---
 
+## Phase 2 — Persistence Binding (Durable Memory Substrate)
+
+**Complete.** `libs/python/emg-persistence` implements the `GraphStore` port
+with PostgreSQL as the authoritative revision log and Neo4j as a rebuildable
+serving projection (ADR-1/ADR-5), including compare-and-set concurrency, a
+transactional outbox, catch-up/read-repair/rebuild, and a PostgreSQL read
+fallback when Neo4j is unavailable. Proven in the `persistence` CI job
+(PostgreSQL 16 + Neo4j 5 Community); full detail, validation evidence, and
+final test counts live in `docs/phases/phase-2/PHASE2_COMPLETION.md`, which
+is the authoritative source for Phase 2 status — this entry is a summary
+pointer only and is not kept in sync line-by-line with that document.
+
+---
+
 ## ADRs
 
 Only the following Architecture Decision Records are currently present in

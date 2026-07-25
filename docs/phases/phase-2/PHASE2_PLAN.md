@@ -1,9 +1,9 @@
 # Phase 2 — Persistence Binding — Implementation Plan
 
-**Status:** PLAN — implementation-ready; **no code written, no source modified, no commits.** Awaiting implementation approval before any code.
-**Aligns to:** `PHASE2_ARCHITECTURE.md` **Revision 3 (APPROVED)** — ADR-1…ADR-6, D1–D3.
+**Status:** **COMPLETE.** All 8 sprints below were implemented, tested against real PostgreSQL 16 + Neo4j 5 Community, and merged to `develop` via the `persistence` CI job. See `PHASE2_COMPLETION.md` for full validation evidence, final test counts, and known non-blocking technical debt. The §7 checklist below has been updated from its original "Not started" planning state to reflect what the repository actually contains, per-sprint, with commit evidence.
+**Aligns to:** `PHASE2_ARCHITECTURE.md` **Revision 3 (APPROVED)** — ADR-1…ADR-6, D1–D3, plus the ADR-6 refinement (explicit `ProjectionWorker`, approved 2026-07-24).
 **Base:** `develop` (Phase 1 merged: `38ffcf7`, `5373009`).
-**Package:** new `libs/python/emg-persistence` (D3).
+**Package:** `libs/python/emg-persistence` (D3) — implemented.
 
 ## Non-negotiable architectural invariants (every sprint must uphold)
 
@@ -321,19 +321,19 @@ Cross-cutting rule: the **Phase 1 behavioural contract suite is the executable s
 
 ## 7. Final checklist
 
-| Sprint | Status | Dependencies | Blocking items | Complexity |
+| Sprint | Status | Dependencies | Evidence (commits) | Complexity |
 |---|---|---|---|---|
-| S1 — Scaffold, settings, DI, factory, errors | Not started | Phase 1 | Implementation approval | Low |
-| S2 — Schema, migration runner, migrations, tests | Not started | S1 | DB containers in CI | Medium |
-| S3 — RevisionRepository, head, CAS, first-revision | Not started | S1–S2 | — | Medium |
-| S4 — GraphStore write path, no-op, optimistic concurrency, receipt | Not started | S1–S3 | — | High |
-| S5 — Neo4j projection, reconstruction, read-repair, catch-up, PG fallback | Not started | S1–S4 | — | High |
-| S6 — Transactional outbox, ordering, idempotency, replay | Not started | S3–S4 | — | Medium |
-| S7 — Contract, concurrency, recovery, migration, performance | Not started | S1–S6 | — | Medium |
-| S8 — Integration, CI, docs, PHASE2_COMPLETION.md | Not started | S1–S7 | — | Low |
+| S1 — Scaffold, settings, DI, factory, errors | **Complete** | Phase 1 | `705d4de`, `d4c0ed8` | Low |
+| S2 — Schema, migration runner, migrations, tests | **Complete** | S1 | `f0ff6b2` | Medium |
+| S3 — RevisionRepository, head, CAS, first-revision | **Complete** | S1–S2 | `af2985b` | Medium |
+| S4 — GraphStore write path, no-op, optimistic concurrency, receipt | **Complete** | S1–S3 | `e4dcad0` | High |
+| S5 — Neo4j projection, reconstruction, read-repair, catch-up, PG fallback | **Complete** | S1–S4 | `73d4942` (projection); `cb3087f` (PostgreSQL-fallback defect found and fixed — see `PHASE2_COMPLETION.md`); `237944e`, `23303c2` (unit + real-DB tests) | High |
+| S6 — Transactional outbox, ordering, idempotency, replay | **Complete** | S3–S4 | `2371b75`; checkpoint foundation `306d3a9` (ADR-6 refinement, explicit `ProjectionWorker`) | Medium |
+| S7 — Contract, concurrency, recovery, migration, performance | **Complete** | S1–S6 | `tests/contract/test_graph_store_contract.py` (in `e4dcad0`); concurrency/recovery covered across the integration suite (33 DB-gated tests) | Medium |
+| S8 — Integration, CI, docs, PHASE2_COMPLETION.md | **Complete** | S1–S7 | `4a7fe1e` (persistence CI job: PostgreSQL 16 + Neo4j 5 Community), `bdf7450` (migration-test schema isolation — independent hardening, not a root-cause fix), `3e80953` (Cypher-comment splitter fix — the actual CI root cause), `PHASE2_COMPLETION.md` (this closure) | Low |
 
-**Sequencing note.** S2 introduces the DB-backed CI job; S3→S6 build the durability core in dependency order (repository → write path → projection/read → outbox); S7 proves the contract/resilience; S8 finalizes. Each sprint is independently green (ruff/black/`make typecheck`/pytest, plus the DB job from S2 on), additive, and revertable. No sprint may violate the invariants at the top of this plan; any conflict triggers stop-and-report rather than silent deviation.
+**Sequencing note.** S2 introduced the DB-backed CI job; S3→S6 built the durability core in dependency order (repository → write path → projection/read → outbox); S7 proved the contract/resilience; S8 finalized CI and documentation. Every sprint stayed additive and revertable, and no sprint violated the invariants at the top of this plan.
 
 ---
 
-**No implementation code was written; no repository source files were modified; no commits were created. Awaiting implementation approval before writing any code (starting with Sprint 1).**
+**Phase 2 is complete.** All 8 sprints above are implemented, tested against real PostgreSQL 16 + Neo4j 5 Community service containers in the `persistence` CI job, and merged to `develop`. See `PHASE2_COMPLETION.md` for the full validation record.

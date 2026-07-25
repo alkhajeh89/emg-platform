@@ -9,6 +9,9 @@ markers in `src`; debt is documented, not scattered.)
 | ID | Title | Severity | Status | Target phase |
 |----|-------|----------|--------|--------------|
 | TD-001 | `mypy --strict` not enforced in `make lint` / CI | Low | **RESOLVED in Phase 1** | — |
+| TD-002 | Continuous `ProjectionWorker` daemon/lifecycle deferred | Low | Open, accepted (Phase 2) | Future — when continuous projection is needed |
+| TD-003 | `neo4j/lazy.py` driver-construction path lacks unit coverage | Low | Open, accepted (Phase 2) | Next `emg-persistence` touch |
+| TD-004 | Parallel project-status tracking systems (`docs/phases/` vs. `ARCHITECTURE_STATUS.md`/`services/README.md`) | Low | Open, accepted — documentation debt only | Unscheduled |
 
 ---
 
@@ -110,3 +113,107 @@ as a **separate CI job** (`.github/workflows/ci.yml` → `typecheck`), leaving
 (mypy --strict) for 18 package(s)." No application code required changes — the
 tree was already type-clean per package; the debt was purely the missing
 enforcement, now closed.
+
+---
+
+## TD-002 — Continuous `ProjectionWorker` daemon/lifecycle deferred
+
+**Severity:** Low. Correctness is unaffected: the durable backlog lives in
+`graph_revisions`, and `read()`/`read_repair()`/`catch_up_projection()`
+already guarantee the projection converges regardless of whether a
+continuous worker is running.
+
+**Status:** Open, accepted (Phase 2, per the ADR-6 refinement approved
+2026-07-24).
+
+### Root cause / current behavior
+
+`emg_persistence.projection.worker.ProjectionWorker` consumes outbox rows
+and applies the Neo4j projection, recording `projection_checkpoints` for
+idempotency, but it is **never started automatically** — `GraphStore.write()`
+performs no post-return work (ADR-6), and nothing today schedules the worker
+on a loop, retries it with back-pressure, or runs it as a managed daemon.
+Explicit invocation (`process_once` / an operator or CI step) is the current,
+approved behavior.
+
+### Why it is currently accepted
+
+Phase 2 deliberately scoped a continuous worker as a full lifecycle/retry/
+back-pressure design out of the persistence-binding work, preferring the
+simpler read-repair + explicit-catch-up model to keep Phase 2 bounded
+(`PHASE2_ARCHITECTURE.md` ADR-6). This is a conscious scope decision, not an
+oversight.
+
+### Recommended future solution
+
+Design and add a continuous daemon lifecycle (scheduling interval, retry
+policy, back-pressure under sustained outbox growth, health/liveness
+signal) when a consumer of `services/knowledge-graph` or a later phase
+actually needs near-real-time projection freshness rather than
+read-triggered repair.
+
+### Expected implementation phase
+
+Future — triggered by demonstrated need, not scheduled against a specific
+phase today.
+
+---
+
+## TD-003 — `neo4j/lazy.py` driver-construction path lacks unit coverage
+
+**Severity:** Low. `LazyNeo4jProjection.configured` (the common, no-DSN
+path) is covered; the `.get()`/`.close()` driver-construction path (16 of 24
+statements) is not exercised by any unit test today.
+
+**Status:** Open, accepted (Phase 2).
+
+### Root cause
+
+No test file imports `LazyNeo4jProjection` directly; it is only exercised
+indirectly through `store.py`, and no fake/monkeypatched `create_driver` has
+been written to cover its lazy-construction branch.
+
+### Recommended future solution
+
+Add a small unit test that monkeypatches `emg_persistence.neo4j.driver.create_driver`
+with a fake, asserting `.get()` constructs exactly once and caches the result,
+and that `.close()` tears the fake driver down. No live database required.
+
+### Expected implementation phase
+
+Next `emg-persistence` touch (low priority, not blocking).
+
+---
+
+## TD-004 — Parallel project-status tracking systems
+
+**Severity:** Low (documentation debt only; no code or architectural impact).
+
+**Status:** Open, accepted — recorded, not reconciled.
+
+### Root cause
+
+Two independent status-tracking systems currently coexist in this
+repository: the `docs/phases/phase-2/` Phase-N/Sprint-N numbering used for
+the persistence work (this document's own track), and an older EPIC/Module
+Sprint-numbering track in `docs/architecture/ARCHITECTURE_STATUS.md` and
+`services/README.md` (e.g. "Sprint 14 — EPIC-13 Universal Connector
+Framework"), which has no awareness that Phase 2 persistence work occurred.
+
+### Why it is currently accepted
+
+Reconciling or renumbering either tracking system is a larger documentation
+exercise than any single phase's closure, and doing it hastily risks
+silently overwriting history in one track while "fixing" the other. It is
+being recorded as debt so it is not lost, not resolved unilaterally here.
+
+### Recommended future solution
+
+A dedicated documentation task should decide which system is authoritative
+going forward (or how the two map onto each other) and update both
+consistently in one pass, rather than each phase closure patching only its
+own track.
+
+### Expected implementation phase
+
+Unscheduled — flagged for a future dedicated documentation-governance pass.
