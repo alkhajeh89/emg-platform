@@ -22,6 +22,7 @@ The following permanent rules form the core foundation of the platform and must 
 * **Never Bypass GraphStore:** The `GraphStore` protocol governs all high-level multi-tenant storage interactions. No calling service may open direct database connections that circumvent this entrypoint.
 * **Never Bypass RevisionRepository:** The `RevisionRepository` encapsulates the atomic compare-and-set database mechanics. Circumventing this boundary layer to access low-level tables directly is barred.
 * **No Cross-Layer Dependencies:** To ensure long-term stability and prevent regression, dependencies must flow in a strict, un-directed outward model. Circular relationships between system layers are strictly barred.
+* **Bilingual Foundation (ADR-018):** Arabic and English are first-class. Persistence must preserve UTF-8 bilingual payloads in `graph_json` / projection `content_json` without stripping language content. Domain multilingual enrichment is mandatory in later phases; Phase 2 guarantees opaque preservation and hash-stable reconstruction.
 
 ---
 

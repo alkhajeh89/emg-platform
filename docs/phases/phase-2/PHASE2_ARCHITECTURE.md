@@ -65,6 +65,18 @@
 
 **Status.** Accepted (matches the reviewer's preferred option). Evidence *carried inside* `MemoryNode`/`MemoryEdge` (their `evidence` refs) is serialized as part of the graph snapshot in the revision row — it is preserved, but it is not separately shredded into an evidence-ledger table by `GraphStore`.
 
+### ADR-7 — Bilingual content is preserved opaquely (Arabic + English readiness)
+
+**Decision.** Phase 2 persistence conforms to platform **ADR-018 (Bilingual Enterprise Architecture)**. Authoritative `graph_json` and Neo4j `content_json` store UTF-8 domain payloads without language stripping. Arabic and English labels, aliases, and metadata that the domain model carries must round-trip with canonical `content_hash` equality. Phase 2 does **not** add dedicated multilingual schema columns; domain enrichment (`source_language`, translations, multilingual links) is mandatory in later knowledge/ingestion phases per ADR-018.
+
+**Status.** Accepted (additive; aligns Phase 2 with ADR-018).
+
+### ADR-6 refinement — Explicit ProjectionWorker (outbox + checkpoints)
+
+**Decision (implementation approval 2026-07-24).** Phase 2 **includes** an explicit `ProjectionWorker` that consumes `graph.revision.committed` outbox rows, applies Neo4j projection via the same idempotent apply + `:GraphHead` CAS path as read-repair/`catch_up_projection`, and records `projection_checkpoints` for idempotency. The worker is **never** started by `GraphStore.write()` (ADR-6 / no hidden post-return work). It is invoked explicitly (`process_once` / operator or CI). Continuous daemon lifecycle remains optional and out of band.
+
+**Status.** Accepted refinement of ADR-6 for Phase 2 completion scope.
+
 ---
 
 ## 1. Objectives

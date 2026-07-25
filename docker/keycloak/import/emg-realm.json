@@ -1,0 +1,26 @@
+{
+  "realm": "emg",
+  "enabled": true,
+  "displayName": "EMG Enterprise Memory Graph",
+  "roles": {
+    "realm": [
+      {
+        "name": "admin"
+      },
+      {
+        "name": "user"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "emg-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:3000/*"
+      ]
+    }
+  ]
+}

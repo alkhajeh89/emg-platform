@@ -86,3 +86,139 @@ jobs:
 
       - name: Type-check (make typecheck — TD-001, separate from lint)
         run: make typecheck
+
+
+  dependency-validation:
+    name: Dependency Manifest Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validation dependencies
+        run: |
+          pip install pyyaml tomli pytest
+
+      - name: Validate dependency manifest
+        run: |
+          python tools/ci/check_dependency_manifest.py
+
+      - name: Check dependency drift
+        run: |
+          python tools/ci/check_dependency_drift.py
+
+      - name: Unit test the implicit-dependency checker itself
+        run: |
+          pytest tools/ci/tests/ -v
+
+      - name: Check implicit (undeclared) dependencies
+        run: |
+          python tools/ci/check_implicit_dependencies.py
+
+  persistence:
+    name: Persistence integration (PostgreSQL 16 + Neo4j 5)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: emg
+          POSTGRES_PASSWORD: emg
+          POSTGRES_DB: emg_persistence_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U emg"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/emg-test-password
+          NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+        ports:
+          - 7687:7687
+        # No container-level --health-cmd: cypher-shell's availability/auth
+        # invocation in this image was not independently verified, so the
+        # Python driver's verify_connectivity() step below is the sole,
+        # authoritative readiness check instead.
+
+    env:
+      EMG_PERSISTENCE_TEST_POSTGRES_DSN: postgresql://emg:emg@localhost:5432/emg_persistence_test
+      EMG_PERSISTENCE_TEST_NEO4J_URI: bolt://localhost:7687
+      EMG_PERSISTENCE_TEST_NEO4J_USER: neo4j
+      EMG_PERSISTENCE_TEST_NEO4J_PASSWORD: emg-test-password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Create virtual environment
+        run: python -m venv .venv
+
+      - name: Install developer toolchain (requirements-dev.txt, unmodified)
+        run: |
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-dev.txt
+
+      - name: Editable-install all local packages (libs, then services)
+        run: |
+          ./tools/scripts/install-libs.sh
+          ./tools/scripts/install-services.sh
+
+      - name: Wait for PostgreSQL and Neo4j to become ready (60s deadline each)
+        run: |
+          echo "Waiting for PostgreSQL..."
+          ready=0
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U emg >/dev/null 2>&1; then
+              echo "PostgreSQL is ready."
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::PostgreSQL did not become ready within 60s"
+            exit 1
+          fi
+
+          echo "Waiting for Neo4j..."
+          ready=0
+          for i in $(seq 1 30); do
+            if .venv/bin/python -c "
+          from neo4j import GraphDatabase
+          driver = GraphDatabase.driver(
+              'bolt://localhost:7687', auth=('neo4j', 'emg-test-password')
+          )
+          driver.verify_connectivity()
+          driver.close()
+          " >/dev/null 2>&1; then
+              echo "Neo4j is ready."
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Neo4j did not become ready within 60s"
+            exit 1
+          fi
+
+      - name: Persistence integration tests (real PostgreSQL + Neo4j)
+        run: |
+          .venv/bin/pytest libs/python/emg-persistence/tests/integration -v

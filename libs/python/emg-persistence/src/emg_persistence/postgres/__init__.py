@@ -7,6 +7,7 @@ arrive in later sprints.
 
 from __future__ import annotations
 
+from .checkpoint_repository import PostgresProjectionCheckpointRepository
 from .migration_executor import PostgresMigrationExecutor
 from .outbox_repository import PostgresOutboxRepository
 from .pool import ConnectionProvider, DirectConnectionProvider, connect
@@ -18,6 +19,7 @@ __all__ = [
     "DirectConnectionProvider",
     "PostgresMigrationExecutor",
     "PostgresOutboxRepository",
+    "PostgresProjectionCheckpointRepository",
     "PostgresRevisionRepository",
     "PostgresTransactionProvider",
     "TransactionProvider",
