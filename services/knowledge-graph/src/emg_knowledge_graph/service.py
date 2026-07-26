@@ -2,19 +2,46 @@
 
 from __future__ import annotations
 
-from emg_memory_graph import MemoryGraphBuilder, MemoryGraphError, diff_graphs
+from collections.abc import Callable, Sequence
+from typing import TypeVar
+
+from emg_memory_graph import (
+    MemoryEdge,
+    MemoryGraph,
+    MemoryGraphBuilder,
+    MemoryGraphError,
+    MemoryNode,
+    MemoryQueryEngine,
+    active_edges_at,
+    attribute_at,
+    diff_graphs,
+    node_exists_at,
+)
+from emg_memory_graph import NodeNotFoundError as _DomainNodeNotFoundError
 from emg_platform_core import RevisionNotFoundError as _PlatformRevisionNotFoundError
 from emg_platform_core.ports import GraphRevisionReader, GraphStore, RevisionMetadata
 
 from .commands import (
     BuildRevisionCommand,
     CompareRevisionsQuery,
+    EntityAttributeHistoryQuery,
+    GetEdgeQuery,
+    GetEntityQuery,
     GetRevisionQuery,
+    GraphQueryScope,
+    ListEdgesQuery,
+    ListEntitiesQuery,
+    ListNeighborsQuery,
     ListRevisionsQuery,
+    NeighborDirection,
     RestoreRevisionCommand,
+    ShortestPathQuery,
 )
 from .errors import (
+    EdgeNotFoundError,
+    EntityNotFoundError,
     InvalidHistoryQueryError,
+    InvalidQueryError,
     InvalidRevisionCommandError,
     RevisionBuildError,
     RevisionNotFoundError,
@@ -23,11 +50,27 @@ from .errors import (
 )
 from .results import (
     BuildRevisionResult,
+    EdgeDetails,
+    EdgeQueryResult,
+    EntityDetails,
+    EntityHistoryResult,
+    EntityQueryResult,
+    EntitySummary,
+    NeighborResult,
+    PagedEdgeResult,
+    PagedEntityResult,
+    PagedNeighborResult,
+    PageInfo,
+    PathQueryResult,
+    PathResult,
+    QueryRevisionContext,
     RestoreRevisionResult,
     RevisionDetails,
     RevisionDiff,
     RevisionSummary,
 )
+
+_T = TypeVar("_T")
 
 
 def _summary_from_metadata(metadata: RevisionMetadata) -> RevisionSummary:
@@ -40,6 +83,140 @@ def _summary_from_metadata(metadata: RevisionMetadata) -> RevisionSummary:
         node_count=metadata.node_count,
         edge_count=metadata.edge_count,
         created_at=metadata.created_at,
+    )
+
+
+# --- Query engine mapping helpers (ADR-024, Sprint 7.3 Phase 2) --------------
+#
+# Pure functions: MemoryNode/MemoryEdge (domain) -> Phase 1 DTOs. No
+# persistence model, Neo4j record, or repository-internal type is ever
+# touched here — only the already-acquired MemoryGraph snapshot and the
+# stable domain value objects ADR-024 §16 explicitly permits reusing.
+
+
+def _entity_summary(node: MemoryNode) -> EntitySummary:
+    return EntitySummary(
+        node_id=node.node_id,
+        node_type=node.node_type,
+        label=node.label,
+        confidence=node.confidence,
+        classification=node.classification,
+        created_at=node.created_at,
+        updated_at=node.updated_at,
+    )
+
+
+def _entity_details(node: MemoryNode) -> EntityDetails:
+    return EntityDetails(
+        summary=_entity_summary(node),
+        source=node.source,
+        aliases=node.aliases,
+        evidence=node.evidence,
+        histories=node.histories,
+        metadata=node.metadata,
+    )
+
+
+def _edge_details(edge: MemoryEdge) -> EdgeDetails:
+    return EdgeDetails(
+        edge_id=edge.edge_id,
+        edge_type=edge.edge_type,
+        source_id=edge.source_id,
+        target_id=edge.target_id,
+        direction=edge.direction,
+        confidence=edge.confidence,
+        validity=edge.validity,
+        created_at=edge.created_at,
+        updated_at=edge.updated_at,
+        evidence=edge.evidence,
+    )
+
+
+def _matches_entity_filters(node: MemoryNode, query: ListEntitiesQuery) -> bool:
+    """Exact scalar/metadata matching only (ADR-024 §12) — no range,
+    substring, or fuzzy matching of any kind."""
+    if query.node_type is not None and node.node_type != query.node_type:
+        return False
+    if query.source is not None and node.source != query.source:
+        return False
+    if query.confidence is not None and node.confidence != query.confidence:
+        return False
+    if query.classification is not None and node.classification != query.classification:
+        return False
+    for predicate in query.metadata_predicates:
+        if node.metadata.get(predicate.key) != predicate.value:
+            return False
+    return True
+
+
+def _matches_edge_filters(edge: MemoryEdge, query: ListEdgesQuery) -> bool:
+    """``edge_type``/``direction`` only — ``valid_at`` (if any) is applied
+    upstream via ``active_edges_at`` before this predicate ever runs, so it
+    is deliberately not repeated here."""
+    if query.edge_type is not None and edge.edge_type != query.edge_type:
+        return False
+    return not (query.direction is not None and edge.direction != query.direction)
+
+
+def _incident_edges_for_direction(
+    graph: MemoryGraph, node_id: str, direction: NeighborDirection
+) -> tuple[MemoryEdge, ...]:
+    """Dispatch to the matching public ``MemoryGraph`` adjacency accessor —
+    all three are already deterministically ordered by ``edge_id``."""
+    if direction is NeighborDirection.OUTGOING:
+        return graph.out_edges(node_id)
+    if direction is NeighborDirection.INCOMING:
+        return graph.in_edges(node_id)
+    return graph.incident_edges(node_id)
+
+
+def _neighbor_result(graph: MemoryGraph, node_id: str, edge: MemoryEdge) -> NeighborResult | None:
+    """``None`` only if the edge's other endpoint is somehow absent from this
+    same snapshot — cannot happen for a graph that passed its own
+    ``MemoryGraph`` construction-time referential-integrity validator, but
+    guarded defensively rather than assumed."""
+    other_id = edge.target_id if edge.source_id == node_id else edge.source_id
+    other = graph.node(other_id)
+    if other is None:  # pragma: no cover - defensive, graph invariant guarantees this
+        return None
+    return NeighborResult(
+        entity=_entity_summary(other),
+        via_edge_id=edge.edge_id,
+        edge_type=edge.edge_type,
+        confidence=edge.confidence,
+        direction=edge.direction,
+    )
+
+
+def _paginate_by_id(
+    items: Sequence[_T], *, id_of: Callable[[_T], str], cursor: str | None, limit: int
+) -> tuple[tuple[_T, ...], PageInfo]:
+    """Cursor-paginate a sequence already in ascending id order (ADR-024
+    §14). ``items`` must already be ascending-by-id — every call site here
+    sources from a ``MemoryGraph`` accessor that already guarantees this, so
+    no re-sort is performed.
+
+    ``cursor``, when given, resumes strictly *after* the last id seen on a
+    prior page (an exclusive "continue from here" boundary) — the only
+    cursor direction that composes correctly with an ascending ordering to
+    produce working forward pagination. ADR-024 §14 names this field
+    ``before_<id>``/``before_node_id``/``before_edge_id`` after
+    ``before_revision_number``'s exact convention, but that convention was
+    defined for revision listing's *descending* order, where "strictly less
+    than the boundary" *is* "continue forward". Applied literally to an
+    *ascending* listing it would instead restrict every page to the very
+    smallest ids, never advancing — so this implementation intentionally
+    resolves the ambiguity by cursor *direction* (greater-than) rather than
+    cursor *comparison operator* (less-than), the only choice that yields a
+    working pager. Flagged in the Phase 2 final report as an ADR-024 §14 gap
+    worth a clarifying addendum.
+    """
+    eligible = items if cursor is None else tuple(item for item in items if id_of(item) > cursor)
+    page = tuple(eligible[:limit])
+    has_more = len(eligible) > len(page)
+    next_cursor = id_of(page[-1]) if page and has_more else None
+    return page, PageInfo(
+        limit=limit, returned_count=len(page), next_cursor=next_cursor, has_more=has_more
     )
 
 
@@ -205,6 +382,272 @@ class KnowledgeGraphApplication:
             committed_at=receipt.committed_at,
             revision_created=receipt.revision_created,
         )
+
+    # --- query engine (ADR-024, Sprint 7.3 Phase 2) --------------------------
+    #
+    # Five-step flow per ADR-024 §9, applied identically in every method
+    # below: (1) type-guard + validate the command, (2) require a configured
+    # GraphRevisionReader and resolve the GraphQueryScope into a graph
+    # snapshot + QueryRevisionContext, (3) execute against that snapshot using
+    # only existing MemoryGraph / MemoryQueryEngine / temporal_query public
+    # APIs, (4) map domain results into Phase 1 DTOs, (5) return with the
+    # QueryRevisionContext. No new GraphQueryReader port, repository
+    # interface, or adapter is introduced; GraphStore/GraphRevisionReader/
+    # MemoryGraph/MemoryQueryEngine internals are used, never modified.
+
+    def get_entity(self, query: GetEntityQuery) -> EntityQueryResult:
+        """Entity lookup by canonical node id (ADR-024 §10.A)."""
+        if not isinstance(query, GetEntityQuery):
+            raise InvalidQueryError("query must be a GetEntityQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        node = graph.node(query.node_id)
+        if node is None:
+            raise EntityNotFoundError(
+                f"no entity {query.node_id!r} for tenant {query.scope.tenant.value!r}"
+            )
+        return EntityQueryResult(item=_entity_details(node), revision_context=revision_context)
+
+    def list_entities(self, query: ListEntitiesQuery) -> PagedEntityResult:
+        """List/filter entities by type and/or exact scalar/metadata
+        properties, cursor-paged (ADR-024 §10.B, §10.C, §12, §14)."""
+        if not isinstance(query, ListEntitiesQuery):
+            raise InvalidQueryError("query must be a ListEntitiesQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        matching = tuple(node for node in graph.nodes if _matches_entity_filters(node, query))
+        page, page_info = _paginate_by_id(
+            matching, id_of=lambda n: n.node_id, cursor=query.before_node_id, limit=query.limit
+        )
+        return PagedEntityResult(
+            items=tuple(_entity_summary(node) for node in page),
+            page_info=page_info,
+            revision_context=revision_context,
+        )
+
+    def get_edge(self, query: GetEdgeQuery) -> EdgeQueryResult:
+        """Edge lookup by canonical edge id (ADR-024 §10.D)."""
+        if not isinstance(query, GetEdgeQuery):
+            raise InvalidQueryError("query must be a GetEdgeQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        edge = graph.edge(query.edge_id)
+        if edge is None:
+            raise EdgeNotFoundError(
+                f"no edge {query.edge_id!r} for tenant {query.scope.tenant.value!r}"
+            )
+        return EdgeQueryResult(item=_edge_details(edge), revision_context=revision_context)
+
+    def list_edges(self, query: ListEdgesQuery) -> PagedEdgeResult:
+        """List/filter edges by type, storage direction, and/or a
+        ``valid_at`` moment, cursor-paged (ADR-024 §10.E, §10.J, §14).
+        Temporal filtering calls the existing ``active_edges_at`` directly —
+        no interval-containment logic is reimplemented here."""
+        if not isinstance(query, ListEdgesQuery):
+            raise InvalidQueryError("query must be a ListEdgesQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        candidates: tuple[MemoryEdge, ...] = (
+            active_edges_at(graph, query.valid_at) if query.valid_at is not None else graph.edges
+        )
+        matching = tuple(edge for edge in candidates if _matches_edge_filters(edge, query))
+        page, page_info = _paginate_by_id(
+            matching, id_of=lambda e: e.edge_id, cursor=query.before_edge_id, limit=query.limit
+        )
+        return PagedEdgeResult(
+            items=tuple(_edge_details(edge) for edge in page),
+            page_info=page_info,
+            revision_context=revision_context,
+        )
+
+    def list_neighbors(self, query: ListNeighborsQuery) -> PagedNeighborResult:
+        """Neighbors of one node, traversed outgoing/incoming/both, optionally
+        filtered to those valid at a moment, cursor-paged (ADR-024 §10.F/G/H,
+        §10.J, §14).
+
+        Deliberately does not call ``temporal_query.neighbors_at`` — that
+        function returns bare neighbor node ids, discarding the per-edge
+        ``via_edge_id``/``edge_type``/``confidence``/``direction`` fields
+        ``NeighborResult`` requires. Instead it composes the same two public
+        primitives ``neighbors_at`` itself uses internally
+        (``active_edges_at``-equivalent edge-activity filtering, and
+        ``node_exists_at``) directly over the subject node's own directional
+        incident-edge set, preserving full per-edge result fidelity without
+        duplicating any temporal-containment logic.
+        """
+        if not isinstance(query, ListNeighborsQuery):
+            raise InvalidQueryError("query must be a ListNeighborsQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        if graph.node(query.node_id) is None:
+            raise EntityNotFoundError(
+                f"no entity {query.node_id!r} for tenant {query.scope.tenant.value!r}"
+            )
+
+        edges = _incident_edges_for_direction(graph, query.node_id, query.direction)
+        if query.valid_at is not None:
+            moment = query.valid_at
+            active_ids = {edge.edge_id for edge in active_edges_at(graph, moment)}
+            edges = tuple(edge for edge in edges if edge.edge_id in active_ids)
+            edges = tuple(
+                edge
+                for edge in edges
+                if node_exists_at(
+                    graph,
+                    edge.target_id if edge.source_id == query.node_id else edge.source_id,
+                    moment,
+                )
+            )
+
+        neighbors = tuple(
+            result
+            for edge in edges
+            if (result := _neighbor_result(graph, query.node_id, edge)) is not None
+        )
+        page, page_info = _paginate_by_id(
+            neighbors,
+            id_of=lambda n: n.via_edge_id,
+            cursor=query.before_edge_id,
+            limit=query.limit,
+        )
+        return PagedNeighborResult(
+            items=page, page_info=page_info, revision_context=revision_context
+        )
+
+    def find_shortest_path(self, query: ShortestPathQuery) -> PathQueryResult:
+        """A single unweighted shortest path, bounded by
+        ``query.maximum_depth`` (ADR-024 §10.I, §15).
+
+        ``MemoryQueryEngine.shortest_path`` has no depth parameter (an
+        unbounded BFS) and cannot be modified (Phase 2 strict rule), so the
+        requested ceiling is enforced here, after the fact, against the
+        found path's own ``length``. A path longer than what the caller
+        asked for is reported as ``found=False`` — per ``PathResult``'s own
+        documented semantics, an explicit not-found-within-budget result, not
+        an error — rather than exposing a path deeper than requested.
+        """
+        if not isinstance(query, ShortestPathQuery):
+            raise InvalidQueryError("query must be a ShortestPathQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        engine = MemoryQueryEngine(graph)
+        try:
+            found = engine.shortest_path(query.from_node_id, query.to_node_id)
+        except _DomainNodeNotFoundError as exc:
+            raise EntityNotFoundError(str(exc)) from exc
+
+        if found is None or found.length > query.maximum_depth:
+            path = PathResult(node_ids=(), edge_ids=(), length=0, found=False)
+        else:
+            path = PathResult(
+                node_ids=found.node_ids,
+                edge_ids=found.edge_ids,
+                length=found.length,
+                found=True,
+            )
+        return PathQueryResult(item=path, revision_context=revision_context)
+
+    def get_entity_history(self, query: EntityAttributeHistoryQuery) -> EntityHistoryResult:
+        """The value of one of a node's tracked attributes at a moment in
+        time (ADR-024 §10.J, §11, §13) — the domain temporal axis, composed
+        with whichever revision ``scope`` selects. Calls the existing
+        ``attribute_at`` directly; no history-reconstruction logic is
+        reimplemented here."""
+        if not isinstance(query, EntityAttributeHistoryQuery):
+            raise InvalidQueryError("query must be an EntityAttributeHistoryQuery")
+        query.validate()
+        self._require_revision_reader()
+
+        graph, revision_context = self._resolve_scope(query.scope)
+        if graph.node(query.node_id) is None:
+            raise EntityNotFoundError(
+                f"no entity {query.node_id!r} for tenant {query.scope.tenant.value!r}"
+            )
+        fact = attribute_at(graph, query.node_id, query.attribute, query.valid_at)
+        return EntityHistoryResult(item=fact, revision_context=revision_context)
+
+    def _resolve_scope(self, scope: GraphQueryScope) -> tuple[MemoryGraph, QueryRevisionContext]:
+        """Resolve a ``GraphQueryScope`` into ``(graph, revision_context)``
+        exactly per ADR-024 §9 step 2 / §11: current head via
+        ``GraphStore.read()``, or one immutable historical revision via
+        ``GraphRevisionReader.read_revision()``.
+
+        A configured ``GraphRevisionReader`` is required for *both* paths
+        (enforced by every caller's preceding ``_require_revision_reader()``
+        call): ``QueryRevisionContext`` (ADR-024 §16) always carries a
+        concrete ``revision_number``/``committed_at``, and
+        ``GraphStore.read()`` alone exposes no revision identity at all —
+        only ``GraphRevisionReader.list_revisions`` can supply it for the
+        current head. This is a necessary consequence of ADR-024's own
+        ``QueryRevisionContext`` shape, not a new architectural decision; it
+        does not change the current-head *graph* read path, which still goes
+        through ``GraphStore.read()`` exactly as ADR-024 §9 specifies (and so
+        still benefits from Neo4j's current-head acceleration, ADR-024 §19).
+
+        Known, accepted characteristic: the current-head graph read and the
+        head-metadata read are two separate calls, not one atomic operation
+        (no such combined read exists on either port, and adding one would
+        require modifying ``GraphStore``/``GraphRevisionReader``, which
+        Phase 2 forbids). A concurrent write between them could leave
+        ``revision_context`` reporting a revision at most one commit behind
+        the graph just read. This is a read-path best-effort characteristic,
+        not a defect introduced here.
+
+        If a tenant has never committed a revision, ``list_revisions(...,
+        limit=1)`` returns empty; this is surfaced as ``RevisionNotFoundError``
+        for the current-head path rather than inventing a sentinel
+        ``revision_number`` — ADR-024 defines no meaning for
+        "the current head of a tenant with zero revisions".
+
+        ``is_current_head`` reflects which resolution *path* the caller
+        selected (``scope.revision_number is None``), not whether the
+        resolved revision happens to numerically equal the actual current
+        head at read time: an explicit ``scope.revision_number`` is always
+        reported as historical (``is_current_head=False``), even if it
+        happens to name the same revision the current-head path would have
+        resolved to.
+        """
+        assert self._revision_reader is not None  # guaranteed by _require_revision_reader()
+
+        if scope.revision_number is None:
+            heads = self._revision_reader.list_revisions(scope.tenant, limit=1)
+            if not heads:
+                raise RevisionNotFoundError(
+                    f"tenant {scope.tenant.value!r} has no committed revision yet"
+                )
+            head = heads[0]
+            graph = self._graph_store.read(scope.tenant)
+            revision_context = QueryRevisionContext(
+                revision_number=head.revision_number,
+                committed_at=head.created_at,
+                is_current_head=True,
+            )
+            return graph, revision_context
+
+        try:
+            historical = self._revision_reader.read_revision(scope.tenant, scope.revision_number)
+        except _PlatformRevisionNotFoundError as exc:
+            raise RevisionNotFoundError(
+                f"no revision {scope.revision_number} for tenant {scope.tenant.value!r}"
+            ) from exc
+        revision_context = QueryRevisionContext(
+            revision_number=historical.metadata.revision_number,
+            committed_at=historical.metadata.created_at,
+            is_current_head=False,
+        )
+        return historical.graph, revision_context
 
     def _require_revision_reader(self) -> None:
         if self._revision_reader is None:
