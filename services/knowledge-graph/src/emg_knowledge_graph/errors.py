@@ -52,3 +52,53 @@ class UnsupportedHistoryCapabilityError(KnowledgeGraphApplicationError):
     constructed without a ``GraphRevisionReader`` (ADR-023 §9, §17)."""
 
     error_code = "KNOWLEDGE_GRAPH_UNSUPPORTED_HISTORY_CAPABILITY"
+
+
+# --- Query engine application errors (ADR-024 §17, Sprint 7.3 Phase 1) -------
+
+
+class InvalidQueryError(KnowledgeGraphApplicationError):
+    """A query command violates an application-boundary invariant — an
+    invalid limit, an invalid cursor, an invalid revision number, or a
+    malformed filter (ADR-024 §17). Raised before any
+    ``GraphStore``/``GraphRevisionReader`` interaction."""
+
+    error_code = "KNOWLEDGE_GRAPH_INVALID_QUERY"
+
+
+class EntityNotFoundError(KnowledgeGraphApplicationError):
+    """A requested ``node_id`` is absent from the selected tenant's resolved
+    graph snapshot (ADR-024 §17). Raised identically whether the entity is
+    simply unused or belongs to a different tenant's data."""
+
+    error_code = "KNOWLEDGE_GRAPH_ENTITY_NOT_FOUND"
+
+
+class EdgeNotFoundError(KnowledgeGraphApplicationError):
+    """A requested ``edge_id`` is absent from the selected tenant's resolved
+    graph snapshot (ADR-024 §17). Raised identically whether the edge is
+    simply unused or belongs to a different tenant's data."""
+
+    error_code = "KNOWLEDGE_GRAPH_EDGE_NOT_FOUND"
+
+
+class QueryLimitExceededError(KnowledgeGraphApplicationError):
+    """A requested hard safety limit — page size, neighbor-result count, or
+    exact-property-predicate count — was exceeded (ADR-024 §17, §18). Raised
+    before any store interaction."""
+
+    error_code = "KNOWLEDGE_GRAPH_QUERY_LIMIT_EXCEEDED"
+
+
+class InvalidTemporalFilterError(KnowledgeGraphApplicationError):
+    """A ``valid_at`` value is invalid or timezone-naive (ADR-024 §13, §17).
+    Raised before any store interaction."""
+
+    error_code = "KNOWLEDGE_GRAPH_INVALID_TEMPORAL_FILTER"
+
+
+class PathDepthExceededError(KnowledgeGraphApplicationError):
+    """A requested path-search depth exceeds ``MAX_TRAVERSAL_DEPTH``
+    (ADR-024 §15, §17). Raised before any graph snapshot is acquired."""
+
+    error_code = "KNOWLEDGE_GRAPH_PATH_DEPTH_EXCEEDED"
