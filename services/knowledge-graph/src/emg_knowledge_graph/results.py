@@ -12,6 +12,7 @@ from emg_memory_graph import (
     GraphDiff,
     MemoryGraph,
     Metadata,
+    TemporalFact,
     TemporalHistory,
     TemporalValidity,
 )
@@ -250,4 +251,23 @@ class PathQueryResult:
     ``revision_context`` — no other top-level shape."""
 
     item: PathResult
+    revision_context: QueryRevisionContext
+
+
+@dataclass(frozen=True, slots=True)
+class EntityHistoryResult:
+    """The value of one of a node's tracked attributes at a moment in time
+    (``EntityAttributeHistoryQuery`` / ADR-024 §10.J), plus the revision
+    context it was computed against.
+
+    Not one of ADR-024 §16's originally enumerated result shapes — Phase 1
+    defined no dedicated contract for this capability. This is a minimal,
+    Phase 2 (application-service-layer) addition, reusing ``TemporalFact``
+    directly, exactly the same reuse pattern §16 already applies to
+    ``TemporalHistory``/``TemporalValidity``/``EvidenceRef``. ``item`` is
+    ``None`` when the attribute had no value at ``valid_at`` — a normal,
+    explicit result, not an error, mirroring ``TemporalHistory.as_of``'s own
+    contract."""
+
+    item: TemporalFact | None
     revision_context: QueryRevisionContext
