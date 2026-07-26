@@ -7,12 +7,13 @@ The authoritative revision log + head pointer, with optimistic concurrency
 from __future__ import annotations
 
 from .in_memory import InMemoryRevisionRepository
-from .model import Revision, RevisionHead
+from .model import Revision, RevisionHead, RevisionRecord
 from .repository import RevisionRepository
 
 __all__ = [
     "InMemoryRevisionRepository",
     "Revision",
     "RevisionHead",
+    "RevisionRecord",
     "RevisionRepository",
 ]

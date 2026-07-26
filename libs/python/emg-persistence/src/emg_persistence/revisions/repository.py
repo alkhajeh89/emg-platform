@@ -20,8 +20,9 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from emg_platform_core import TenantId
+from emg_platform_core.ports import DEFAULT_REVISION_LIST_LIMIT
 
-from .model import Revision, RevisionHead
+from .model import Revision, RevisionHead, RevisionRecord
 
 
 @runtime_checkable
@@ -88,5 +89,22 @@ class RevisionRepository(Protocol):
         Raises:
             PersistenceConflictError: the current head is not
                 ``(revision_number - 1, parent_hash)`` (the head moved).
+        """
+        ...
+
+    def list_revisions(
+        self,
+        tenant: TenantId,
+        *,
+        limit: int = DEFAULT_REVISION_LIST_LIMIT,
+        before_revision_number: int | None = None,
+    ) -> tuple[RevisionRecord, ...]:
+        """Return up to ``limit`` revision records for ``tenant``, ordered
+        strictly descending by ``revision_number``.
+
+        When ``before_revision_number`` is given, only revisions with
+        ``revision_number < before_revision_number`` are eligible. Never
+        includes ``graph_json`` — this is a metadata-only listing (ADR-023
+        §18) and never deserializes or hash-verifies a graph snapshot.
         """
         ...

@@ -250,6 +250,9 @@ def test_internal_transaction_rejects_double_commit_and_abort_after_commit() -> 
         content_hash=graph.content_hash(),
         node_count=graph.node_count,
         edge_count=graph.edge_count,
+        revision_number=1,
+        committed_at=NOW,
+        revision_created=True,
     )
     transaction.commit(committed_receipt)
 

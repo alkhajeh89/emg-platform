@@ -10,7 +10,13 @@ EMG_PRODUCT_ARCHITECTURE_FREEZE.md §9, §11, §12, §32.
 from __future__ import annotations
 
 from .adapters import InMemoryGraphStore
-from .errors import PlatformCoreError, TransactionStateError
+from .errors import (
+    PlatformCoreError,
+    RevisionNotFoundError,
+    SnapshotIntegrityError,
+    TransactionStateError,
+    UnsupportedHistoryCapabilityError,
+)
 from .identity import (
     SYSTEM_PRINCIPAL,
     SYSTEM_TENANT,
@@ -18,21 +24,38 @@ from .identity import (
     PrincipalRef,
     TenantId,
 )
-from .ports import GraphStore, GraphTransaction, WriteReceipt
+from .ports import (
+    DEFAULT_REVISION_LIST_LIMIT,
+    MAX_REVISION_LIST_LIMIT,
+    GraphRevisionReader,
+    GraphStore,
+    GraphTransaction,
+    HistoricalGraphRevision,
+    RevisionMetadata,
+    WriteReceipt,
+)
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "DEFAULT_REVISION_LIST_LIMIT",
+    "MAX_REVISION_LIST_LIMIT",
     "SYSTEM_PRINCIPAL",
     "SYSTEM_TENANT",
+    "GraphRevisionReader",
     "GraphStore",
     "GraphTransaction",
+    "HistoricalGraphRevision",
     "InMemoryGraphStore",
     "PlatformCoreError",
     "PrincipalKind",
     "PrincipalRef",
+    "RevisionMetadata",
+    "RevisionNotFoundError",
+    "SnapshotIntegrityError",
     "TenantId",
     "TransactionStateError",
+    "UnsupportedHistoryCapabilityError",
     "WriteReceipt",
     "__version__",
 ]

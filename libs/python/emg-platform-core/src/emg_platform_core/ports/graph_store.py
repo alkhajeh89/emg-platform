@@ -20,6 +20,7 @@ frozen ``WriteReceipt`` value type (Freeze §9: the core performs no I/O).
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from emg_memory_graph import MemoryGraph
@@ -32,9 +33,23 @@ class WriteReceipt(BaseModel):
     """Immutable proof of a persisted write.
 
     Records *what* was written (deterministic ``content_hash`` of the stored
-    graph, plus counts) and *who/where* (principal + tenant). This is the seed of
+    graph, plus counts), *who/where* (principal + tenant), and — since ADR-023 —
+    *which authoritative revision* the write resolved to. This is the seed of
     the audit spine (Freeze §11): later phases emit an audit record from it. It
     contains no storage-specific detail, so it is identical across adapters.
+
+    ``revision_number``/``committed_at``/``revision_created`` (ADR-023 §11) let a
+    caller learn what a commit produced without a second, race-unsafe list/read
+    call after the fact:
+
+    * an actual append: ``revision_number`` is the newly created revision's
+      number, ``committed_at`` is that revision's own ``created_at``, and
+      ``revision_created`` is ``True``.
+    * a no-op (staged content is identical to the current head): ``revision_number``
+      identifies the *existing* authoritative head (unchanged),
+      ``committed_at`` is that existing head revision's own ``created_at`` (not
+      the wall-clock time of the no-op call, since nothing new was committed),
+      and ``revision_created`` is ``False``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -47,6 +62,9 @@ class WriteReceipt(BaseModel):
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     node_count: int = Field(ge=0)
     edge_count: int = Field(ge=0)
+    revision_number: int = Field(ge=1)
+    committed_at: datetime
+    revision_created: bool
 
 
 @runtime_checkable

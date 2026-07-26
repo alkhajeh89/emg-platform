@@ -13,9 +13,10 @@ from __future__ import annotations
 import threading
 
 from emg_platform_core import TenantId
+from emg_platform_core.ports import DEFAULT_REVISION_LIST_LIMIT, MAX_REVISION_LIST_LIMIT
 
 from ..errors import PersistenceConflictError
-from .model import Revision, RevisionHead
+from .model import Revision, RevisionHead, RevisionRecord
 
 
 class InMemoryRevisionRepository:
@@ -96,3 +97,33 @@ class InMemoryRevisionRepository:
         self._revisions.setdefault(revision.tenant.value, {})[revision.revision_number] = revision
         self._heads[revision.tenant.value] = head
         return head
+
+    # --- metadata-only listing (ADR-023) ------------------------------------
+    def list_revisions(
+        self,
+        tenant: TenantId,
+        *,
+        limit: int = DEFAULT_REVISION_LIST_LIMIT,
+        before_revision_number: int | None = None,
+    ) -> tuple[RevisionRecord, ...]:
+        if not 1 <= limit <= MAX_REVISION_LIST_LIMIT:
+            raise ValueError(f"limit must be in [1, {MAX_REVISION_LIST_LIMIT}]: {limit!r}")
+        with self._lock:
+            revisions = self._revisions.get(tenant.value, {})
+            numbers = sorted(revisions, reverse=True)
+            if before_revision_number is not None:
+                numbers = [n for n in numbers if n < before_revision_number]
+            selected = numbers[:limit]
+            return tuple(
+                RevisionRecord(
+                    tenant=revisions[n].tenant,
+                    revision_number=revisions[n].revision_number,
+                    content_hash=revisions[n].content_hash,
+                    parent_hash=revisions[n].parent_hash,
+                    principal=revisions[n].principal,
+                    node_count=revisions[n].node_count,
+                    edge_count=revisions[n].edge_count,
+                    created_at=revisions[n].created_at,
+                )
+                for n in selected
+            )

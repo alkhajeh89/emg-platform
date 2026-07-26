@@ -21,3 +21,24 @@ class PlatformCoreError(EMGError):
 class TransactionStateError(PlatformCoreError):
     """A graph transaction was used outside its valid lifecycle (e.g. read or
     stage after the unit of work has already been committed or aborted)."""
+
+
+class RevisionNotFoundError(PlatformCoreError):
+    """A ``GraphRevisionReader`` could not resolve ``(tenant, revision_number)``.
+
+    Raised identically whether the revision number is simply unused or belongs
+    to a different tenant — the two cases must be indistinguishable to the
+    caller (ADR-023 §22)."""
+
+
+class SnapshotIntegrityError(PlatformCoreError):
+    """A deserialized historical graph payload's recomputed content hash does
+    not match its stored ``content_hash`` (ADR-023 §17)."""
+
+
+class UnsupportedHistoryCapabilityError(PlatformCoreError):
+    """A ``GraphStore`` adapter does not support ``GraphRevisionReader``
+    history operations for the requested tenant/revision (ADR-023 §9).
+
+    Reserved for forward compatibility; neither ``InMemoryGraphStore`` nor
+    ``PostgresNeo4jGraphStore`` is expected to raise this today."""

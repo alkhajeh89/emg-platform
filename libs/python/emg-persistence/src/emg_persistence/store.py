@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -13,9 +14,16 @@ from emg_memory_graph import EMPTY_GRAPH, MemoryGraph, diff_graphs
 from emg_platform_core import (
     GraphTransaction,
     PrincipalRef,
+    RevisionNotFoundError,
+    SnapshotIntegrityError,
     TenantId,
     TransactionStateError,
     WriteReceipt,
+)
+from emg_platform_core.ports import (
+    DEFAULT_REVISION_LIST_LIMIT,
+    HistoricalGraphRevision,
+    RevisionMetadata,
 )
 from psycopg import Error as PsycopgError
 from pydantic import ValidationError
@@ -40,6 +48,16 @@ ProjectionSource = Neo4jGraphProjection | LazyNeo4jProjection | None
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True, slots=True)
+class _CommitOutcome:
+    """Authoritative revision identity produced by one ``_persist`` call
+    (ADR-023 §11) — never inferred by a second list/read call after commit."""
+
+    revision_number: int
+    committed_at: datetime
+    revision_created: bool
 
 
 class _TransactionState(Enum):
@@ -146,7 +164,7 @@ class PostgresNeo4jGraphStore:
             with self._transactions.transaction() as connection:
                 repository = self._repository_factory(connection)
                 outbox = self._outbox_repository_factory(connection)
-                self._persist(repository, outbox, tenant, graph, principal)
+                outcome = self._persist(repository, outbox, tenant, graph, principal)
         except PersistenceConflictError:
             raise
         except PersistenceError:
@@ -155,7 +173,7 @@ class PostgresNeo4jGraphStore:
             raise PersistenceError(
                 f"failed to write authoritative graph for tenant {tenant.value!r}"
             ) from exc
-        return _receipt_for(tenant, graph, principal)
+        return _receipt_for(tenant, graph, principal, outcome)
 
     def tenants(self) -> tuple[TenantId, ...]:
         """Return tenants with authoritative PostgreSQL heads."""
@@ -172,6 +190,7 @@ class PostgresNeo4jGraphStore:
     def transaction(self, tenant: TenantId, principal: PrincipalRef) -> Iterator[GraphTransaction]:
         """Open one PostgreSQL transaction for an atomic staged graph update."""
         transaction: _PersistentGraphTransaction | None = None
+        outcome: _CommitOutcome | None = None
         try:
             with self._transactions.transaction() as connection:
                 repository = self._repository_factory(connection)
@@ -180,7 +199,9 @@ class PostgresNeo4jGraphStore:
                 transaction = _PersistentGraphTransaction(tenant, principal, current)
                 try:
                     yield transaction
-                    self._persist(repository, outbox, tenant, transaction.read(), principal)
+                    outcome = self._persist(
+                        repository, outbox, tenant, transaction.read(), principal
+                    )
                 except BaseException:
                     transaction.abort()
                     raise
@@ -204,7 +225,8 @@ class PostgresNeo4jGraphStore:
             raise
         else:
             assert transaction is not None
-            receipt = _receipt_for(tenant, transaction.read(), principal)
+            assert outcome is not None
+            receipt = _receipt_for(tenant, transaction.read(), principal, outcome)
             transaction.commit(receipt)
 
     def _persist(
@@ -214,16 +236,27 @@ class PostgresNeo4jGraphStore:
         tenant: TenantId,
         graph: MemoryGraph,
         principal: PrincipalRef,
-    ) -> None:
-        """Apply direct-write orchestration using an already-owned transaction."""
+    ) -> _CommitOutcome:
+        """Apply direct-write orchestration using an already-owned transaction.
+
+        Returns the authoritative revision identity the commit resolved to
+        (ADR-023 §11) — a no-op never creates a revision row or outbox event
+        and identifies the existing head; an append does both and identifies
+        the newly created revision.
+        """
         head = repository.get_head(tenant)
         if head is None:
             revision = self._revision_for(tenant, graph, principal, head)
             repository.create_first_revision(revision)
             outbox.append(self._outbox_event_for(revision))
-            return
+            return _CommitOutcome(
+                revision_number=revision.revision_number,
+                committed_at=revision.created_at,
+                revision_created=True,
+            )
 
-        opened = _load_head_snapshot(repository, tenant, head)
+        head_revision = _load_head_revision(repository, tenant, head)
+        opened = _deserialize_snapshot(head_revision)
         staged_hash = graph.content_hash()
         graph_diff = diff_graphs(opened, graph)
 
@@ -237,7 +270,11 @@ class PostgresNeo4jGraphStore:
                     f"authoritative head changed while confirming no-op "
                     f"for tenant {tenant.value!r}"
                 )
-            return
+            return _CommitOutcome(
+                revision_number=head.revision_number,
+                committed_at=head_revision.created_at,
+                revision_created=False,
+            )
 
         if graph_diff.is_empty:
             raise PersistenceError(
@@ -246,6 +283,11 @@ class PostgresNeo4jGraphStore:
         revision = self._revision_for(tenant, graph, principal, head)
         repository.append_revision(revision)
         outbox.append(self._outbox_event_for(revision))
+        return _CommitOutcome(
+            revision_number=revision.revision_number,
+            committed_at=revision.created_at,
+            revision_created=True,
+        )
 
     def _revision_for(
         self,
@@ -349,6 +391,75 @@ class PostgresNeo4jGraphStore:
         with self._transactions.transaction() as connection:
             return self._repository_factory(connection).get_revision(tenant, revision_number)
 
+    # --- GraphRevisionReader (ADR-023) --------------------------------------
+    def list_revisions(
+        self,
+        tenant: TenantId,
+        *,
+        limit: int = DEFAULT_REVISION_LIST_LIMIT,
+        before_revision_number: int | None = None,
+    ) -> tuple[RevisionMetadata, ...]:
+        """Metadata-only listing; never deserializes or hash-verifies a
+        graph snapshot (ADR-023 §13, §18)."""
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                records = repository.list_revisions(
+                    tenant, limit=limit, before_revision_number=before_revision_number
+                )
+        except PersistenceError:
+            raise
+        except PsycopgError as exc:
+            raise PersistenceError(f"failed to list revisions for tenant {tenant.value!r}") from exc
+        return tuple(
+            RevisionMetadata(
+                tenant=record.tenant,
+                revision_number=record.revision_number,
+                content_hash=record.content_hash,
+                parent_hash=record.parent_hash,
+                principal=record.principal,
+                node_count=record.node_count,
+                edge_count=record.edge_count,
+                created_at=record.created_at,
+            )
+            for record in records
+        )
+
+    def read_revision(self, tenant: TenantId, revision_number: int) -> HistoricalGraphRevision:
+        """Full historical read: fetch, deserialize, and hash-verify the
+        requested revision, reusing the same snapshot logic that already
+        guards head reads (``_deserialize_snapshot``) rather than
+        duplicating it (ADR-023 §9, §13)."""
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                revision = repository.get_revision(tenant, revision_number)
+        except PersistenceError:
+            raise
+        except PsycopgError as exc:
+            raise PersistenceError(
+                f"failed to read revision {revision_number} for tenant {tenant.value!r}"
+            ) from exc
+        if revision is None:
+            raise RevisionNotFoundError(
+                f"no revision {revision_number} for tenant {tenant.value!r}"
+            )
+        try:
+            graph = _deserialize_snapshot(revision)
+        except PersistenceError as exc:
+            raise SnapshotIntegrityError(str(exc)) from exc
+        metadata = RevisionMetadata(
+            tenant=revision.tenant,
+            revision_number=revision.revision_number,
+            content_hash=revision.content_hash,
+            parent_hash=revision.parent_hash,
+            principal=revision.principal,
+            node_count=revision.node_count,
+            edge_count=revision.edge_count,
+            created_at=revision.created_at,
+        )
+        return HistoricalGraphRevision(metadata=metadata, graph=graph)
+
 
 def _deserialize_snapshot(revision: Revision) -> MemoryGraph:
     try:
@@ -372,12 +483,19 @@ def _read_from_repository(repository: RevisionRepository, tenant: TenantId) -> M
     head = repository.get_head(tenant)
     if head is None:
         return EMPTY_GRAPH
-    return _load_head_snapshot(repository, tenant, head)
+    revision = _load_head_revision(repository, tenant, head)
+    return _deserialize_snapshot(revision)
 
 
-def _load_head_snapshot(
+def _load_head_revision(
     repository: RevisionRepository, tenant: TenantId, head: RevisionHead
-) -> MemoryGraph:
+) -> Revision:
+    """Fetch and integrity-check the ``Revision`` row the head points at
+    (without deserializing its graph). Callers that also need the graph call
+    :func:`_deserialize_snapshot` on the returned ``Revision`` themselves —
+    this avoids a second ``get_revision`` round trip for callers (e.g. the
+    no-op commit path) that only need the revision's metadata, such as
+    ``created_at`` (ADR-023 §11)."""
     revision = repository.get_revision(tenant, head.revision_number)
     if revision is None:
         raise PersistenceError(
@@ -389,14 +507,19 @@ def _load_head_snapshot(
             f"head/revision hash mismatch for tenant {tenant.value!r} "
             f"at revision {head.revision_number}"
         )
-    return _deserialize_snapshot(revision)
+    return revision
 
 
-def _receipt_for(tenant: TenantId, graph: MemoryGraph, principal: PrincipalRef) -> WriteReceipt:
+def _receipt_for(
+    tenant: TenantId, graph: MemoryGraph, principal: PrincipalRef, outcome: _CommitOutcome
+) -> WriteReceipt:
     return WriteReceipt(
         tenant=tenant,
         principal=principal,
         content_hash=graph.content_hash(),
         node_count=graph.node_count,
         edge_count=graph.edge_count,
+        revision_number=outcome.revision_number,
+        committed_at=outcome.committed_at,
+        revision_created=outcome.revision_created,
     )
