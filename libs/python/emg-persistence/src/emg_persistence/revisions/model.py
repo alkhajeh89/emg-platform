@@ -58,3 +58,24 @@ class Revision(BaseModel):
             revision_number=self.revision_number,
             content_hash=self.content_hash,
         )
+
+
+class RevisionRecord(BaseModel):
+    """Metadata-only view of one revision, deliberately excluding ``graph_json``
+    (ADR-023 §18).
+
+    Produced by :meth:`RevisionRepository.list_revisions` so listing a tenant's
+    history never deserializes a graph snapshot it may not need. Every field is
+    a direct, lossless projection of the corresponding :class:`Revision` field.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    tenant: TenantId
+    revision_number: int = Field(ge=1)
+    content_hash: HexHash
+    parent_hash: HexHash | None = None
+    principal: PrincipalRef
+    node_count: int = Field(ge=0)
+    edge_count: int = Field(ge=0)
+    created_at: datetime

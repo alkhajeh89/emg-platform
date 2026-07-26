@@ -17,9 +17,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from emg_platform_core import PrincipalKind, PrincipalRef, TenantId
+from emg_platform_core.ports import DEFAULT_REVISION_LIST_LIMIT, MAX_REVISION_LIST_LIMIT
 
 from ..errors import PersistenceConflictError
-from ..revisions.model import Revision, RevisionHead
+from ..revisions.model import Revision, RevisionHead, RevisionRecord
 
 if TYPE_CHECKING:
     from psycopg import Connection
@@ -37,6 +38,18 @@ _EXISTS = (
 )
 _COUNT = "SELECT count(*) FROM graph_revisions WHERE tenant_id = %(t)s"
 _SELECT_TENANTS = "SELECT tenant_id FROM graph_head ORDER BY tenant_id"
+_SELECT_REVISION_LIST = (
+    "SELECT revision_number, content_hash, parent_hash, principal_id, principal_kind, "
+    "node_count, edge_count, created_at FROM graph_revisions "
+    "WHERE tenant_id = %(t)s AND revision_number < %(before)s "
+    "ORDER BY revision_number DESC LIMIT %(limit)s"
+)
+_SELECT_REVISION_LIST_NO_CURSOR = (
+    "SELECT revision_number, content_hash, parent_hash, principal_id, principal_kind, "
+    "node_count, edge_count, created_at FROM graph_revisions "
+    "WHERE tenant_id = %(t)s "
+    "ORDER BY revision_number DESC LIMIT %(limit)s"
+)
 _REVALIDATE_HEAD = (
     "SELECT head_revision_number, head_content_hash FROM graph_head "
     "WHERE tenant_id = %(t)s FOR UPDATE"
@@ -188,6 +201,40 @@ class PostgresRevisionRepository:
                 )
             cur.execute(_INSERT_REVISION, self._revision_params(revision))
         return head
+
+    def list_revisions(
+        self,
+        tenant: TenantId,
+        *,
+        limit: int = DEFAULT_REVISION_LIST_LIMIT,
+        before_revision_number: int | None = None,
+    ) -> tuple[RevisionRecord, ...]:  # pragma: no cover - live DB
+        """Metadata-only listing (ADR-023 §18): omits ``graph_json`` entirely,
+        so this never deserializes or hash-verifies a graph snapshot."""
+        if not 1 <= limit <= MAX_REVISION_LIST_LIMIT:
+            raise ValueError(f"limit must be in [1, {MAX_REVISION_LIST_LIMIT}]: {limit!r}")
+        with self._connection.cursor() as cur:
+            if before_revision_number is None:
+                cur.execute(_SELECT_REVISION_LIST_NO_CURSOR, {"t": tenant.value, "limit": limit})
+            else:
+                cur.execute(
+                    _SELECT_REVISION_LIST,
+                    {"t": tenant.value, "before": before_revision_number, "limit": limit},
+                )
+            rows = cur.fetchall()
+        return tuple(
+            RevisionRecord(
+                tenant=tenant,
+                revision_number=row[0],
+                content_hash=row[1],
+                parent_hash=row[2],
+                principal=PrincipalRef(principal_id=row[3], kind=PrincipalKind(row[4])),
+                node_count=row[5],
+                edge_count=row[6],
+                created_at=row[7],
+            )
+            for row in rows
+        )
 
     @staticmethod
     def _revision_params(revision: Revision) -> dict[str, Any]:  # pragma: no cover - live DB

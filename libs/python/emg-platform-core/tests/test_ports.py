@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from _pc_helpers import sample_graph
 from emg_platform_core import (
@@ -17,6 +19,7 @@ from emg_platform_core import (
 from pydantic import ValidationError
 
 _HASH64 = "a" * 64
+_COMMITTED_AT = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
 def test_write_receipt_valid() -> None:
@@ -26,9 +29,15 @@ def test_write_receipt_valid() -> None:
         content_hash=_HASH64,
         node_count=2,
         edge_count=1,
+        revision_number=1,
+        committed_at=_COMMITTED_AT,
+        revision_created=True,
     )
     assert r.node_count == 2 and r.edge_count == 1
     assert r.content_hash == _HASH64
+    assert r.revision_number == 1
+    assert r.committed_at == _COMMITTED_AT
+    assert r.revision_created is True
 
 
 def test_write_receipt_rejects_bad_hash_length() -> None:
@@ -40,6 +49,9 @@ def test_write_receipt_rejects_bad_hash_length() -> None:
                 content_hash=bad,
                 node_count=0,
                 edge_count=0,
+                revision_number=1,
+                committed_at=_COMMITTED_AT,
+                revision_created=True,
             )
 
 
@@ -53,6 +65,9 @@ def test_write_receipt_rejects_non_lowercase_hex_hash() -> None:
                 content_hash=bad,
                 node_count=0,
                 edge_count=0,
+                revision_number=1,
+                committed_at=_COMMITTED_AT,
+                revision_created=True,
             )
 
 
@@ -64,7 +79,25 @@ def test_write_receipt_rejects_negative_counts() -> None:
             content_hash=_HASH64,
             node_count=-1,
             edge_count=0,
+            revision_number=1,
+            committed_at=_COMMITTED_AT,
+            revision_created=True,
         )
+
+
+def test_write_receipt_rejects_non_positive_revision_number() -> None:
+    for bad_revision_number in (0, -1):
+        with pytest.raises(ValidationError):
+            WriteReceipt(
+                tenant=TenantId.of("t"),
+                principal=PrincipalRef.service("svc"),
+                content_hash=_HASH64,
+                node_count=0,
+                edge_count=0,
+                revision_number=bad_revision_number,
+                committed_at=_COMMITTED_AT,
+                revision_created=True,
+            )
 
 
 def test_write_receipt_is_frozen() -> None:
@@ -74,6 +107,9 @@ def test_write_receipt_is_frozen() -> None:
         content_hash=_HASH64,
         node_count=0,
         edge_count=0,
+        revision_number=1,
+        committed_at=_COMMITTED_AT,
+        revision_created=True,
     )
     with pytest.raises(ValidationError):
         r.node_count = 5  # type: ignore[misc]

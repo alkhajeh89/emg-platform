@@ -131,10 +131,22 @@ def test_read_write_receipt_first_write_and_no_op(graph_store: _Harness) -> None
     assert first_receipt.content_hash == graph.content_hash()
     assert first_receipt.node_count == 2
     assert first_receipt.edge_count == 0
+    assert first_receipt.revision_number == 1
+    assert first_receipt.revision_created is True
     assert store.read(TENANT_A).content_hash() == graph.content_hash()
 
     no_op_receipt = store.write(TENANT_A, graph, principal=PRINCIPAL)
-    assert no_op_receipt == first_receipt
+    # Identity/content match the first write, but a no-op (ADR-023 §11) must
+    # report revision_created=False and identify the *existing* head — it must
+    # not be indistinguishable from a fresh append.
+    assert no_op_receipt.tenant == first_receipt.tenant
+    assert no_op_receipt.principal == first_receipt.principal
+    assert no_op_receipt.content_hash == first_receipt.content_hash
+    assert no_op_receipt.node_count == first_receipt.node_count
+    assert no_op_receipt.edge_count == first_receipt.edge_count
+    assert no_op_receipt.revision_number == first_receipt.revision_number
+    assert no_op_receipt.committed_at == first_receipt.committed_at
+    assert no_op_receipt.revision_created is False
     if graph_store.revisions is not None:
         assert graph_store.revisions.revision_count(TENANT_A) == 1
 

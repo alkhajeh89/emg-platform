@@ -73,6 +73,8 @@ def test_service_package_declares_no_forbidden_domain_storage_type_names() -> No
         "Edge",
         "Graph",
         "GraphStore",
+        "GraphRevisionReader",
+        "Revision",
         "Projection",
         "Version",
         "Evidence",
