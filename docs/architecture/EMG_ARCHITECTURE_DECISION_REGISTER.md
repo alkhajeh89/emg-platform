@@ -81,6 +81,18 @@ Recommended Implementation Sequence (§10, step 6) and any future Knowledge
 Graph Expansion (§8) or Knowledge Ingestion (ADR-020) work that might
 otherwise be tempted to reference the empty package.
 
+**2026-07-27 repository-integrity repair (does not resolve this decision):**
+an independent architecture audit flagged that `tools/scripts/install-libs.sh`
+was silently editable-installing this 0-byte-`pyproject.toml` scaffold
+alongside the 17 real libraries on every `make bootstrap` (it built as an
+empty, unowned `emg_entity_resolution-0.0.0` package rather than failing
+loudly). `install-libs.sh` was updated to skip any library directory with an
+empty/whitespace-only `pyproject.toml`, so this scaffold is no longer
+installed. This is a bootstrap-hygiene fix only — the package, its
+`docker/dependencies.yaml` manifest entry, and this Open decision are all
+otherwise untouched; none of the three ownership questions above have been
+answered. See `docs/devops/DEPENDENCY_GOVERNANCE.md` for the fix detail.
+
 ---
 
 ## Observations

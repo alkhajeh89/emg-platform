@@ -206,6 +206,23 @@ When adding a new internal `emg-*` dependency to any package:
   would report a real finding here only if that package's code actually
   imported something; today it does not (its `__init__.py` is empty), so it
   currently reports clean by coincidence, not because the gap is resolved.
+  This reporting gap is unchanged by the bootstrap fix noted immediately
+  below (it concerns CI's validation scripts, not what gets installed).
+- **Repository integrity fix (repair, not a D-A-002 resolution):**
+  `tools/scripts/install-libs.sh` previously globbed every
+  `libs/python/*/pyproject.toml` unconditionally, so
+  `emg-entity-resolution`'s 0-byte `pyproject.toml` was passed to the same
+  single `pip install -e ...` invocation as the 17 real libraries — it built
+  successfully (pip's default setuptools backend tolerates an empty
+  `pyproject.toml` and silently produces a nameless, dependency-less
+  `emg_entity_resolution-0.0.0` package), so bootstrap did not fail, but a
+  non-functional, unowned scaffold was being editable-installed as if it
+  were real. `install-libs.sh` now skips any package directory whose
+  `pyproject.toml` is empty/whitespace-only, printing an explicit
+  "unpopulated library scaffold" notice instead of silently installing it —
+  mirroring how a `services/*` directory with no `pyproject.toml` at all is
+  already skipped by `install-services.sh`. This is a bootstrap-hygiene fix
+  only: it does not populate the package, remove it, or answer D-A-002.
 - `check_implicit_dependencies.py` only detects statically-visible imports
   (module-level or nested inside function bodies/`if` blocks, anything
   `ast.walk` reaches). It does not detect dynamic imports
@@ -247,10 +264,13 @@ reason.
   currently required by any consumer, and distinct from what ECP-2 added —
   noted above as a known, still-open gap.
 - Should `libs/python/emg-entity-resolution/pyproject.toml` be populated with
-  its real dependencies? Currently empty; out of scope for dependency
-  governance itself, and blocked on `EMG_ARCHITECTURE_DECISION_REGISTER.md`
-  D-A-002 (Entity Resolution Ownership, Open) — no implementation should
-  depend on this package until that decision is resolved.
+  its real dependencies (or the package removed entirely)? Currently empty;
+  out of scope for dependency governance itself, and blocked on
+  `EMG_ARCHITECTURE_DECISION_REGISTER.md` D-A-002 (Entity Resolution
+  Ownership, Open) — no implementation should depend on this package until
+  that decision is resolved. `install-libs.sh` now skips installing it (see
+  above) purely as a bootstrap-integrity repair; this is deliberately
+  narrower than populating/removing it and does not pre-empt D-A-002.
 - Should a package's `TYPE_CHECKING`-only reference to an undeclared `emg-*`
   package require the same fix as a runtime one, or a lighter-weight one
   (e.g. a `dev`/type-checking-only extra)? No real case exists yet to decide

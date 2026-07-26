@@ -44,11 +44,29 @@ fi
 
 args=()
 names=()
+skipped=()
 for pkg in "${pkgs[@]}"; do
   dir="$(dirname "$pkg")"
+  # Skip an unpopulated library scaffold: a 0-byte (or whitespace-only)
+  # pyproject.toml has no [build-system]/[project] table, so it is not yet a
+  # real, ownership-decided package -- mirrors how a services/* directory
+  # with NO pyproject.toml at all is already skipped by install-services.sh.
+  # See docs/architecture/EMG_ARCHITECTURE_DECISION_REGISTER.md D-A-002 for
+  # the specific case (libs/python/emg-entity-resolution) this generalizes
+  # from; this check is name-agnostic so it applies to any future premature
+  # scaffold, not just that one.
+  if [ -z "$(tr -d '[:space:]' < "$pkg")" ]; then
+    skipped+=("$(basename "$dir")")
+    continue
+  fi
   args+=(-e "${dir}[dev]")
   names+=("$(basename "$dir")")
 done
+
+if [ ${#skipped[@]} -gt 0 ]; then
+  echo "==> Skipping ${#skipped[@]} unpopulated library scaffold(s) (empty pyproject.toml, not yet installable):"
+  printf '      - %s\n' "${skipped[@]}"
+fi
 
 echo "==> Installing ${#names[@]} local library packages (editable, [dev]) in one resolver pass:"
 printf '      - %s\n' "${names[@]}"
