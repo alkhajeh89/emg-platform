@@ -1,0 +1,31 @@
+"""Liveness and readiness endpoints, mirroring
+`emg_audit_service.routers.health` exactly: `GET /healthz` is liveness (the
+process is up); `GET /readyz` actually probes the configured `GraphStore`
+(`store_health`) and reports `status="degraded"` with `store_available=False`
+if it is unreachable, rather than unconditionally claiming readiness."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from ..authn import SettingsDep
+from ..schemas import ReadinessResponse
+from ..store import GraphStoreDep, store_health
+
+router = APIRouter(tags=["ops"])
+
+
+@router.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok", "service": "knowledge-graph-query-api"}
+
+
+@router.get("/readyz", response_model=ReadinessResponse)
+async def readyz(store: GraphStoreDep, settings: SettingsDep) -> ReadinessResponse:
+    health = store_health(store, settings)
+    return ReadinessResponse(
+        status="ready" if health.available else "degraded",
+        store_backend=health.backend,
+        store_available=health.available,
+        detail=health.detail,
+    )
