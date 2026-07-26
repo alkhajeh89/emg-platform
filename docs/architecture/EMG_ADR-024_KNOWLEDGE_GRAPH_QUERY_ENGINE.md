@@ -228,6 +228,21 @@ This is the same shape `list_revisions`/`get_revision`/`compare_revisions` alrea
 established in ADR-023 §12, extended from "revision metadata" results to "graph
 content" results.
 
+**Addendum (Phase 2 implementation clarification).** Step 5's `QueryRevisionContext`
+carries a non-optional `revision_number`/`committed_at` (§16). `GraphStore.read()`
+alone exposes no revision identity, so the current-head path in step 2 also requires
+`GraphRevisionReader.list_revisions(tenant, limit=1)` to obtain the head's identity —
+this port call happens in addition to, not instead of, `GraphStore.read(tenant)` for
+the graph content itself. Consequently, **every** query method requires a configured
+`GraphRevisionReader`, not only ones that select an explicit historical
+`revision_number` (see also §17's `UnsupportedHistoryCapabilityError`, which now
+applies uniformly for the same reason). This adds one `GraphRevisionReader` call
+(pure PostgreSQL, §19) alongside `GraphStore.read()` on every current-head query,
+including ones that would otherwise only need the Neo4j-accelerated read path. This
+is accepted as the correct resolution given §16's fixed `QueryRevisionContext` shape,
+not a defect: the alternative would require making `QueryRevisionContext.revision_number`
+optional, which this ADR does not adopt.
+
 ## 10. V1 Query Capabilities
 
 Adopted for V1, each backed entirely by an existing, unmodified domain primitive:
@@ -365,10 +380,23 @@ Cursor pagination is adopted; offset pagination is rejected.
 - **Edge ordering key:** `edge_id`, ascending — already `MemoryGraph`'s own natural
   sort order (its field validator sorts `.edges` by `edge_id`; every adjacency
   accessor additionally re-sorts by `edge_id` at call time).
-- **Cursor semantics:** an exclusive boundary cursor, mirroring
-  `before_revision_number`'s exact existing convention from ADR-023 — `before_node_id`
-  and `before_edge_id` restrict a page to strictly-earlier ids than the given
-  boundary, never including the boundary id itself.
+- **Cursor semantics:** an exclusive boundary cursor, in the same spirit as
+  `before_revision_number`'s existing convention from ADR-023, adapted for the
+  opposite ordering direction. `before_revision_number` restricts to ids *less than*
+  the boundary because revision listing is **descending** — "less than the last id
+  seen" is what advances a descending list forward. Node/edge listing is fixed
+  **ascending** by this same section, so the operator that advances a page forward
+  is necessarily the opposite one: `before_node_id`/`before_edge_id` restrict a page
+  to ids **strictly greater than** the given boundary (the last id returned on the
+  previous page), never including the boundary id itself. (Earlier drafts of this
+  ADR stated the boundary comparison as "strictly-earlier ids than the boundary,"
+  copied verbatim from `before_revision_number`'s wording without adjusting for the
+  ordering direction; applied literally to an ascending listing that wording would
+  make every page identical to the first, never advancing, which is not a viable
+  pagination design. This is corrected here; the Phase 2 implementation already used
+  the greater-than comparison this corrected wording now describes, and needs no
+  code change.) The field names (`before_*`) are kept unchanged for continuity with
+  the ADR-023 convention despite the flipped comparison.
 - **Maximum page size:** 200, mirroring `MAX_REVISION_LIST_LIMIT`. Validated as
   `1 <= limit <= 200` in command validation; a request above the ceiling is rejected,
   never silently clamped.
@@ -407,6 +435,18 @@ unchanged — no new traversal algorithm is introduced.
   `found=False` and empty `node_ids`/`edge_ids` (§16) — this is a normal, valid
   result, not an error, and it must never trigger any broader or unrestricted
   traversal attempt.
+- **A found path longer than the caller's requested `maximum_depth`:**
+  `MemoryQueryEngine.shortest_path` has no depth parameter — it always runs an
+  unbounded BFS and returns *the* shortest path, whatever its length. When that
+  length exceeds the query's own (already-validated, `<= MAX_TRAVERSAL_DEPTH`)
+  `maximum_depth`, the result is the same explicit not-found `PathResult`
+  (`found=False`, empty `node_ids`/`edge_ids`) described above for unreachable
+  pairs — **not** `PathDepthExceededError`. `PathDepthExceededError` is reserved
+  exclusively for the command-validation-time case above (a *requested* depth
+  exceeding the ceiling, rejected before any graph snapshot is acquired); it is
+  never raised from an executed traversal outcome, consistent with this
+  section's rule that unsatisfying path-search outcomes are normal results, not
+  errors.
 - **Not in scope for V1:** all-path enumeration, weighted paths, k-shortest paths,
   and any path-pattern DSL (§20.9). `MAX_PATH_RESULTS = 1_000` (also already reserved
   in `emg_memory_graph.limits`) is **not** used by the single-path V1 API — it is
@@ -533,6 +573,21 @@ Decisions binding these contracts:
 - Service-owned contracts (this section) remain the public application boundary for
   every new query method; a caller of `KnowledgeGraphApplication` never needs to
   import `emg_memory_graph` or `emg_platform_core` to consume a query result.
+
+**Addendum (Phase 2 implementation clarification): `EntityHistoryResult`.** This
+section did not originally enumerate a result type for
+`EntityAttributeHistoryQuery` (§10.J) — no dedicated contract existed for "the
+value of one attribute at a moment." `EntityHistoryResult(item: TemporalFact |
+None, revision_context: QueryRevisionContext)` is adopted as that contract,
+following the identical single-item `item`/`revision_context` shape this section
+already fixes for every other single-item result. It reuses `TemporalFact`
+directly from `emg_memory_graph`, the same reuse pattern already applied above to
+`EvidenceRef`/`TemporalHistory`/`Metadata`/`TemporalValidity` — `TemporalFact` is
+`TemporalHistory`'s own element type and was already transitively reachable via
+`EntityDetails.histories[i].facts`, so this does not expose a previously-unreachable
+domain type. `item is None` is the normal, explicit result when the attribute had
+no value at the requested moment (mirroring `TemporalHistory.as_of`'s own contract),
+not an error.
 
 ## 17. Error Model
 
