@@ -35,6 +35,44 @@ class BuildRevisionResult:
 
 
 @dataclass(frozen=True, slots=True)
+class MutationAuditIntent:
+    """Immutable application intent for later audit reconciliation.
+
+    Stage 1 returns this data to its caller and performs no audit persistence.
+    """
+
+    tenant: TenantId
+    principal: PrincipalRef
+    idempotency_key: str
+    action: str
+    resource_type: str
+    resource_id: str
+    related_resource_ids: tuple[str, ...]
+    classification: Classification
+    reason: str | None
+    revision_number: int
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class MutationResult:
+    """Committed mutation receipt data, build statistics, and audit intents."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    revision_number: int
+    content_hash: str
+    node_count: int
+    edge_count: int
+    revision_created: bool
+    nodes_created: int
+    edges_created: int
+    node_inputs_merged: int
+    edge_inputs_merged: int
+    audit_intents: tuple[MutationAuditIntent, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RevisionSummary:
     """Canonical per-revision list/read item (ADR-023 §10, §12).
 

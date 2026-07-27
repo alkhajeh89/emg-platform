@@ -21,6 +21,18 @@ class RevisionBuildError(KnowledgeGraphApplicationError):
     error_code = "KNOWLEDGE_GRAPH_REVISION_BUILD_FAILED"
 
 
+class InvalidMutationCommandError(KnowledgeGraphApplicationError):
+    """A mutation command violates an application-boundary invariant."""
+
+    error_code = "KNOWLEDGE_GRAPH_INVALID_MUTATION_COMMAND"
+
+
+class MutationBuildError(KnowledgeGraphApplicationError):
+    """A validated mutation could not produce its immutable graph revision."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_BUILD_FAILED"
+
+
 class InvalidHistoryQueryError(KnowledgeGraphApplicationError):
     """A history query (list/get/compare) violates an application-boundary
     invariant — including invalid paging (ADR-023 §17). Raised before any

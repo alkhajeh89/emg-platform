@@ -7,6 +7,7 @@ from typing import TypeVar
 
 from emg_common_types import Classification
 from emg_memory_graph import (
+    BuildResult,
     MemoryEdge,
     MemoryGraph,
     MemoryGraphBuilder,
@@ -24,7 +25,9 @@ from emg_platform_core.ports import GraphRevisionReader, GraphStore, RevisionMet
 
 from .commands import (
     BuildRevisionCommand,
+    CloseRelationshipCommand,
     CompareRevisionsQuery,
+    CreateEntityCommand,
     EntityAttributeHistoryQuery,
     GetEdgeQuery,
     GetEntityQuery,
@@ -34,7 +37,11 @@ from .commands import (
     ListEntitiesQuery,
     ListNeighborsQuery,
     ListRevisionsQuery,
+    MergeEntitiesCommand,
+    MutationCommand,
     NeighborDirection,
+    ReplaceEntityCommand,
+    ReplaceRelationshipCommand,
     RestoreRevisionCommand,
     ShortestPathQuery,
 )
@@ -42,8 +49,10 @@ from .errors import (
     EdgeNotFoundError,
     EntityNotFoundError,
     InvalidHistoryQueryError,
+    InvalidMutationCommandError,
     InvalidQueryError,
     InvalidRevisionCommandError,
+    MutationBuildError,
     RevisionBuildError,
     RevisionNotFoundError,
     RevisionRestoreError,
@@ -57,6 +66,8 @@ from .results import (
     EntityHistoryResult,
     EntityQueryResult,
     EntitySummary,
+    MutationAuditIntent,
+    MutationResult,
     NeighborResult,
     PagedEdgeResult,
     PagedEntityResult,
@@ -72,6 +83,7 @@ from .results import (
 )
 
 _T = TypeVar("_T")
+MutationAuthorizationHook = Callable[[MutationCommand], None]
 
 
 def _summary_from_metadata(metadata: RevisionMetadata) -> RevisionSummary:
@@ -252,10 +264,12 @@ class KnowledgeGraphApplication:
         *,
         builder: MemoryGraphBuilder | None = None,
         revision_reader: GraphRevisionReader | None = None,
+        mutation_authorization_hook: MutationAuthorizationHook | None = None,
     ) -> None:
         self._graph_store = graph_store
         self._builder = builder or MemoryGraphBuilder()
         self._revision_reader = revision_reader
+        self._mutation_authorization_hook = mutation_authorization_hook
 
     def build_revision(self, command: BuildRevisionCommand) -> BuildRevisionResult:
         """Build and atomically commit the next immutable tenant snapshot."""
@@ -290,6 +304,198 @@ class KnowledgeGraphApplication:
             node_inputs_merged=build.node_inputs_merged,
             edge_inputs_merged=build.edge_inputs_merged,
         )
+
+    # --- mutations (ADR-027 Revision 3, Stage 1) ----------------------------
+
+    def create_entity(self, command: CreateEntityCommand) -> MutationResult:
+        """Create one entity and commit one immutable revision."""
+        if not isinstance(command, CreateEntityCommand):
+            raise InvalidMutationCommandError("command must be a CreateEntityCommand")
+        self._prepare_mutation(command)
+
+        def build(current: MemoryGraph) -> BuildResult:
+            if current.node(command.entity.entity_id) is not None:
+                raise MutationBuildError(f"entity {command.entity.entity_id!r} already exists")
+            return self._builder.from_ontology(
+                entities=(command.entity,),
+                as_of=command.as_of,
+                base=current,
+            )
+
+        return self._execute_mutation(
+            command=command,
+            build=build,
+            action="create",
+            resource_type="knowledge-graph.entity",
+            resource_id=command.entity.entity_id,
+            related_resource_ids=(),
+            reason=None,
+            classification_of=lambda graph: self._node_classification(
+                graph, command.entity.entity_id
+            ),
+        )
+
+    def replace_entity(self, command: ReplaceEntityCommand) -> MutationResult:
+        """Replace one node through ADR-029 without duplicating lifecycle rules."""
+        if not isinstance(command, ReplaceEntityCommand):
+            raise InvalidMutationCommandError("command must be a ReplaceEntityCommand")
+        self._prepare_mutation(command)
+        node_id = command.replacement.node_id
+        return self._execute_mutation(
+            command=command,
+            build=lambda current: self._builder.replace(
+                current, node=command.replacement, as_of=command.as_of
+            ),
+            action=command.action.value,
+            resource_type="knowledge-graph.entity",
+            resource_id=node_id,
+            related_resource_ids=(),
+            reason=command.reason,
+            classification_of=lambda graph: self._node_classification(graph, node_id),
+        )
+
+    def replace_relationship(self, command: ReplaceRelationshipCommand) -> MutationResult:
+        """Replace one edge through ADR-029's endpoint-preserving path."""
+        if not isinstance(command, ReplaceRelationshipCommand):
+            raise InvalidMutationCommandError("command must be a ReplaceRelationshipCommand")
+        self._prepare_mutation(command)
+        edge_id = command.replacement.edge_id
+        return self._execute_mutation(
+            command=command,
+            build=lambda current: self._builder.replace(
+                current, edge=command.replacement, as_of=command.as_of
+            ),
+            action="update",
+            resource_type="knowledge-graph.relationship",
+            resource_id=edge_id,
+            related_resource_ids=(
+                command.replacement.source_id,
+                command.replacement.target_id,
+            ),
+            reason=None,
+            classification_of=lambda graph: self._edge_classification(graph, edge_id),
+        )
+
+    def close_relationship(self, command: CloseRelationshipCommand) -> MutationResult:
+        """Close one stored validity interval through ADR-029."""
+        if not isinstance(command, CloseRelationshipCommand):
+            raise InvalidMutationCommandError("command must be a CloseRelationshipCommand")
+        self._prepare_mutation(command)
+        edge_id = command.edge_id
+
+        def endpoints(graph: MemoryGraph) -> tuple[str, ...]:
+            edge = graph.edge(edge_id)
+            if edge is None:
+                return ()
+            return (edge.source_id, edge.target_id)
+
+        return self._execute_mutation(
+            command=command,
+            build=lambda current: self._builder.replace(
+                current, close_edge_id=edge_id, as_of=command.as_of
+            ),
+            action="retire",
+            resource_type="knowledge-graph.relationship",
+            resource_id=edge_id,
+            related_resource_ids_of=endpoints,
+            reason=command.reason,
+            classification_of=lambda graph: self._edge_classification(graph, edge_id),
+        )
+
+    def merge_entities(self, command: MergeEntitiesCommand) -> MutationResult:
+        """Merge entities exclusively through ADR-029's graph-level operation."""
+        if not isinstance(command, MergeEntitiesCommand):
+            raise InvalidMutationCommandError("command must be a MergeEntitiesCommand")
+        self._prepare_mutation(command)
+        return self._execute_mutation(
+            command=command,
+            build=lambda current: self._builder.replace(
+                current,
+                merge_survivor_id=command.survivor_id,
+                merge_source_ids=command.source_ids,
+                as_of=command.as_of,
+            ),
+            action="merge",
+            resource_type="knowledge-graph.entity",
+            resource_id=command.survivor_id,
+            related_resource_ids=command.source_ids,
+            reason=command.reason,
+            classification_of=lambda graph: self._node_classification(graph, command.survivor_id),
+        )
+
+    def _prepare_mutation(self, command: MutationCommand) -> None:
+        command.validate()
+        if self._mutation_authorization_hook is not None:
+            self._mutation_authorization_hook(command)
+
+    def _execute_mutation(
+        self,
+        *,
+        command: MutationCommand,
+        build: Callable[[MemoryGraph], BuildResult],
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        reason: str | None,
+        classification_of: Callable[[MemoryGraph], Classification],
+        related_resource_ids: tuple[str, ...] = (),
+        related_resource_ids_of: Callable[[MemoryGraph], tuple[str, ...]] | None = None,
+    ) -> MutationResult:
+        resolved_related_ids = related_resource_ids
+        with self._graph_store.transaction(command.tenant, command.principal) as transaction:
+            current = transaction.read()
+            if related_resource_ids_of is not None:
+                resolved_related_ids = related_resource_ids_of(current)
+            try:
+                result = build(current)
+            except MemoryGraphError as exc:
+                raise MutationBuildError(
+                    f"failed to {action} {resource_type} {resource_id!r}: {exc}"
+                ) from exc
+            transaction.stage(result.graph)
+
+        receipt = transaction.receipt
+        audit_intent = MutationAuditIntent(
+            tenant=receipt.tenant,
+            principal=receipt.principal,
+            idempotency_key=command.idempotency_key,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            related_resource_ids=tuple(sorted(resolved_related_ids)),
+            classification=classification_of(result.graph),
+            reason=reason,
+            revision_number=receipt.revision_number,
+            content_hash=receipt.content_hash,
+        )
+        return MutationResult(
+            tenant=receipt.tenant,
+            principal=receipt.principal,
+            revision_number=receipt.revision_number,
+            content_hash=receipt.content_hash,
+            node_count=receipt.node_count,
+            edge_count=receipt.edge_count,
+            revision_created=receipt.revision_created,
+            nodes_created=result.nodes_created,
+            edges_created=result.edges_created,
+            node_inputs_merged=result.node_inputs_merged,
+            edge_inputs_merged=result.edge_inputs_merged,
+            audit_intents=(audit_intent,),
+        )
+
+    @staticmethod
+    def _node_classification(graph: MemoryGraph, node_id: str) -> Classification:
+        node = graph.node(node_id)
+        if node is None:  # pragma: no cover - successful ADR-029 result invariant
+            raise MutationBuildError(f"result graph has no entity {node_id!r}")
+        return node.classification
+
+    @staticmethod
+    def _edge_classification(graph: MemoryGraph, edge_id: str) -> Classification:
+        edge = graph.edge(edge_id)
+        if edge is None:  # pragma: no cover - successful ADR-029 result invariant
+            raise MutationBuildError(f"result graph has no relationship {edge_id!r}")
+        return edge.classification
 
     def list_revisions(self, query: ListRevisionsQuery) -> tuple[RevisionSummary, ...]:
         """List a tenant's revision history, newest first. Never loads a graph."""

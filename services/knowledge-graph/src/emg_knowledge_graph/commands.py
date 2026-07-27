@@ -5,10 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import TypeAlias
 
 from emg_common_types import Classification
 from emg_memory_graph import MAX_TRAVERSAL_DEPTH as _MAX_TRAVERSAL_DEPTH
-from emg_memory_graph import EdgeDirection, MetadataItem, ensure_safe_label
+from emg_memory_graph import (
+    EdgeDirection,
+    MemoryEdge,
+    MemoryNode,
+    MetadataItem,
+    ensure_safe_label,
+)
 from emg_memory_graph.limits import MAX_LABEL_LENGTH
 from emg_ontology import Entity, Relationship
 from emg_platform_core import (
@@ -21,6 +28,7 @@ from pydantic import ValidationError as _PydanticValidationError
 
 from .errors import (
     InvalidHistoryQueryError,
+    InvalidMutationCommandError,
     InvalidQueryError,
     InvalidRevisionCommandError,
     InvalidTemporalFilterError,
@@ -37,6 +45,7 @@ from .errors import (
 MAX_QUERY_PAGE_SIZE = 200
 MAX_QUERY_PROPERTY_PREDICATES = 8
 MAX_TRAVERSAL_DEPTH = _MAX_TRAVERSAL_DEPTH
+MAX_IDEMPOTENCY_KEY_LENGTH = 256
 
 
 def _validate_label(value: object, *, field: str) -> None:
@@ -208,6 +217,199 @@ class RestoreRevisionCommand:
             raise InvalidRevisionCommandError("source_revision_number must be an int")
         if self.source_revision_number < 1:
             raise InvalidRevisionCommandError("source_revision_number must be >= 1")
+
+
+# --- Mutation application contracts (ADR-027 Revision 3, Stage 1) -----------
+
+
+class EntityReplacementAction(str, Enum):
+    """Application intent for an ADR-029 entity replacement."""
+
+    UPDATE = "update"
+    RETIRE = "retire"
+    RESTORE = "restore"
+    RECLASSIFY = "reclassify"
+
+
+def _validate_mutation_context(
+    *,
+    tenant: object,
+    principal: object,
+    idempotency_key: object,
+    as_of: object,
+) -> None:
+    if not isinstance(tenant, TenantId):
+        raise InvalidMutationCommandError("tenant must be a TenantId")
+    if not isinstance(principal, PrincipalRef):
+        raise InvalidMutationCommandError("principal must be a PrincipalRef")
+    if not isinstance(idempotency_key, str):
+        raise InvalidMutationCommandError("idempotency_key must be a string")
+    if len(idempotency_key) > MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise InvalidMutationCommandError(
+            f"idempotency_key exceeds max length {MAX_IDEMPOTENCY_KEY_LENGTH}"
+        )
+    try:
+        ensure_safe_label(idempotency_key)
+    except ValueError as exc:
+        raise InvalidMutationCommandError(f"idempotency_key is invalid: {exc}") from exc
+    if not isinstance(as_of, datetime):
+        raise InvalidMutationCommandError("as_of must be a datetime")
+    if as_of.tzinfo is None or as_of.utcoffset() is None:
+        raise InvalidMutationCommandError("as_of must be timezone-aware")
+
+
+def _validate_reason(reason: object, *, required: bool) -> None:
+    if reason is not None and not isinstance(reason, str):
+        raise InvalidMutationCommandError("reason must be a string or None")
+    if required and (not isinstance(reason, str) or not reason.strip()):
+        raise InvalidMutationCommandError("reason must be non-blank")
+
+
+def _validate_mutation_label(value: object, *, field: str) -> None:
+    if not isinstance(value, str):
+        raise InvalidMutationCommandError(f"{field} must be a string")
+    try:
+        ensure_safe_label(value)
+    except ValueError as exc:
+        raise InvalidMutationCommandError(f"{field} is invalid: {exc}") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class CreateEntityCommand:
+    """Create one ontology entity in the current immutable graph."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    entity: Entity
+    idempotency_key: str
+    as_of: datetime
+
+    def validate(self) -> None:
+        _validate_mutation_context(
+            tenant=self.tenant,
+            principal=self.principal,
+            idempotency_key=self.idempotency_key,
+            as_of=self.as_of,
+        )
+        if not isinstance(self.entity, Entity):
+            raise InvalidMutationCommandError("entity must be an ontology Entity")
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaceEntityCommand:
+    """Replace one entity through ADR-029's immutable construction path."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    replacement: MemoryNode
+    action: EntityReplacementAction
+    idempotency_key: str
+    as_of: datetime
+    reason: str | None = None
+
+    def validate(self) -> None:
+        _validate_mutation_context(
+            tenant=self.tenant,
+            principal=self.principal,
+            idempotency_key=self.idempotency_key,
+            as_of=self.as_of,
+        )
+        if not isinstance(self.replacement, MemoryNode):
+            raise InvalidMutationCommandError("replacement must be a MemoryNode")
+        if not isinstance(self.action, EntityReplacementAction):
+            raise InvalidMutationCommandError("action must be an EntityReplacementAction")
+        _validate_reason(
+            self.reason,
+            required=self.action
+            in {
+                EntityReplacementAction.RETIRE,
+                EntityReplacementAction.RESTORE,
+                EntityReplacementAction.RECLASSIFY,
+            },
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaceRelationshipCommand:
+    """Replace one relationship without changing its ADR-029 identity."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    replacement: MemoryEdge
+    idempotency_key: str
+    as_of: datetime
+
+    def validate(self) -> None:
+        _validate_mutation_context(
+            tenant=self.tenant,
+            principal=self.principal,
+            idempotency_key=self.idempotency_key,
+            as_of=self.as_of,
+        )
+        if not isinstance(self.replacement, MemoryEdge):
+            raise InvalidMutationCommandError("replacement must be a MemoryEdge")
+
+
+@dataclass(frozen=True, slots=True)
+class CloseRelationshipCommand:
+    """Close one relationship validity interval through ADR-029."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    edge_id: str
+    idempotency_key: str
+    as_of: datetime
+    reason: str
+
+    def validate(self) -> None:
+        _validate_mutation_context(
+            tenant=self.tenant,
+            principal=self.principal,
+            idempotency_key=self.idempotency_key,
+            as_of=self.as_of,
+        )
+        _validate_mutation_label(self.edge_id, field="edge_id")
+        _validate_reason(self.reason, required=True)
+
+
+@dataclass(frozen=True, slots=True)
+class MergeEntitiesCommand:
+    """Merge source entities into one survivor through ADR-029."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    survivor_id: str
+    source_ids: tuple[str, ...]
+    idempotency_key: str
+    as_of: datetime
+    reason: str
+
+    def validate(self) -> None:
+        _validate_mutation_context(
+            tenant=self.tenant,
+            principal=self.principal,
+            idempotency_key=self.idempotency_key,
+            as_of=self.as_of,
+        )
+        _validate_mutation_label(self.survivor_id, field="survivor_id")
+        if not isinstance(self.source_ids, tuple) or not self.source_ids:
+            raise InvalidMutationCommandError("source_ids must be a non-empty tuple")
+        for source_id in self.source_ids:
+            _validate_mutation_label(source_id, field="source_id")
+        if len(self.source_ids) != len(set(self.source_ids)):
+            raise InvalidMutationCommandError("source_ids must be unique")
+        if self.survivor_id in self.source_ids:
+            raise InvalidMutationCommandError("survivor_id cannot also be a source_id")
+        _validate_reason(self.reason, required=True)
+
+
+MutationCommand: TypeAlias = (
+    CreateEntityCommand
+    | ReplaceEntityCommand
+    | ReplaceRelationshipCommand
+    | CloseRelationshipCommand
+    | MergeEntitiesCommand
+)
 
 
 # --- Query engine application contracts (ADR-024, Sprint 7.3 Phase 1) --------
