@@ -284,6 +284,52 @@ def test_login_defaults_to_unclassified_when_clearance_claim_non_string(settings
     assert body["attributes"]["classification_clearance"] == "UNCLASSIFIED"
 
 
+@pytest.mark.parametrize("bogus_value", ["banana", "SUPER_SECRET", "foobar"])
+def test_login_defaults_to_unclassified_when_clearance_claim_unrecognized(
+    settings, rsa_keypair, bogus_value
+):
+    """ADR-026 final blocker: an unrecognized `classification_clearance`
+    claim value (not a `Classification` enum member) must resolve to
+    `"UNCLASSIFIED"` on human login, exactly like a missing/blank/non-string
+    claim -- it must never survive normalization unchanged.
+
+    Uses a distinct username per case (rather than the module's shared
+    "dev.investigator" default) so this test does not consume the
+    process-wide login rate limiter's budget shared with every other test in
+    this module (`InMemoryRateLimiter` is an `@lru_cache` singleton keyed by
+    username, per-process, for the whole test session)."""
+    private_key, public_key = rsa_keypair
+    access_token = _kc_access_token(settings, private_key, classification_clearance=[bogus_value])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"access_token": access_token, "refresh_token": "r", "expires_in": 300}
+        )
+
+    client = _make_client(settings, handler, public_key=public_key)
+    body, _ = _login_and_get_session_attributes(client, username=f"dev.bogus.{bogus_value}")
+    assert body["attributes"]["classification_clearance"] == "UNCLASSIFIED"
+
+
+@pytest.mark.parametrize("valid_value", ["UNCLASSIFIED", "INTERNAL", "CONFIDENTIAL", "SECRET"])
+def test_login_preserves_every_valid_classification_enum_member(settings, rsa_keypair, valid_value):
+    """Every recognized `Classification` enum member must survive human
+    login normalization completely unchanged, not just `"SECRET"` (covered
+    above). Uses a distinct username per case for the same rate-limiter
+    budget reason documented above."""
+    private_key, public_key = rsa_keypair
+    access_token = _kc_access_token(settings, private_key, classification_clearance=[valid_value])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"access_token": access_token, "refresh_token": "r", "expires_in": 300}
+        )
+
+    client = _make_client(settings, handler, public_key=public_key)
+    body, _ = _login_and_get_session_attributes(client, username=f"dev.valid.{valid_value}")
+    assert body["attributes"]["classification_clearance"] == valid_value
+
+
 def test_login_preserves_department_when_valid_string(settings, rsa_keypair):
     private_key, public_key = rsa_keypair
     access_token = _kc_access_token(settings, private_key, department=["Executive"])

@@ -228,6 +228,63 @@ def test_non_string_clearance_normalizes_to_unclassified(settings, manager):
     assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
 
 
+@pytest.mark.parametrize("bogus_value", ["banana", "SUPER_SECRET", "foobar"])
+def test_unrecognized_clearance_string_normalizes_to_unclassified(manager, bogus_value):
+    """ADR-026 final blocker: an unrecognized `classification_clearance`
+    string (not a `Classification` enum member) must never survive
+    normalization unchanged -- it must resolve to `"UNCLASSIFIED"`, exactly
+    like a missing/blank/non-string value. Covers a fresh human login-style
+    Principal (issue -> verify)."""
+    principal = Principal(
+        subject="dev.bogus",
+        roles=("platform-user",),
+        attributes={"classification_clearance": bogus_value},
+    )
+    pair = manager.issue(principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+@pytest.mark.parametrize("bogus_value", ["banana", "SUPER_SECRET", "foobar"])
+def test_legacy_session_with_unrecognized_clearance_normalizes_on_verify(manager, bogus_value):
+    """ADR-026 final blocker: a legacy-shaped session token carrying an
+    unrecognized `classification_clearance` value (e.g. from a stale/forged
+    claim predating enum validation) must be corrected to `"UNCLASSIFIED"`
+    at `verify()` time, the same as the empty/whitespace/non-string legacy
+    cases above."""
+    legacy_principal = Principal(
+        subject="dev.legacy.bogus",
+        roles=("platform-user",),
+        attributes={"classification_clearance": bogus_value},
+    )
+    pair = manager.issue(legacy_principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+@pytest.mark.parametrize("valid_value", ["UNCLASSIFIED", "INTERNAL", "CONFIDENTIAL", "SECRET"])
+def test_all_valid_classification_enum_members_survive_normalization_unchanged(
+    manager, valid_value
+):
+    """Every recognized `Classification` enum member must pass through
+    normalization completely unchanged, not just the one ("INTERNAL") used
+    by the `principal` fixture above."""
+    principal = Principal(
+        subject="dev.valid",
+        roles=("platform-user",),
+        attributes={"classification_clearance": valid_value},
+    )
+    pair = manager.issue(principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == valid_value
+
+
 def test_department_omitted_when_legacy_attributes_empty(manager):
     """Normalization must not invent a department the way it defaults
     classification_clearance -- a legacy session with no department claim

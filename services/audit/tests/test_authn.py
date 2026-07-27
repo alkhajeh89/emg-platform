@@ -78,6 +78,36 @@ def test_validate_defaults_to_unclassified_when_claim_is_absent(settings, rsa_ke
     assert principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
 
 
+@pytest.mark.parametrize("bogus_value", ["banana", "SUPER_SECRET", "foobar"])
+def test_validate_defaults_to_unclassified_when_claim_is_unrecognized(
+    settings, rsa_keypair, validator, bogus_value
+):
+    """ADR-026 final blocker: an unrecognized `classification_clearance`
+    claim value (not a `Classification` enum member) must resolve to
+    `"UNCLASSIFIED"` — it must never survive normalization unchanged."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=bogus_value)
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
+
+
+@pytest.mark.parametrize("valid_value", ["UNCLASSIFIED", "INTERNAL", "CONFIDENTIAL", "SECRET"])
+def test_validate_preserves_every_valid_classification_enum_member(
+    settings, rsa_keypair, validator, valid_value
+):
+    """Every recognized `Classification` enum member must survive
+    normalization completely unchanged, not just `"SECRET"`/`"INTERNAL"`
+    (covered above)."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=valid_value)
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": valid_value}
+
+
 def test_validate_still_populates_roles_and_service_name(settings, rsa_keypair, validator):
     """The new `attributes` extraction is additive — client recognition,
     service_name, and roles resolution (pre-existing behavior) are

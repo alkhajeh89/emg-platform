@@ -88,3 +88,49 @@ def test_service_package_declares_no_forbidden_domain_storage_type_names() -> No
         if overlap:
             offenders.append(f"{module_path.name}: {', '.join(overlap)}")
     assert not offenders, f"forbidden declared type names: {offenders}"
+
+
+# --- ADR-026 Revision 2, Group D12: confirm the D7 `results.py` field
+# additions (classification data only) introduced no principal/
+# authorization concept into `emg_knowledge_graph` itself. This package has
+# no principal/authorization concept at all (see `authorization.py`'s own
+# module docstring: classification enforcement lives entirely in
+# `emg_knowledge_graph_api`, the HTTP layer) -- these checks make that
+# already-true architectural boundary an executable guarantee rather than
+# prose, reusing this file's own generic `_module_paths`/`_import_targets`/
+# `_declared_type_names` helpers (added for the storage boundary above) for
+# the authorization boundary too.
+
+
+def test_service_package_does_not_import_authorization_or_policy_packages() -> None:
+    forbidden = ("emg_auth_client", "emg_policy_engine")
+    offenders: list[str] = []
+    for module_path in _module_paths():
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        imported = _import_targets(tree)
+        for target in imported:
+            if any(target == name or target.startswith(f"{name}.") for name in forbidden):
+                offenders.append(f"{module_path.name}: {target}")
+    assert not offenders, f"forbidden authorization-layer imports found: {offenders}"
+
+
+def test_service_package_declares_no_forbidden_authorization_type_names() -> None:
+    forbidden_names = {
+        "Principal",
+        "ServicePrincipal",
+        "ServicePrincipalLike",
+        "PolicyEngine",
+        "PolicyRule",
+        "PolicyConfig",
+        "PolicyEnforcementPoint",
+        "AuthorizationRequest",
+        "Decision",
+    }
+    offenders: list[str] = []
+    for module_path in _module_paths():
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        declared_names = _declared_type_names(tree)
+        overlap = sorted(forbidden_names.intersection(declared_names))
+        if overlap:
+            offenders.append(f"{module_path.name}: {', '.join(overlap)}")
+    assert not offenders, f"forbidden declared authorization type names: {offenders}"

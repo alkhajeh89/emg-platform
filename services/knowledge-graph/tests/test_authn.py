@@ -93,6 +93,36 @@ def test_validate_defaults_to_unclassified_when_claim_is_absent(settings, rsa_ke
     assert caller.principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
 
 
+@pytest.mark.parametrize("bogus_value", ["banana", "SUPER_SECRET", "foobar"])
+def test_validate_defaults_to_unclassified_when_claim_is_unrecognized(
+    settings, rsa_keypair, validator, bogus_value
+):
+    """ADR-026 final blocker: an unrecognized `classification_clearance`
+    claim value (not a `Classification` enum member) must resolve to
+    `"UNCLASSIFIED"` — it must never survive normalization unchanged."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=bogus_value)
+
+    caller = validator.validate(token)
+
+    assert caller.principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
+
+
+@pytest.mark.parametrize("valid_value", ["UNCLASSIFIED", "INTERNAL", "CONFIDENTIAL", "SECRET"])
+def test_validate_preserves_every_valid_classification_enum_member(
+    settings, rsa_keypair, validator, valid_value
+):
+    """Every recognized `Classification` enum member must survive
+    normalization completely unchanged, not just `"CONFIDENTIAL"` (covered
+    above)."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=valid_value)
+
+    caller = validator.validate(token)
+
+    assert caller.principal.attributes == {"classification_clearance": valid_value}
+
+
 def test_validate_still_requires_tenant_claim(settings, rsa_keypair, validator):
     """The new classification_clearance extraction must not weaken the
     existing, required tenant_claim behavior (Sprint 7.4) — a token missing

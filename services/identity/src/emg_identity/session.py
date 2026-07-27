@@ -31,14 +31,12 @@ from typing import Literal
 
 import jwt
 from emg_auth_client import Principal
+from emg_common_types import normalize_classification_clearance
 from emg_errors import AuthorizationError
 
 from .config import Settings
 
 TokenType = Literal["access", "refresh"]
-
-
-_UNRESOLVED_CLEARANCE_DEFAULT = "UNCLASSIFIED"
 
 
 def _normalize_human_attributes(attributes: dict[str, str]) -> dict[str, str]:
@@ -73,18 +71,22 @@ def _normalize_human_attributes(attributes: dict[str, str]) -> dict[str, str]:
     duplicate logic" (Legacy Session Normalization scope) means in practice.
 
     A value counts as valid only if it is a `str` with at least one
-    non-whitespace character; missing, empty, whitespace-only, or non-string
-    values are all replaced with the literal `"UNCLASSIFIED"`. Every other
-    attribute (e.g. `department`) passes through completely unchanged --
-    this function has no opinion on, and does not touch, any key besides
-    `classification_clearance`.
+    non-whitespace character AND matches a recognized `Classification` enum
+    member; missing, empty, whitespace-only, non-string, or unrecognized
+    values (e.g. `"banana"`, `"SUPER_SECRET"`) are all replaced with the
+    literal `"UNCLASSIFIED"` (ADR-026 final blocker fix, closing the gap
+    where an unrecognized clearance string previously survived normalization
+    unchanged and satisfied none of `PolicyRule`'s per-classification deny
+    rules). This validation is delegated to
+    `emg_common_types.normalize_classification_clearance` — the single
+    shared helper every `classification_clearance` normalization boundary in
+    the platform calls, rather than each boundary re-implementing the check.
+    Every other attribute (e.g. `department`) passes through completely
+    unchanged -- this function has no opinion on, and does not touch, any
+    key besides `classification_clearance`.
     """
     raw_clearance = attributes.get("classification_clearance")
-    clearance = (
-        raw_clearance
-        if isinstance(raw_clearance, str) and raw_clearance.strip()
-        else _UNRESOLVED_CLEARANCE_DEFAULT
-    )
+    clearance = normalize_classification_clearance(raw_clearance)
     normalized = dict(attributes)
     normalized["classification_clearance"] = clearance
     return normalized

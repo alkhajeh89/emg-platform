@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, cast
 
 import jwt
+from emg_common_types import normalize_classification_clearance
 from emg_errors import AuthorizationError
 from emg_platform_core import TenantId
 from fastapi import Depends, Header
@@ -109,18 +110,17 @@ def settings_dependency() -> Settings:
 SettingsDep = Annotated[Settings, Depends(settings_dependency)]
 
 
-_UNRESOLVED_CLEARANCE_DEFAULT = "UNCLASSIFIED"
-
-
 def _extract_attributes(payload: dict[str, Any], settings: Settings) -> dict[str, str]:
     """Extract the `classification_clearance` claim into an attributes dict
     (ADR-026 Revision 2, Amendment 2, Group D5) — the same optional-claim
     convention as `tenant_claim` just above, except that clearance absence is
-    not an authentication failure (ADR-026 Revision 2 §8.4): a missing or
-    non-string claim value resolves to the platform's lowest clearance,
-    `"UNCLASSIFIED"`, rather than this validator rejecting the token
-    outright. The default is applied explicitly here — not left as an
-    absent dict key — because `PolicyRule.required_attributes`/
+    not an authentication failure (ADR-026 Revision 2 §8.4): a missing,
+    non-string, or unrecognized claim value resolves to the platform's
+    lowest clearance, `"UNCLASSIFIED"`, rather than this validator rejecting
+    the token outright (ADR-026 final blocker fix: an unrecognized string,
+    e.g. `"banana"`, previously survived unchanged instead of resolving to
+    `"UNCLASSIFIED"`). The default is applied explicitly here — not left as
+    an absent dict key — because `PolicyRule.required_attributes`/
     `required_resource_attributes` matching (`emg_policy_engine.engine`) has
     no "attribute absent" special case: an absent key simply fails every
     allow-list match, which would satisfy neither an allow rule requiring a
@@ -128,13 +128,11 @@ def _extract_attributes(payload: dict[str, Any], settings: Settings) -> dict[str
     `"UNCLASSIFIED"`. Resolving the default here, once, keeps that matching
     logic itself generic and declarative (ADR-026A principle 1) rather than
     teaching it a classification-specific "no value means lowest tier"
-    rule."""
+    rule. Validation itself is delegated to the shared
+    `emg_common_types.normalize_classification_clearance` helper so this
+    check is not duplicated across services."""
     raw_clearance = payload.get(settings.classification_clearance_claim)
-    clearance = (
-        raw_clearance
-        if isinstance(raw_clearance, str) and raw_clearance
-        else _UNRESOLVED_CLEARANCE_DEFAULT
-    )
+    clearance = normalize_classification_clearance(raw_clearance)
     return {"classification_clearance": clearance}
 
 

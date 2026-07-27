@@ -108,6 +108,7 @@ like D-A-001/D-A-002.
 | OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation (pending); adjacent finding resolved via ECP-1 (2026-07-25); systemic detection gap closed via ECP-2 (2026-07-25) | See below |
 | OBS-A-002 | Knowledge Graph Service Two-Package Structure | Accept as intentional, documented pattern (Actioned 2026-07-27) | See below |
 | OBS-A-003 | ADR-025 Knowledge Graph Authorization Enforcement — implementation-time findings | Accept both fixes as-implemented; registry-allow-list gap remains open (follow-up, not blocking) (Actioned 2026-07-27) | See below |
+| OBS-A-004 | ADR-026 Revision 2 Knowledge Graph Classification Enforcement — Phase 2 (D7–D13) completion record | Accept ADR-026 Revision 2 as fully implemented (Phase 1 + Phase 2); adopt Appendix ADR-026A's three principles as the standing rule for future `required_resource_attributes` reuse (Actioned 2026-07-27) | See below |
 
 ### OBS-A-001 — Platform Core Dependency Direction Review
 
@@ -350,6 +351,116 @@ C's authorized scope — introducing such a registry (mirroring
 `identity`/`audit`) is a candidate for a future, narrowly-scoped
 implementation task, not a new ADR (the mechanism already exists elsewhere in
 the repo; this is a reuse/extension, not a new design decision).
+
+---
+
+### OBS-A-004 — ADR-026 Revision 2 Knowledge Graph Classification Enforcement — Phase 2 (D7–D13) completion record
+
+**Trigger:** ADR-026 Revision 2 (Knowledge Graph Classification Enforcement
+Model) was approved with Phase 1 (D1–D6, plus the Part F remediation) and
+Phase 2 (D7–D13) delivered as a sequence of independently-reviewed batches:
+Batch 1 (D7 DTO projection + D8 the `classification.py` HTTP adapter),
+Batch 2 (D9 route wiring + D10 deployment docs, followed by a remediation
+of two findings from independent verification), and Batch 3 (D11 full test
+suite + D12 boundary verification + D13, this record). All three batches
+are now complete; this entry is the governance record D13 requires.
+
+**1. What is now fully implemented, end-to-end.** All seven Knowledge Graph
+Query API routes enforce classification per returned object, via a second
+`PolicyEnforcementPoint.authorize()` call (identical mechanism to ADR-025's
+existing operation-level check, never a second engine), using
+`resource_attributes={"classification": <object>.classification.value}`.
+`emg_knowledge_graph_api.classification` is the sole place this decision is
+applied at the HTTP layer; every route calls exactly one of its
+`filter_*`/`gate_*` functions and applies the result using its own
+pre-existing not-found/empty/no-value shape (ADR-026 Revision 2 §8.5's
+uniform denial principle) — never a new error type or status code.
+`config/policy.example.yaml` (Group D6, authored in Phase 1) is the real,
+enumerated policy data exercised end-to-end for the first time in Group
+D11's test suite (`services/knowledge-graph/tests/api/
+test_classification_scenarios.py`): dominance-boundary tests across all
+four clearance tiers, per-endpoint pruning, shortest-path and history
+blocking, `get_entity`/`get_edge` 404-on-denial, the default-`UNCLASSIFIED`
+path, and a regression test confirming ADR-025's 403 still fires before any
+classification logic runs.
+
+**2. Two audited findings during Phase 2, both remediated (not a new
+decision — implementation-detail fixes against ADR-026 Revision 2's own
+§8.5 uniform-denial principle).**
+
+- **Pagination metadata leak.** The first Batch 2 delivery derived
+  `has_more`/`next_cursor` from the raw, unfiltered application-layer page,
+  which could let a client infer a hidden classified object's existence
+  (most directly: `next_cursor` could literally be a denied object's own
+  id). **Fixed:** the three paginated routes now perform HTTP-layer
+  look-ahead (`_authorized_page` in `routers/knowledge_graph.py`),
+  re-deriving `returned_count`/`has_more`/`next_cursor` entirely from the
+  authorized (post-filter) item set — still calling only the existing
+  `PolicyEnforcementPoint`/`classification.filter_*` functions, no
+  comparison or ranking logic added.
+- **Denied-history classification leak.** `classification.
+  gate_history_fact` preserved the real `classification` value on a denied
+  `EntityHistoryResult` even though `item` was cleared to `None`. **Fixed:**
+  `EntityHistoryResult.classification` is now `Classification | None`, and
+  the denied branch sets it to `None` too — the true value is used
+  internally to make the one decision it exists for, and is never handed
+  back once that decision is "deny". (Independent verification at the time
+  found the HTTP response body itself never serialized this field either
+  way — `mapping.py`/`schemas.py` have no `classification` field on
+  `EntityHistoryResultResponse` — but the DTO-level fix closes the gap at
+  its source rather than relying solely on the mapping layer never
+  changing.)
+
+Both fixes were regression-tested (6 required categories: empty filtered
+page, `has_more` non-leak, `next_cursor` non-leak, pagination metadata
+authorized-only, denied history never serializing classification, denied
+history indistinguishable from the pre-existing no-value response) and are
+covered by `services/knowledge-graph/tests/api/test_classification_wiring.py`.
+
+**3. Boundary verification (Group D12), now an executable guarantee.**
+`services/knowledge-graph/tests/test_dependency_boundary.py` gained two new
+tests confirming `emg_knowledge_graph` (the Query Engine/domain layer)
+imports neither `emg_auth_client` nor `emg_policy_engine`, and declares none
+of `Principal`/`ServicePrincipal`/`PolicyEngine`/`PolicyRule`/
+`PolicyEnforcementPoint`/`AuthorizationRequest`/`Decision` as a type name —
+i.e. the D7 `results.py` field additions (classification *data* only)
+introduced no principal/authorization concept into the domain package.
+`libs/python/emg-policy-engine/tests/test_no_scripting_capability.py` (new)
+confirms `PolicyRule`'s field set is unchanged from Amendment 1 and that no
+`eval`/`exec`/`compile` call or ranking/dominance-comparator function exists
+anywhere in `emg_policy_engine`'s source. All pre-existing boundary tests
+continue to pass unmodified.
+
+**4. Standing rule adopted (D13's second requirement): Appendix ADR-026A's
+three governing principles, as recorded in
+`docs/architecture/EMG_ADR-026_KNOWLEDGE_GRAPH_CLASSIFICATION_ENFORCEMENT_MODEL.md`,
+apply to *any future* reuse of `required_resource_attributes` — not only
+classification — and are adopted here as a standing architectural rule,
+not a one-time exception for this ADR:**
+
+1. The Policy Engine remains a purely declarative, allow-list/all-of
+   matching schema. `required_resource_attributes` (or any future
+   resource-attribute-conditioned field) must never become an expression
+   language, a scripting hook, or gain an ordinal/ranking comparison
+   primitive — an ordinal concept (such as classification dominance) is
+   always expressed as enumerated policy data (one rule per satisfying
+   combination), never as new code in `PolicyRule`/`PolicyEngine`.
+2. `required_resource_attributes` stays symmetric with `required_attributes`
+   in shape and evaluation (all-of, matched against an allow-list); no
+   parallel or special-cased policy model is introduced for a new
+   resource-attribute use case, and the engine itself never special-cases
+   any specific attribute name (e.g. `"classification"`) — the same generic
+   matching logic must serve every future attribute unchanged.
+3. Any future resource-attribute-conditioned concept (need-to-know,
+   compartments, data residency, or similar) requires its own, independent
+   ADR before being wired into live enforcement — this reuse pattern being
+   easy to repeat is not itself authorization to repeat it without review.
+
+**5. Status: Actioned (2026-07-27).** ADR-026 Revision 2 is recorded as
+fully implemented (Phase 1 + Phase 2). Full `pytest`/`ruff`/`black`/
+`mypy --strict`/dependency-governance validation passed repo-wide for every
+batch, including this one. No code was committed as part of this
+documentation-only update.
 
 ---
 
