@@ -32,6 +32,12 @@ dependencies = [
   "emg-telemetry",
   "emg-api-contracts",
   "emg-persistence",
+  # ADR-025 Group C2: authorization enforcement, reusing the platform's
+  # existing PEP contract and ABAC evaluator (no new authorization
+  # framework). Declared as hard dependencies for the same bootstrap reason
+  # as the API dependencies above.
+  "emg-auth-client",
+  "emg-policy-engine",
 ]
 
 [project.optional-dependencies]

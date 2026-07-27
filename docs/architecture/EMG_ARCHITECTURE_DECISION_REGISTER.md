@@ -106,6 +106,8 @@ like D-A-001/D-A-002.
 | ID | Title | Recommendation | Evidence |
 | :--- | :--- | :--- | :--- |
 | OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation (pending); adjacent finding resolved via ECP-1 (2026-07-25); systemic detection gap closed via ECP-2 (2026-07-25) | See below |
+| OBS-A-002 | Knowledge Graph Service Two-Package Structure | Accept as intentional, documented pattern (Actioned 2026-07-27) | See below |
+| OBS-A-003 | ADR-025 Knowledge Graph Authorization Enforcement — implementation-time findings | Accept both fixes as-implemented; registry-allow-list gap remains open (follow-up, not blocking) (Actioned 2026-07-27) | See below |
 
 ### OBS-A-001 — Platform Core Dependency Direction Review
 
@@ -234,6 +236,120 @@ go undetected is **Resolved** (ECP-2, 2026-07-25). The stale "§32" citation
 fix (Option A) remains pending — a small, textual-only follow-up, not yet
 applied. The platform-core/memory-graph direction itself required no change
 (Accepted as-is).
+
+### OBS-A-002 — Knowledge Graph Service Two-Package Structure
+
+**Trigger:** the Sprint 7.4 architecture review asked whether
+`services/knowledge-graph` splitting its source into two top-level packages
+under one `pyproject.toml` — `emg_knowledge_graph` (application layer:
+orchestrator, DTOs, commands) and `emg_knowledge_graph_api` (transport layer:
+FastAPI routers, schemas, DI wiring) — is a deviation from repository
+convention that needs correcting, or an intentional, justifiable pattern.
+This was resolved during the Sprint 7.4 review-fix pass (packaging
+re-evaluation) and is recorded here, per the Knowledge Graph Integration
+Closure implementation specification (Group A4), as the lightweight
+governance record for that decision instead of a new ADR.
+
+**1. Current state (verified from source):**
+
+`services/knowledge-graph/pyproject.toml` declares
+`packages = ["src/emg_knowledge_graph", "src/emg_knowledge_graph_api"]` — one
+`pyproject.toml`, two importable packages. This differs from every
+`libs/python/emg-*` library (each is exactly one package per
+`pyproject.toml`) and from `services/audit` and `services/identity` (each
+also one package per `pyproject.toml`).
+
+**2. Why this is a deliberate divergence, not an oversight:**
+
+- **Single consumer.** `emg_knowledge_graph_api` has exactly one caller —
+  itself as a deployable ASGI app — and exists solely to expose
+  `emg_knowledge_graph`'s `KnowledgeGraphApplication` over HTTP. No other
+  service or library imports `emg_knowledge_graph_api`. Splitting it into a
+  second, independently-versioned `pyproject.toml`/`docker/dependencies.yaml`
+  entry would add packaging and dependency-governance overhead
+  (`check_dependency_manifest.py`, `check_dependency_drift.py`, and
+  `check_implicit_dependencies.py` would all need a second manifest entry)
+  for a package that will only ever be depended on by the thing it already
+  ships inside of.
+- **Always co-deployed.** Unlike `libs/python/*` packages (each reusable
+  across multiple services) or the identity/audit split (separate deployable
+  processes with separate lifecycles), `emg_knowledge_graph_api` has no
+  existence independent of the `knowledge-graph` service process — there is
+  no scenario where one is deployed, versioned, or tested without the other.
+- **Dependency-boundary test already enforces the layering.** The transport/
+  application boundary this split exists to express (routers depend on the
+  application layer's DTOs/orchestrator, never the reverse; no FastAPI/HTTP
+  types leak into `emg_knowledge_graph`) is verified by an existing
+  import-boundary test in the service's test suite, not by package
+  separation — the two-package structure documents the boundary for readers,
+  the test enforces it for CI.
+
+**3. Recommendation: Accept as-is.** No repository-convention change and no
+new ADR are required. The one-package-per-`pyproject.toml` shape used
+elsewhere in the repo is a convention for independently-reusable or
+independently-deployable units; `emg_knowledge_graph_api` is neither, so the
+convention's rationale does not apply to it. Documented here, and in
+`services/knowledge-graph/src/emg_knowledge_graph_api/__init__.py`'s module
+docstring, so a future reader does not need to re-derive this reasoning from
+first principles.
+
+**4. Status:** **Actioned (2026-07-27).** No further follow-up required
+unless a second consumer of `emg_knowledge_graph_api` emerges, at which point
+this observation should be revisited (a second consumer would remove the
+"single consumer" justification above).
+
+### OBS-A-003 — ADR-025 Knowledge Graph Authorization Enforcement — implementation-time findings
+
+**Trigger:** ADR-025 (Knowledge Graph Tenant & Authorization Model) was
+approved and implemented in full the same day (2026-07-27, Knowledge Graph
+Integration Closure Group C). Implementing §8 of that ADR against real code
+surfaced two small, evidence-driven gaps that the design phase could not have
+caught by document review alone (both are implementation-detail fixes, not
+redesigns — neither changes any decision recorded in ADR-025 §8). Recorded
+here as the lightweight governance record for those findings, per the same
+convention OBS-A-002 established, rather than a new ADR.
+
+**1. `ServicePrincipal.service_name` — missing field, not a new capability.**
+`emg_auth_client.ServicePrincipalLike` (the structural Protocol
+`AuthorizationRequest.principal` is typed against) requires a `service_name`
+field. `services/audit` and `services/identity`'s own `ServicePrincipal` types
+already carry it; `services/knowledge-graph`'s did not — a pre-existing
+Sprint 7.4 gap, never exercised before because nothing in that service called
+into `emg_auth_client`/`emg_policy_engine` until ADR-025. Caught by
+`mypy --strict`, not by design review. **Fix:** added `service_name: str = ""`
+to `emg_knowledge_graph_api.authn.ServicePrincipal`, defaulting to empty
+rather than a resolved registry value (see finding 2 below for why no
+registry exists to resolve it from). **Accepted as-implemented** — narrowly
+scoped to the HTTP layer already in Group C's scope, does not touch any
+DO-NOT-MODIFY surface (Query Engine, `GraphStore`, persistence, Neo4j).
+
+**2. Role-catalog review (ADR-025 §8.7 item 5 / Group C8) — no new role added,
+but a related, still-open gap flagged.** `emg_policy_engine.roles.
+ROLE_CATALOG`'s existing eight roles were reviewed against the Knowledge
+Graph's caller population; no gap was found and no role was added.
+`config/policy.example.yaml` grants `investigator`, `decision-maker`,
+`knowledge-steward` (human) and `service-account` (machine) — deliberately
+excluding the baseline `platform-user` role, which has no job-function tie to
+graph-query access. Separately, and **not resolved** by this ADR: no service
+client is registered anywhere (`identity`'s `SERVICE_REGISTRY`, the Keycloak
+realm seed, or an equivalent) specifically as a Knowledge Graph API consumer,
+and `emg_knowledge_graph_api.authn.TenantServiceTokenValidator` performs no
+registry-based allow-list check on inbound `client_id`s at all — unlike
+`services/audit`'s `_RECOGNIZED_CLIENTS` or `services/identity`'s
+`SERVICE_REGISTRY`. Any validly-signed token for the configured realm/audience
+is accepted; granting a role such as `service-account` in the policy file
+therefore authorizes *any* service holding that realm role, not a specifically
+reviewed Knowledge Graph consumer.
+
+**3. Status: Actioned (2026-07-27).** Both fixes are implemented, tested
+(`pytest`, `mypy --strict`, dependency-governance checks all green), and
+documented in ADR-025 §18 and `services/knowledge-graph/README.md`'s
+"Authorization" section ("Known limitation"). **The registry-allow-list gap
+(finding 2's second half) remains open** as a follow-up task, out of Group
+C's authorized scope — introducing such a registry (mirroring
+`identity`/`audit`) is a candidate for a future, narrowly-scoped
+implementation task, not a new ADR (the mechanism already exists elsewhere in
+the repo; this is a reuse/extension, not a new design decision).
 
 ---
 

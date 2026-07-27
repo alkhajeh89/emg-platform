@@ -1,28 +1,44 @@
-"""Test fixtures for the Knowledge Graph Query API (Sprint 7.4).
+"""Test fixtures for the Knowledge Graph Query API (Sprint 7.4; ADR-025
+Group C9 authorization wiring).
 
 Overrides `KnowledgeGraphApplicationDep` with a real `KnowledgeGraphApplication`
 backed by `InMemoryGraphStore` (seeded directly, bypassing the ontology/
 builder layer for full control over metadata/histories/temporal validity —
-the same approach `test_query_engine_service.py` uses) and overrides
-`TenantContextDep` with a fixed `CallerContext`, so the bulk of API tests
-exercise the full HTTP -> command -> application-service -> DTO -> response
-path without needing a live Keycloak/JWKS server. One test module
+the same approach `test_query_engine_service.py` uses), overrides
+`TenantContextDep` with a fixed `CallerContext`, and overrides
+`policy_enforcement_point_dependency` with a `LocalPolicyEnforcementPoint`
+loaded from the real `config/policy.example.yaml` (resolved relative to
+this file, not the process cwd, so tests are not sensitive to how pytest is
+invoked — mirroring `services/identity/tests/test_authz_router.py`'s
+`_POLICY_CONFIG_PATH` convention exactly), so the bulk of API tests exercise
+the full HTTP -> authn -> authorization -> command -> application-service ->
+DTO -> response path without needing a live Keycloak/JWKS server.
+`caller_context_a`'s `service-account` role is granted `read` on every
+`knowledge-graph.*` resource type in the real policy file, so every
+pre-existing route test continues to receive its previously-expected
+response for this authorized caller. One test module
 (`test_error_mapping_and_openapi_api.py`) additionally exercises the *real*
 `require_tenant_context` dependency (no override) to prove the auth wiring
 itself, using only "no/malformed Authorization header" cases — this needs
 no live JWKS server either, since those requests are rejected before any
-token is decoded.
+token is decoded. `test_authorization.py` exercises the authorization gate
+itself (allowed/denied/missing-policy/missing-role/missing-scope/default-deny)
+with its own, dedicated policy-enforcement-point overrides.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from emg_common_types import Classification
 from emg_knowledge_graph import KnowledgeGraphApplication
 from emg_knowledge_graph_api.authn import CallerContext, ServicePrincipal, require_tenant_context
-from emg_knowledge_graph_api.dependencies import knowledge_graph_application_dependency
+from emg_knowledge_graph_api.dependencies import (
+    knowledge_graph_application_dependency,
+    policy_enforcement_point_dependency,
+)
 from emg_knowledge_graph_api.main import create_app
 from emg_memory_graph import (
     EdgeDirection,
@@ -37,6 +53,7 @@ from emg_memory_graph import (
     TemporalValidity,
 )
 from emg_platform_core import InMemoryGraphStore, PrincipalRef, TenantId
+from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi.testclient import TestClient
 
 T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -45,6 +62,11 @@ T2 = T1 + timedelta(days=30)
 TENANT_A = TenantId.of("tenant-a")
 TENANT_B = TenantId.of("tenant-b")
 PRINCIPAL = PrincipalRef.service("kg-api-tests")
+
+# Resolved relative to this file, not the process cwd (ADR-025 Group C9;
+# mirrors services/identity/tests/test_authz_router.py's
+# `_POLICY_CONFIG_PATH` convention exactly).
+POLICY_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "policy.example.yaml"
 
 
 def evidence(locator: str, *, captured_at: datetime = T0) -> tuple[EvidenceRef, ...]:
@@ -177,11 +199,16 @@ def caller_context_a() -> CallerContext:
     )
 
 
+def _real_policy_enforcement_point() -> LocalPolicyEnforcementPoint:
+    return LocalPolicyEnforcementPoint(load_policy_config(POLICY_CONFIG_PATH))
+
+
 @pytest.fixture
 def client(application: KnowledgeGraphApplication, caller_context_a: CallerContext) -> TestClient:
     app = create_app()
     app.dependency_overrides[knowledge_graph_application_dependency] = lambda: application
     app.dependency_overrides[require_tenant_context] = lambda: caller_context_a
+    app.dependency_overrides[policy_enforcement_point_dependency] = _real_policy_enforcement_point
     return TestClient(app)
 
 
@@ -190,8 +217,11 @@ def client_no_auth_override(
     application: KnowledgeGraphApplication,
 ) -> TestClient:
     """A client with the real `require_tenant_context` dependency still
-    wired (only the application-service dependency is overridden) — used to
-    exercise the actual auth-rejection path (missing/malformed header)."""
+    wired (only the application-service and policy-enforcement-point
+    dependencies are overridden) — used to exercise the actual
+    auth-rejection path (missing/malformed header), which is rejected
+    before authorization is ever evaluated."""
     app = create_app()
     app.dependency_overrides[knowledge_graph_application_dependency] = lambda: application
+    app.dependency_overrides[policy_enforcement_point_dependency] = _real_policy_enforcement_point
     return TestClient(app)

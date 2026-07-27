@@ -34,13 +34,32 @@ def test_authorization_request_defaults_resource_attributes_to_empty_dict():
 def test_service_principal_like_is_structural_not_nominal():
     """A plain object with the right shape satisfies ServicePrincipalLike
     without inheriting from it or importing emg_identity — proves the
-    Protocol is genuinely structural (Sprint 4 design decision)."""
+    Protocol is genuinely structural (Sprint 4 design decision).
+
+    `attributes` (ADR-026 Revision 2, Amendment 2) is part of that shape now
+    — a class missing it no longer structurally satisfies the Protocol."""
 
     class FakeServicePrincipal:
         client_id = "emg-svc-example"
         service_name = "example"
         roles: tuple[str, ...] = ("service-account",)
         scopes: tuple[str, ...] = ()
+        attributes: dict[str, str] = {}
 
     fake = FakeServicePrincipal()
     assert isinstance(fake, ServicePrincipalLike)
+
+
+def test_service_principal_like_requires_attributes_since_adr_026_revision_2():
+    """A class with the pre-ADR-026 shape (no `attributes`) no longer
+    satisfies ServicePrincipalLike — proves the Protocol extension is real,
+    not just documentation."""
+
+    class LegacyServicePrincipal:
+        client_id = "emg-svc-legacy"
+        service_name = "legacy"
+        roles: tuple[str, ...] = ("service-account",)
+        scopes: tuple[str, ...] = ()
+
+    legacy = LegacyServicePrincipal()
+    assert not isinstance(legacy, ServicePrincipalLike)

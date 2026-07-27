@@ -22,9 +22,19 @@ from emg_knowledge_graph import (
     UnsupportedHistoryCapabilityError,
 )
 from emg_knowledge_graph_api.authn import CallerContext, require_tenant_context
-from emg_knowledge_graph_api.dependencies import knowledge_graph_application_dependency
+from emg_knowledge_graph_api.dependencies import (
+    knowledge_graph_application_dependency,
+    policy_enforcement_point_dependency,
+)
 from emg_knowledge_graph_api.main import create_app
+from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi.testclient import TestClient
+
+from .conftest import POLICY_CONFIG_PATH
+
+
+def _real_policy_enforcement_point() -> LocalPolicyEnforcementPoint:
+    return LocalPolicyEnforcementPoint(load_policy_config(POLICY_CONFIG_PATH))
 
 
 class _RaisingApplication:
@@ -64,6 +74,7 @@ def _client_raising(error: Exception, *, caller_context: CallerContext) -> TestC
         error
     )
     app.dependency_overrides[require_tenant_context] = lambda: caller_context
+    app.dependency_overrides[policy_enforcement_point_dependency] = _real_policy_enforcement_point
     return TestClient(app)
 
 

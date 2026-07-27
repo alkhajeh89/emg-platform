@@ -2,4 +2,13 @@ name: knowledge-graph
 module: "Module 7 — Knowledge Graph Platform"
 owner: "Chief Data Officer"                # Accountable Owner — ADR-016 Section 1
 steward: "Ontology Steward"            # Operational Steward — ADR-016 Section 1
-status: scaffolded
+status: active
+feature: "FEAT-05-6 — Knowledge Graph Revision Workflow, Query Engine & Query REST API"
+sprint: 7
+# Scope note (Knowledge Graph Integration Closure, Group A2): this service
+# exposes a read-only Query Engine REST API (ADR-022, ADR-023, ADR-024;
+# Sprint 7.1-7.4) over the PostgreSQL-authoritative GraphStore. It does not
+# yet expose a mutation/ingestion endpoint, authorization beyond tenant
+# scoping, or classification-based access control -- those are separate,
+# not-yet-started work items (see the Knowledge Graph Integration Closure
+# implementation specification, Groups C-F).

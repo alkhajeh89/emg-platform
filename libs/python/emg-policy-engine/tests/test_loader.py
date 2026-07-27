@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from emg_auth_client import AuthorizationRequest, Principal
 from emg_policy_engine import default_policy_config, load_policy_config, validate_policy_config
+from emg_policy_engine.engine import PolicyEngine
 from emg_policy_engine.rules import PolicyConfig, PolicyRule
 from pydantic import ValidationError
 
@@ -150,3 +152,98 @@ def test_example_policy_config_references_only_catalogued_roles():
         if "RBAC baseline role catalog" in problem
     ]
     assert role_problems == []
+
+
+# --- ADR-026 Revision 2 (Amendment 1, Group D6): Knowledge Graph example ---
+# policy classification-enforcement rules (required_resource_attributes).
+
+
+def _kg_example_policy_path() -> Path:
+    return (
+        Path(__file__).resolve().parents[4]
+        / "services"
+        / "knowledge-graph"
+        / "config"
+        / "policy.example.yaml"
+    )
+
+
+def test_kg_example_policy_config_loads_and_has_no_advisory_problems():
+    """The shipped Knowledge Graph example config (ADR-025 Group C4 allow
+    rules plus ADR-026 Revision 2 Group D6 classification deny rules) must
+    load without error and trip no advisory validation problem — no unknown
+    roles, no rule with an empty allow-list, no rule with zero conditions at
+    all (required_resource_attributes now counts as a condition)."""
+    config = load_policy_config(_kg_example_policy_path())
+    assert len(config.rules) == 20  # 5 allow + 15 classification deny rules
+    assert validate_policy_config(config) == []
+
+
+def test_kg_example_policy_config_classification_dominance_via_real_engine():
+    """Loads the real shipped file and proves, via `PolicyEngine`, that the
+    Group D6 deny rules correctly gate classification while leaving the
+    existing ADR-025 operation-level allow rules unaffected."""
+    config = load_policy_config(_kg_example_policy_path())
+    engine = PolicyEngine(config)
+
+    investigator = Principal(
+        subject="dev.investigator",
+        roles=("platform-user", "investigator"),
+        attributes={"classification_clearance": "INTERNAL"},
+    )
+
+    # ADR-025's per-request operation-level check: empty resource_attributes
+    # -- unaffected by the new deny rules, still allowed.
+    operation_level = engine.evaluate(
+        AuthorizationRequest(
+            principal=investigator, resource_type="knowledge-graph.entity", action="read"
+        )
+    )
+    assert operation_level.outcome == "allow"
+    assert operation_level.policy_id == "kg-entity-read"
+
+    # An INTERNAL-cleared caller may see an INTERNAL-classified entity.
+    allowed = engine.evaluate(
+        AuthorizationRequest(
+            principal=investigator,
+            resource_type="knowledge-graph.entity",
+            action="read",
+            resource_attributes={"classification": "INTERNAL"},
+        )
+    )
+    assert allowed.outcome == "allow"
+    assert allowed.policy_id == "kg-entity-read"
+
+    # The same caller may not see a SECRET-classified entity.
+    denied = engine.evaluate(
+        AuthorizationRequest(
+            principal=investigator,
+            resource_type="knowledge-graph.entity",
+            action="read",
+            resource_attributes={"classification": "SECRET"},
+        )
+    )
+    assert denied.outcome == "deny"
+    assert denied.policy_id == "kg-entity-deny-internal-clearance"
+
+    # A caller resolved to UNCLASSIFIED (ADR-026 Revision 2 §8.4's default
+    # for an unresolved clearance — applied explicitly by each service's
+    # `_extract_attributes`, e.g.
+    # `emg_knowledge_graph_api.authn._extract_attributes`, not by the engine
+    # itself; see that function's docstring for why) cannot see even the
+    # default INTERNAL classification most Knowledge Graph objects carry.
+    uncleared = Principal(
+        subject="dev.uncleared",
+        roles=("platform-user", "investigator"),
+        attributes={"classification_clearance": "UNCLASSIFIED"},
+    )
+    denied_uncleared = engine.evaluate(
+        AuthorizationRequest(
+            principal=uncleared,
+            resource_type="knowledge-graph.edge",
+            action="read",
+            resource_attributes={"classification": "INTERNAL"},
+        )
+    )
+    assert denied_uncleared.outcome == "deny"
+    assert denied_uncleared.policy_id == "kg-edge-deny-unclassified-clearance"

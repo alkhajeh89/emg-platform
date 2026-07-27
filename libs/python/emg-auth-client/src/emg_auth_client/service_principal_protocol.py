@@ -21,7 +21,24 @@ attributes: `ServicePrincipal` is a frozen (immutable) dataclass, and
 a *settable* variable — a frozen dataclass field is read-only and fails that
 stricter check even though it is a perfectly valid structural match for
 read-only access, which is all this Protocol ever needs.
-"""
+
+**`attributes` (ADR-026 Revision 2, Amendment 2, Group D2):** originally this
+Protocol had no `attributes` field at all — "machine identities carry no
+classification/department claims by Sprint 3 design, so ABAC attribute
+conditions never apply to a service caller" (the prior version of this
+docstring). ADR-026 Revision 2 revisited that Sprint-3-era simplification: it
+was a point-in-time design choice, not a permanent invariant, and it left
+`ServicePrincipalLike` unable to carry a clearance value (or any other ABAC
+attribute) despite `emg_auth_client.Principal.attributes` already providing
+exactly this shape for human callers. `attributes: dict[str, str]` is added
+here, mirroring `Principal.attributes` exactly, so `PolicyEngine`'s
+`required_attributes` conditions (`engine.py`) now evaluate identically for
+both principal kinds. This is purely additive: every existing concrete
+`ServicePrincipal` implementation gains this field with a
+`field(default_factory=dict)` default, so no existing construction call site
+needs to change (see `services/identity/src/emg_identity/service_principal.py`,
+`services/audit/src/emg_audit_service/authn.py`,
+`services/knowledge-graph/src/emg_knowledge_graph_api/authn.py`)."""
 
 from __future__ import annotations
 
@@ -30,11 +47,9 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class ServicePrincipalLike(Protocol):
-    """Matches `emg_identity.service_principal.ServicePrincipal` exactly:
-    `client_id`, `service_name`, `roles`, `scopes`. No `attributes` field —
-    machine identities carry no classification/department claims by Sprint
-    3 design, so ABAC attribute conditions never apply to a service caller
-    (see emg-policy-engine's evaluation semantics)."""
+    """Matches every concrete `ServicePrincipal` implementation's field
+    shape: `client_id`, `service_name`, `roles`, `scopes`, `attributes`
+    (the last added by ADR-026 Revision 2 — see this module's docstring)."""
 
     @property
     def client_id(self) -> str: ...
@@ -47,3 +62,6 @@ class ServicePrincipalLike(Protocol):
 
     @property
     def scopes(self) -> tuple[str, ...]: ...
+
+    @property
+    def attributes(self) -> dict[str, str]: ...

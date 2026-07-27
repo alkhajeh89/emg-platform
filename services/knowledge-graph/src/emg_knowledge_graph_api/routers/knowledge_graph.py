@@ -1,17 +1,27 @@
-"""Knowledge Graph Query REST API routes (Sprint 7.4).
+"""Knowledge Graph Query REST API routes (Sprint 7.4; ADR-025 Group C6
+authorization wiring).
 
 Every route: (1) validates transport shape only (path/query parameter types,
 plus the same numeric ceilings the command layer already defines, reused
 here — never redefined — purely to fail fast with 422 instead of a 500 from
 downstream validation, exactly the precedent `emg_audit_service`'s
 `query_events` route already sets for its own `limit` parameter); (2)
-constructs the existing Phase 1 command object, always scoped to the
-authenticated caller's own tenant (`TenantContextDep`) — never a
-client-supplied tenant; (3) calls the one matching `KnowledgeGraphApplication`
-method; (4) maps the returned application DTO into a response schema via
-`mapping.py`. No filtering, pagination, temporal, or path-search logic is
-implemented here — every one of those rules lives in `emg_knowledge_graph`
-and is exercised, not reimplemented.
+authorizes the request via `require_permission` (`authorization.py`),
+evaluated *after* tenant resolution and *before* the query executes
+(ADR-025 §8.8); (3) constructs the existing Phase 1 command object, always
+scoped to the authenticated caller's own tenant (`TenantContextDep`) — never
+a client-supplied tenant; (4) calls the one matching
+`KnowledgeGraphApplication` method; (5) maps the returned application DTO
+into a response schema via `mapping.py`. No filtering, pagination, temporal,
+or path-search logic is implemented here — every one of those rules lives in
+`emg_knowledge_graph` and is exercised, not reimplemented.
+
+`resource_type` per route follows ADR-025 §8.5's mapping table exactly:
+`knowledge-graph.entity` (get/list entities), `knowledge-graph.edge`
+(get/list edges), `knowledge-graph.neighbors`, `knowledge-graph.path`,
+`knowledge-graph.history` — each a separate resource type so a policy can
+grant plain entity/edge lookup without also granting traversal or temporal
+history.
 """
 
 from __future__ import annotations
@@ -36,10 +46,11 @@ from emg_knowledge_graph import (
     ShortestPathQuery,
 )
 from emg_memory_graph import EdgeDirection
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from .. import mapping
 from ..authn import TenantContextDep
+from ..authorization import require_permission
 from ..dependencies import KnowledgeGraphApplicationDep
 from ..schemas import (
     EdgeQueryResultResponse,
@@ -52,6 +63,13 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/v1/knowledge-graph", tags=["knowledge-graph"])
+
+# ADR-025 §8.5 resource_type constants — one per distinct disclosure profile.
+RESOURCE_ENTITY = "knowledge-graph.entity"
+RESOURCE_EDGE = "knowledge-graph.edge"
+RESOURCE_NEIGHBORS = "knowledge-graph.neighbors"
+RESOURCE_PATH = "knowledge-graph.path"
+RESOURCE_HISTORY = "knowledge-graph.history"
 
 # Repeated `metadata=key=value` query parameters (ADR-024 §12 exact
 # key/value matching). HTTP query strings have no native repeated key/value
@@ -85,6 +103,7 @@ async def get_entity(
     entity_id: str,
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_ENTITY))],
     revision_number: Annotated[int | None, Query(ge=1)] = None,
 ) -> EntityQueryResultResponse:
     scope = GraphQueryScope(tenant=caller.tenant, revision_number=revision_number)
@@ -96,6 +115,7 @@ async def get_entity(
 async def list_entities(
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_ENTITY))],
     node_type: str | None = None,
     source: str | None = None,
     confidence: float | None = None,
@@ -127,6 +147,7 @@ async def get_edge(
     edge_id: str,
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_EDGE))],
     revision_number: Annotated[int | None, Query(ge=1)] = None,
 ) -> EdgeQueryResultResponse:
     scope = GraphQueryScope(tenant=caller.tenant, revision_number=revision_number)
@@ -138,6 +159,7 @@ async def get_edge(
 async def list_edges(
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_EDGE))],
     edge_type: str | None = None,
     direction: EdgeDirection | None = None,
     valid_at: datetime | None = None,
@@ -163,6 +185,7 @@ async def list_neighbors(
     entity_id: str,
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_NEIGHBORS))],
     direction: NeighborDirection = NeighborDirection.BOTH,
     valid_at: datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=MAX_QUERY_PAGE_SIZE)] = MAX_QUERY_PAGE_SIZE,
@@ -186,6 +209,7 @@ async def list_neighbors(
 async def find_shortest_path(
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_PATH))],
     from_node_id: str,
     to_node_id: str,
     maximum_depth: Annotated[int, Query(ge=1, le=MAX_TRAVERSAL_DEPTH)] = MAX_TRAVERSAL_DEPTH,
@@ -212,6 +236,7 @@ async def get_entity_history(
     valid_at: datetime,
     caller: TenantContextDep,
     app: KnowledgeGraphApplicationDep,
+    _authorization: Annotated[None, Depends(require_permission(RESOURCE_HISTORY))],
     revision_number: Annotated[int | None, Query(ge=1)] = None,
 ) -> EntityHistoryResultResponse:
     scope = GraphQueryScope(tenant=caller.tenant, revision_number=revision_number)

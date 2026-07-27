@@ -60,6 +60,24 @@ services:
       - emg-trust-scoring
 
 
+  knowledge-graph:
+    type: service
+    path: services/knowledge-graph
+    dockerfile: services/knowledge-graph/Dockerfile
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-ontology
+      - emg-platform-core
+      - emg-memory-graph
+      - emg-telemetry
+      - emg-api-contracts
+      - emg-persistence
+      - emg-auth-client
+      - emg-policy-engine
+
+
   entity-resolution:
     type: library
     path: libs/python/emg-entity-resolution

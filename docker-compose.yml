@@ -126,6 +126,27 @@ services:
     ports:
       - "8002:8000"
 
+  knowledge-graph:
+    build:
+      context: .
+      dockerfile: services/knowledge-graph/Dockerfile
+    container_name: emg-knowledge-graph
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - keycloak
+    environment:
+      EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND: postgres
+      # Local-dev-only DSN using the application role created by
+      # tools/seed-data/postgres/005_knowledge_graph_role.sql. Production
+      # overrides via the centralized secrets store (Engineering Master Plan
+      # §5), never via this file.
+      EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN: postgresql://emg_knowledge_graph_app:emg_knowledge_graph_local_dev_only_do_not_use_in_prod@postgres:5432/emg
+      EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_BASE_URL: http://keycloak:8080
+      EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_REALM: emg
+    ports:
+      - "8003:8000"
+
 volumes:
   postgres-data:
   keycloak-data:

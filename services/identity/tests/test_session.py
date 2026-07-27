@@ -120,3 +120,132 @@ def test_refresh_rejects_access_token_presented_as_refresh(manager, principal):
     pair = manager.issue(principal)
     with pytest.raises(AuthorizationError):
         manager.refresh(pair.access_token)
+
+
+# --- Group D Phase 1 Remediation: Legacy Session Normalization -------------
+#
+# A legacy EMG session token is one minted before this remediation existed,
+# whose own `attributes` claim was persisted as `{}` (or missing
+# classification_clearance) at issuance time. `SessionManager.issue()`
+# writes whatever `principal.attributes` it is given verbatim (_mint does
+# not normalize at write time -- only verify() does, at read time), so
+# `manager.issue(Principal(..., attributes={}))` below is the exact,
+# real-code-path way to reproduce a legacy token for these tests, not a
+# simulation of one.
+
+
+def test_legacy_session_with_empty_attributes_normalizes_on_verify(manager):
+    legacy_principal = Principal(subject="dev.legacy", roles=("platform-user",), attributes={})
+    pair = manager.issue(legacy_principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+def test_legacy_refresh_token_normalizes_new_session(manager):
+    legacy_principal = Principal(subject="dev.legacy", roles=("platform-user",), attributes={})
+    pair = manager.issue(legacy_principal)
+
+    refreshed = manager.refresh(pair.refresh_token)
+    claims = manager.verify(refreshed.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+def test_legacy_refresh_rotated_refresh_token_also_normalizes(manager):
+    """The rotated refresh token itself (not just the paired access token)
+    must also carry the normalized value once re-minted, since
+    SessionManager.refresh() re-issues from the now-normalized Principal."""
+    legacy_principal = Principal(subject="dev.legacy", roles=("platform-user",), attributes={})
+    pair = manager.issue(legacy_principal)
+
+    refreshed = manager.refresh(pair.refresh_token)
+    refresh_claims = manager.verify(refreshed.refresh_token, expected_type="refresh")
+
+    assert refresh_claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+def test_valid_clearance_survives_normalization_unchanged(manager, principal):
+    """principal already carries a valid classification_clearance
+    ("INTERNAL") -- normalization must not alter it."""
+    pair = manager.issue(principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "INTERNAL"
+
+
+def test_empty_string_clearance_normalizes_to_unclassified(manager):
+    principal = Principal(
+        subject="dev.blank",
+        roles=("platform-user",),
+        attributes={"classification_clearance": ""},
+    )
+    pair = manager.issue(principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+def test_whitespace_only_clearance_normalizes_to_unclassified(manager):
+    principal = Principal(
+        subject="dev.whitespace",
+        roles=("platform-user",),
+        attributes={"classification_clearance": "   "},
+    )
+    pair = manager.issue(principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+def test_non_string_clearance_normalizes_to_unclassified(settings, manager):
+    """A malformed token whose `attributes.classification_clearance` claim
+    is not even a string (e.g. a stray integer from some long-past bug) --
+    constructed via raw jwt.encode since Principal.attributes is typed
+    dict[str, str] and would not let a real caller build this shape."""
+    now = time.time()
+    payload = {
+        "sub": "dev.malformed",
+        "roles": ["platform-user"],
+        "attributes": {"classification_clearance": 12345},
+        "token_type": "access",
+        "jti": "malformed-clearance",
+        "iat": int(now),
+        "exp": int(now) + 900,
+        "iss": settings.token_issuer,
+        "aud": settings.token_audience,
+    }
+    token = jwt.encode(
+        payload, settings.session_signing_key, algorithm=settings.session_signing_algorithm
+    )
+
+    claims = manager.verify(token, expected_type="access")
+
+    assert claims.attributes["classification_clearance"] == "UNCLASSIFIED"
+
+
+def test_department_omitted_when_legacy_attributes_empty(manager):
+    """Normalization must not invent a department the way it defaults
+    classification_clearance -- a legacy session with no department claim
+    simply has none, exactly as before this remediation."""
+    legacy_principal = Principal(subject="dev.legacy", roles=("platform-user",), attributes={})
+    pair = manager.issue(legacy_principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert "department" not in claims.attributes
+
+
+def test_department_preserved_unchanged_through_normalization(manager, principal):
+    """principal already carries a department ("Investigations") --
+    normalization (which only ever touches classification_clearance) must
+    leave it exactly as-is."""
+    pair = manager.issue(principal)
+
+    claims = manager.verify(pair.access_token, expected_type="access")
+
+    assert claims.attributes["department"] == "Investigations"

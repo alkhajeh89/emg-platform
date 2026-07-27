@@ -54,11 +54,39 @@ class ServicePrincipal:
     Structurally identical to `emg_audit_service.authn.ServicePrincipal` /
     `emg_identity.service_principal.ServicePrincipal` — deliberately not
     imported from either (per the "each service validates independently"
-    convention those modules themselves document)."""
+    convention those modules themselves document).
+
+    `service_name` (ADR-025 Group C, discovered during implementation): both
+    sibling `ServicePrincipal` types already carry this field, because it is
+    required by `emg_auth_client.ServicePrincipalLike` — the structural
+    Protocol `AuthorizationRequest.principal` is typed against. This type
+    was missing it (a pre-existing Sprint 7.4 gap, never caught before
+    because nothing in this service called into `emg_auth_client`/
+    `emg_policy_engine` until this ADR). Unlike `audit`/`identity`, this
+    service resolves it to an empty string rather than a real value:
+    neither of them derives `service_name` from the token itself — both
+    resolve it via their own registry-style allow-list of recognized
+    `client_id`s (`identity.SERVICE_REGISTRY`, `audit._RECOGNIZED_CLIENTS`),
+    and this service has no equivalent registry (see ADR-025 §5's evidenced
+    finding: no consumer service is registered anywhere as a Knowledge Graph
+    API client). Adding such a registry is a separate, not-yet-authorized
+    change outside this sprint's scope — this field exists only to make the
+    existing, shared PEP contract type-check, not to assert a resolved
+    service identity that does not yet exist.
+
+    `attributes` (ADR-026 Revision 2, Amendment 2, Group D3): mirrors
+    `emg_auth_client.Principal.attributes` exactly, closing the asymmetry
+    between human and machine identity types. Defaults to an empty dict, so
+    this addition affects no existing construction call site. Populated from
+    a dedicated `classification_clearance` JWT claim (Group D5), extracted
+    the same way this module already extracts `tenant_claim` below — see
+    `TenantServiceTokenValidator.validate()`."""
 
     client_id: str
     roles: tuple[str, ...] = field(default_factory=tuple)
     scopes: tuple[str, ...] = field(default_factory=tuple)
+    service_name: str = ""
+    attributes: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -79,6 +107,35 @@ def settings_dependency() -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(settings_dependency)]
+
+
+_UNRESOLVED_CLEARANCE_DEFAULT = "UNCLASSIFIED"
+
+
+def _extract_attributes(payload: dict[str, Any], settings: Settings) -> dict[str, str]:
+    """Extract the `classification_clearance` claim into an attributes dict
+    (ADR-026 Revision 2, Amendment 2, Group D5) — the same optional-claim
+    convention as `tenant_claim` just above, except that clearance absence is
+    not an authentication failure (ADR-026 Revision 2 §8.4): a missing or
+    non-string claim value resolves to the platform's lowest clearance,
+    `"UNCLASSIFIED"`, rather than this validator rejecting the token
+    outright. The default is applied explicitly here — not left as an
+    absent dict key — because `PolicyRule.required_attributes`/
+    `required_resource_attributes` matching (`emg_policy_engine.engine`) has
+    no "attribute absent" special case: an absent key simply fails every
+    allow-list match, which would satisfy neither an allow rule requiring a
+    specific clearance nor a deny rule keyed on the literal value
+    `"UNCLASSIFIED"`. Resolving the default here, once, keeps that matching
+    logic itself generic and declarative (ADR-026A principle 1) rather than
+    teaching it a classification-specific "no value means lowest tier"
+    rule."""
+    raw_clearance = payload.get(settings.classification_clearance_claim)
+    clearance = (
+        raw_clearance
+        if isinstance(raw_clearance, str) and raw_clearance
+        else _UNRESOLVED_CLEARANCE_DEFAULT
+    )
+    return {"classification_clearance": clearance}
 
 
 class TenantServiceTokenValidator:
@@ -132,7 +189,10 @@ class TenantServiceTokenValidator:
         scopes = tuple(str(raw_scope).split()) if raw_scope else ()
         raw_roles = payload.get("roles", ())
         roles = tuple(raw_roles) if isinstance(raw_roles, list | tuple) else ()
-        principal = ServicePrincipal(client_id=client_id, roles=roles, scopes=scopes)
+        attributes = _extract_attributes(payload, self._settings)
+        principal = ServicePrincipal(
+            client_id=client_id, roles=roles, scopes=scopes, attributes=attributes
+        )
 
         tenant_claim_value = payload.get(self._settings.tenant_claim)
         if not isinstance(tenant_claim_value, str) or not tenant_claim_value:
