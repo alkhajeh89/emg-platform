@@ -170,12 +170,14 @@ def _kg_example_policy_path() -> Path:
 
 def test_kg_example_policy_config_loads_and_has_no_advisory_problems():
     """The shipped Knowledge Graph example config (ADR-025 Group C4 allow
-    rules plus ADR-026 Revision 2 Group D6 classification deny rules) must
-    load without error and trip no advisory validation problem — no unknown
-    roles, no rule with an empty allow-list, no rule with zero conditions at
-    all (required_resource_attributes now counts as a condition)."""
+    rules, ADR-026 Revision 2 Group D6 classification deny rules, and
+    ADR-027 Revision 3 Stage 2 mutation rules) must load without error and
+    trip no advisory validation problem — no unknown roles, no rule with an
+    empty allow-list, no rule with zero conditions at all
+    (required_resource_attributes now counts as a condition)."""
     config = load_policy_config(_kg_example_policy_path())
-    assert len(config.rules) == 20  # 5 allow + 15 classification deny rules
+    # 20 read rules + 15 mutation allows + 33 mutation classification denies.
+    assert len(config.rules) == 68
     assert validate_policy_config(config) == []
 
 
