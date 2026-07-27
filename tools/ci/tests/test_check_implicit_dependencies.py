@@ -295,6 +295,77 @@ def test_module_to_package_mapping():
     assert cid.module_to_package("neo4j") is None
 
 
+# --- Group D Phase 1 Remediation (Fix 3): multi-package components --------
+
+
+def test_get_own_modules_single_package_fallback():
+    """The common case: no [tool.hatch...] wheel-packages list, so the sole
+    importable module is derived from [project].name, exactly as before this
+    fix."""
+    data = {"project": {"name": "emg-consumer"}}
+    assert cid.get_own_modules(data) == {"emg_consumer"}
+
+
+def test_get_own_modules_multi_package_component():
+    """Mirrors services/knowledge-graph/pyproject.toml exactly: [project].name
+    ("emg-knowledge-graph-service") matches neither of the two packages the
+    [tool.hatch.build.targets.wheel].packages list actually builds."""
+    data = {
+        "project": {"name": "emg-knowledge-graph-service"},
+        "tool": {
+            "hatch": {
+                "build": {
+                    "targets": {
+                        "wheel": {
+                            "packages": [
+                                "src/emg_knowledge_graph",
+                                "src/emg_knowledge_graph_api",
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+    }
+    assert cid.get_own_modules(data) == {"emg_knowledge_graph", "emg_knowledge_graph_api"}
+
+
+def test_multi_package_component_sibling_import_not_flagged(tmp_path, monkeypatch, capsys):
+    """The real-world case this fix resolves: a component shipping two
+    sibling packages (e.g. an `_api` transport package depending on an
+    application-layer package) from one pyproject.toml must not have that
+    intra-distribution import flagged as an undeclared external dependency,
+    the way emg_knowledge_graph_api -> emg_knowledge_graph was before this
+    fix (see EMG_ARCHITECTURE_DECISION_REGISTER.md, OBS-A-002)."""
+    pkg_dir = tmp_path / "emg-twopkg-service"
+    app_src = pkg_dir / "src" / "emg_twopkg"
+    api_src = pkg_dir / "src" / "emg_twopkg_api"
+    app_src.mkdir(parents=True)
+    api_src.mkdir(parents=True)
+    (app_src / "__init__.py").write_text("VALUE = 1\n")
+    (api_src / "__init__.py").write_text("from emg_twopkg import VALUE\n")
+    (pkg_dir / "pyproject.toml").write_text(
+        textwrap.dedent(
+            """
+            [project]
+            name = "emg-twopkg-service"
+            version = "0.1.0"
+            dependencies = []
+
+            [tool.hatch.build.targets.wheel]
+            packages = ["src/emg_twopkg", "src/emg_twopkg_api"]
+            """
+        )
+    )
+    monkeypatch.setattr(cid, "ROOT", tmp_path)
+
+    ok = cid.check_component("twopkg", {"path": "emg-twopkg-service"})
+    out = capsys.readouterr().out
+
+    assert ok is True
+    assert "❌" not in out
+
+
 def test_real_repository_has_zero_findings():
     """Regression guard: run the real tool against the live repository and
     confirm it reports the clean, ECP-1-resolved baseline (zero runtime

@@ -13,6 +13,8 @@ new, Sprint-7.4-only convention with no existing repository precedent).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +47,23 @@ class Settings(BaseSettings):
     # The JWT custom claim carrying the caller's resolved tenant identifier
     # (Sprint 7.4 addition — see authn.py).
     tenant_claim: str = "tenant_id"
+
+    # ADR-026 Revision 2 (Amendment 2, Group D5): the JWT custom claim
+    # carrying a caller's classification clearance, extracted into
+    # ServicePrincipal.attributes. Follows the exact same optional-claim
+    # convention as tenant_claim above — except a missing claim is not an
+    # authentication error (see authn.py's `_extract_attributes`).
+    classification_clearance_claim: str = "classification_clearance"
+
+    # --- ADR-025 Group C: Knowledge Graph Authorization Enforcement --------
+    #
+    # Path to the local ABAC policy configuration (emg_policy_engine.PolicyConfig).
+    # Same safe-default posture as services/identity's policy_config_path: a
+    # missing file falls back to an empty, default-deny ruleset (see
+    # emg_policy_engine.loader.load_policy_config) rather than raising, so a
+    # misconfigured deployment fails closed (denies everything) instead of
+    # failing to start or silently allowing everything.
+    policy_config_path: Path = Path("services/knowledge-graph/config/policy.example.yaml")
 
     @property
     def keycloak_issuer(self) -> str:

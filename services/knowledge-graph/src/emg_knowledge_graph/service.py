@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TypeVar
 
+from emg_common_types import Classification
 from emg_memory_graph import (
     MemoryEdge,
     MemoryGraph,
@@ -125,11 +126,25 @@ def _edge_details(edge: MemoryEdge) -> EdgeDetails:
         target_id=edge.target_id,
         direction=edge.direction,
         confidence=edge.confidence,
+        classification=edge.classification,
         validity=edge.validity,
         created_at=edge.created_at,
         updated_at=edge.updated_at,
         evidence=edge.evidence,
     )
+
+
+def _classification_of(item: MemoryNode | MemoryEdge | None) -> Classification:
+    """Extract ``.classification`` from a node/edge already looked up by id
+    from the same graph snapshot a path was just computed over (ADR-026
+    Revision 2 §8.6, Group D7). ``item`` is only ``None`` if the path
+    referenced an id absent from its own snapshot — impossible for a graph
+    that passed ``MemoryGraph``'s own construction-time referential-integrity
+    validator (the same invariant ``_neighbor_result`` above relies on),
+    asserted rather than silently defaulted so a real violation fails loudly
+    instead of fabricating a classification value."""
+    assert item is not None  # guaranteed by MemoryGraph's referential-integrity invariant
+    return item.classification
 
 
 def _matches_entity_filters(node: MemoryNode, query: ListEntitiesQuery) -> bool:
@@ -185,6 +200,7 @@ def _neighbor_result(graph: MemoryGraph, node_id: str, edge: MemoryEdge) -> Neig
         edge_type=edge.edge_type,
         confidence=edge.confidence,
         direction=edge.direction,
+        edge_classification=edge.classification,
     )
 
 
@@ -549,13 +565,32 @@ class KnowledgeGraphApplication:
             raise EntityNotFoundError(str(exc)) from exc
 
         if found is None or found.length > query.maximum_depth:
-            path = PathResult(node_ids=(), edge_ids=(), length=0, found=False)
+            path = PathResult(
+                node_ids=(),
+                edge_ids=(),
+                length=0,
+                found=False,
+                node_classifications=(),
+                edge_classifications=(),
+            )
         else:
+            # ADR-026 Revision 2 §8.6, Group D7: per-node/per-edge
+            # classification, index-aligned with node_ids/edge_ids. Every id
+            # on a path found within this same graph snapshot is guaranteed
+            # present in it (referential-integrity invariant, identical to
+            # `_neighbor_result`'s own defensive comment above) — `graph`
+            # already holds every node/edge this path references in scope.
             path = PathResult(
                 node_ids=found.node_ids,
                 edge_ids=found.edge_ids,
                 length=found.length,
                 found=True,
+                node_classifications=tuple(
+                    _classification_of(graph.node(node_id)) for node_id in found.node_ids
+                ),
+                edge_classifications=tuple(
+                    _classification_of(graph.edge(edge_id)) for edge_id in found.edge_ids
+                ),
             )
         return PathQueryResult(item=path, revision_context=revision_context)
 
@@ -571,12 +606,15 @@ class KnowledgeGraphApplication:
         self._require_revision_reader()
 
         graph, revision_context = self._resolve_scope(query.scope)
-        if graph.node(query.node_id) is None:
+        node = graph.node(query.node_id)
+        if node is None:
             raise EntityNotFoundError(
                 f"no entity {query.node_id!r} for tenant {query.scope.tenant.value!r}"
             )
         fact = attribute_at(graph, query.node_id, query.attribute, query.valid_at)
-        return EntityHistoryResult(item=fact, revision_context=revision_context)
+        return EntityHistoryResult(
+            item=fact, revision_context=revision_context, classification=node.classification
+        )
 
     def _resolve_scope(self, scope: GraphQueryScope) -> tuple[MemoryGraph, QueryRevisionContext]:
         """Resolve a ``GraphQueryScope`` into ``(graph, revision_context)``

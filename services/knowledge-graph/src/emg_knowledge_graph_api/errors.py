@@ -14,7 +14,7 @@ persistence/adapter internals — see ADR-024 §17).
 
 from __future__ import annotations
 
-from emg_errors import AuthorizationError, EMGError
+from emg_errors import AuthorizationError, EMGError, PermissionDeniedError
 from emg_knowledge_graph import (
     EdgeNotFoundError,
     EntityNotFoundError,
@@ -31,6 +31,12 @@ from emg_knowledge_graph import (
 ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     # Authentication/tenant-context failures (authn.py).
     AuthorizationError: 401,
+    # Authorization (Policy Enforcement Point) denials — ADR-025 Group C7.
+    # Deliberately a distinct status/error type from AuthorizationError
+    # above: 401 means "who are you" failed, 403 means "you are known, but
+    # not permitted to do this" (ADR-025 §8.6). No other existing error
+    # mapping in this map changes.
+    PermissionDeniedError: 403,
     # Knowledge Graph Query Engine application errors (ADR-024 §17).
     EntityNotFoundError: 404,
     EdgeNotFoundError: 404,

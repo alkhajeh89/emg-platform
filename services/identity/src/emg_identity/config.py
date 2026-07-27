@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     service_token_audience: str = "emg-internal-services"
     jwks_cache_ttl_seconds: int = 300
 
+    # ADR-026 Revision 2 (Amendment 2, Group D5): the JWT custom claim
+    # carrying a caller's classification clearance, extracted into
+    # ServicePrincipal.attributes. Following the exact same optional-claim
+    # convention services/knowledge-graph's authn.py first established for
+    # tenant_claim — except a missing claim is not an authentication error
+    # (see service_token_validator.py's `_extract_attributes`).
+    classification_clearance_claim: str = "classification_clearance"
+
     @property
     def keycloak_issuer(self) -> str:
         """Expected `iss` claim on any Keycloak-issued token (human or

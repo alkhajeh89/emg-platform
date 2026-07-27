@@ -146,7 +146,17 @@ class EntityDetails:
 @dataclass(frozen=True, slots=True)
 class EdgeDetails:
     """The (only) edge projection (ADR-024 §16) — no separate lighter
-    ``EdgeSummary`` is introduced; edges are always returned in full."""
+    ``EdgeSummary`` is introduced; edges are always returned in full.
+
+    ``classification`` (ADR-026 Revision 2 §8, Amendment 3 / Group D7): the
+    edge's own classification, sourced directly from the already-computed
+    ``MemoryEdge.classification`` the mapping function producing this DTO
+    already holds in scope — a data-projection addition only, not a change
+    to any traversal, pagination, or revision-resolution logic. Consumed by
+    the HTTP-layer classification-enforcement module (Group D8) to decide
+    whether this edge is within the caller's clearance; never read by
+    ``emg_knowledge_graph`` itself, which carries no principal/authorization
+    concept."""
 
     edge_id: str
     edge_type: str
@@ -154,6 +164,7 @@ class EdgeDetails:
     target_id: str
     direction: EdgeDirection
     confidence: float
+    classification: Classification
     validity: TemporalValidity
     created_at: datetime
     updated_at: datetime
@@ -166,25 +177,48 @@ class NeighborResult:
     (ADR-024 §16). ``direction`` is the traversed edge's own
     ``EdgeDirection`` (directed/undirected) — not the traversal mode used to
     reach it, which is the query's own ``NeighborDirection`` input, not part
-    of the result."""
+    of the result.
+
+    ``edge_classification`` (ADR-026 Revision 2 §8.6, Group D7): the
+    *traversed edge's* classification — distinct from ``entity.classification``
+    (the neighboring entity's own classification, already present via
+    ``EntitySummary``). ADR-026 Revision 2 §8.6 requires a neighbor to be
+    hidden if *either* the neighboring entity's classification *or* the
+    connecting edge's classification exceeds the caller's clearance, so both
+    values must be independently available to the Group D8 enforcement
+    module."""
 
     entity: EntitySummary
     via_edge_id: str
     edge_type: str
     confidence: float
     direction: EdgeDirection
+    edge_classification: Classification
 
 
 @dataclass(frozen=True, slots=True)
 class PathResult:
     """A single unweighted shortest path result (ADR-024 §16, §15).
     ``found=False`` with empty ``node_ids``/``edge_ids`` is the normal,
-    explicit result for an unreachable pair — not an error."""
+    explicit result for an unreachable pair — not an error.
+
+    ``node_classifications``/``edge_classifications`` (ADR-026 Revision 2
+    §8.6, Group D7): the classification of each node/edge on the path,
+    index-aligned one-for-one with ``node_ids``/``edge_ids`` respectively.
+    Both are empty exactly when ``found`` is ``False`` (mirroring
+    ``node_ids``/``edge_ids``' own emptiness in that case). This is plain
+    per-object classification *data* — a fixed-shape tuple, not a ranking or
+    dominance computation — the Group D8 enforcement module decides
+    clearance by evaluating each value through the existing PolicyEngine,
+    never by comparing these values against each other or an ordinal table
+    here."""
 
     node_ids: tuple[str, ...]
     edge_ids: tuple[str, ...]
     length: int
     found: bool
+    node_classifications: tuple[Classification, ...]
+    edge_classifications: tuple[Classification, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,7 +301,33 @@ class EntityHistoryResult:
     ``TemporalHistory``/``TemporalValidity``/``EvidenceRef``. ``item`` is
     ``None`` when the attribute had no value at ``valid_at`` — a normal,
     explicit result, not an error, mirroring ``TemporalHistory.as_of``'s own
-    contract."""
+    contract.
+
+    ``classification`` (ADR-026 Revision 2 §8.6, Group D7; narrowed to
+    ``Classification | None`` by the Batch 2 remediation): the *subject
+    node's* classification at the resolved revision, as populated by
+    ``KnowledgeGraphApplication.get_entity_history`` itself — always a real
+    value at that point (the node's existence was already confirmed before
+    this result is constructed), independent of whether ``item`` is
+    ``None``.
+
+    The Group D8 enforcement module (``classification.gate_history_fact``)
+    consumes this real value to decide access, exactly as before — but once
+    that decision is made and access is denied, it returns a *new*
+    ``EntityHistoryResult`` with both ``item`` and ``classification`` set to
+    ``None``, never the true classification. This is the fix for an audited
+    finding: the true value must not survive past the authorization decision
+    in the object handed back to the HTTP layer, since "may remain available
+    internally only for authorization" cannot be guaranteed for a value that
+    is still sitting in a DTO field after the decision has already been
+    made — a future consumer of that field (a log line, a new mapping
+    function, a debugger) would otherwise see it regardless of the current
+    (and already correct) response mapping. ``None`` here therefore means
+    either "no classification to report" (denied) or is otherwise always a
+    concrete value; it is a distinct condition from ``item is None`` ("no
+    value at that moment"), the same way ``TemporalHistory.as_of`` already
+    treats its own ``None`` as a normal, non-error outcome."""
 
     item: TemporalFact | None
     revision_context: QueryRevisionContext
+    classification: Classification | None

@@ -106,6 +106,9 @@ like D-A-001/D-A-002.
 | ID | Title | Recommendation | Evidence |
 | :--- | :--- | :--- | :--- |
 | OBS-A-001 | Platform Core Dependency Direction Review | Accept current direction; fix a stale citation (pending); adjacent finding resolved via ECP-1 (2026-07-25); systemic detection gap closed via ECP-2 (2026-07-25) | See below |
+| OBS-A-002 | Knowledge Graph Service Two-Package Structure | Accept as intentional, documented pattern (Actioned 2026-07-27) | See below |
+| OBS-A-003 | ADR-025 Knowledge Graph Authorization Enforcement — implementation-time findings | Accept both fixes as-implemented; registry-allow-list gap remains open (follow-up, not blocking) (Actioned 2026-07-27) | See below |
+| OBS-A-004 | ADR-026 Revision 2 Knowledge Graph Classification Enforcement — Phase 2 (D7–D13) completion record | Accept ADR-026 Revision 2 as fully implemented (Phase 1 + Phase 2); adopt Appendix ADR-026A's three principles as the standing rule for future `required_resource_attributes` reuse (Actioned 2026-07-27) | See below |
 
 ### OBS-A-001 — Platform Core Dependency Direction Review
 
@@ -234,6 +237,230 @@ go undetected is **Resolved** (ECP-2, 2026-07-25). The stale "§32" citation
 fix (Option A) remains pending — a small, textual-only follow-up, not yet
 applied. The platform-core/memory-graph direction itself required no change
 (Accepted as-is).
+
+### OBS-A-002 — Knowledge Graph Service Two-Package Structure
+
+**Trigger:** the Sprint 7.4 architecture review asked whether
+`services/knowledge-graph` splitting its source into two top-level packages
+under one `pyproject.toml` — `emg_knowledge_graph` (application layer:
+orchestrator, DTOs, commands) and `emg_knowledge_graph_api` (transport layer:
+FastAPI routers, schemas, DI wiring) — is a deviation from repository
+convention that needs correcting, or an intentional, justifiable pattern.
+This was resolved during the Sprint 7.4 review-fix pass (packaging
+re-evaluation) and is recorded here, per the Knowledge Graph Integration
+Closure implementation specification (Group A4), as the lightweight
+governance record for that decision instead of a new ADR.
+
+**1. Current state (verified from source):**
+
+`services/knowledge-graph/pyproject.toml` declares
+`packages = ["src/emg_knowledge_graph", "src/emg_knowledge_graph_api"]` — one
+`pyproject.toml`, two importable packages. This differs from every
+`libs/python/emg-*` library (each is exactly one package per
+`pyproject.toml`) and from `services/audit` and `services/identity` (each
+also one package per `pyproject.toml`).
+
+**2. Why this is a deliberate divergence, not an oversight:**
+
+- **Single consumer.** `emg_knowledge_graph_api` has exactly one caller —
+  itself as a deployable ASGI app — and exists solely to expose
+  `emg_knowledge_graph`'s `KnowledgeGraphApplication` over HTTP. No other
+  service or library imports `emg_knowledge_graph_api`. Splitting it into a
+  second, independently-versioned `pyproject.toml`/`docker/dependencies.yaml`
+  entry would add packaging and dependency-governance overhead
+  (`check_dependency_manifest.py`, `check_dependency_drift.py`, and
+  `check_implicit_dependencies.py` would all need a second manifest entry)
+  for a package that will only ever be depended on by the thing it already
+  ships inside of.
+- **Always co-deployed.** Unlike `libs/python/*` packages (each reusable
+  across multiple services) or the identity/audit split (separate deployable
+  processes with separate lifecycles), `emg_knowledge_graph_api` has no
+  existence independent of the `knowledge-graph` service process — there is
+  no scenario where one is deployed, versioned, or tested without the other.
+- **Dependency-boundary test already enforces the layering.** The transport/
+  application boundary this split exists to express (routers depend on the
+  application layer's DTOs/orchestrator, never the reverse; no FastAPI/HTTP
+  types leak into `emg_knowledge_graph`) is verified by an existing
+  import-boundary test in the service's test suite, not by package
+  separation — the two-package structure documents the boundary for readers,
+  the test enforces it for CI.
+
+**3. Recommendation: Accept as-is.** No repository-convention change and no
+new ADR are required. The one-package-per-`pyproject.toml` shape used
+elsewhere in the repo is a convention for independently-reusable or
+independently-deployable units; `emg_knowledge_graph_api` is neither, so the
+convention's rationale does not apply to it. Documented here, and in
+`services/knowledge-graph/src/emg_knowledge_graph_api/__init__.py`'s module
+docstring, so a future reader does not need to re-derive this reasoning from
+first principles.
+
+**4. Status:** **Actioned (2026-07-27).** No further follow-up required
+unless a second consumer of `emg_knowledge_graph_api` emerges, at which point
+this observation should be revisited (a second consumer would remove the
+"single consumer" justification above).
+
+### OBS-A-003 — ADR-025 Knowledge Graph Authorization Enforcement — implementation-time findings
+
+**Trigger:** ADR-025 (Knowledge Graph Tenant & Authorization Model) was
+approved and implemented in full the same day (2026-07-27, Knowledge Graph
+Integration Closure Group C). Implementing §8 of that ADR against real code
+surfaced two small, evidence-driven gaps that the design phase could not have
+caught by document review alone (both are implementation-detail fixes, not
+redesigns — neither changes any decision recorded in ADR-025 §8). Recorded
+here as the lightweight governance record for those findings, per the same
+convention OBS-A-002 established, rather than a new ADR.
+
+**1. `ServicePrincipal.service_name` — missing field, not a new capability.**
+`emg_auth_client.ServicePrincipalLike` (the structural Protocol
+`AuthorizationRequest.principal` is typed against) requires a `service_name`
+field. `services/audit` and `services/identity`'s own `ServicePrincipal` types
+already carry it; `services/knowledge-graph`'s did not — a pre-existing
+Sprint 7.4 gap, never exercised before because nothing in that service called
+into `emg_auth_client`/`emg_policy_engine` until ADR-025. Caught by
+`mypy --strict`, not by design review. **Fix:** added `service_name: str = ""`
+to `emg_knowledge_graph_api.authn.ServicePrincipal`, defaulting to empty
+rather than a resolved registry value (see finding 2 below for why no
+registry exists to resolve it from). **Accepted as-implemented** — narrowly
+scoped to the HTTP layer already in Group C's scope, does not touch any
+DO-NOT-MODIFY surface (Query Engine, `GraphStore`, persistence, Neo4j).
+
+**2. Role-catalog review (ADR-025 §8.7 item 5 / Group C8) — no new role added,
+but a related, still-open gap flagged.** `emg_policy_engine.roles.
+ROLE_CATALOG`'s existing eight roles were reviewed against the Knowledge
+Graph's caller population; no gap was found and no role was added.
+`config/policy.example.yaml` grants `investigator`, `decision-maker`,
+`knowledge-steward` (human) and `service-account` (machine) — deliberately
+excluding the baseline `platform-user` role, which has no job-function tie to
+graph-query access. Separately, and **not resolved** by this ADR: no service
+client is registered anywhere (`identity`'s `SERVICE_REGISTRY`, the Keycloak
+realm seed, or an equivalent) specifically as a Knowledge Graph API consumer,
+and `emg_knowledge_graph_api.authn.TenantServiceTokenValidator` performs no
+registry-based allow-list check on inbound `client_id`s at all — unlike
+`services/audit`'s `_RECOGNIZED_CLIENTS` or `services/identity`'s
+`SERVICE_REGISTRY`. Any validly-signed token for the configured realm/audience
+is accepted; granting a role such as `service-account` in the policy file
+therefore authorizes *any* service holding that realm role, not a specifically
+reviewed Knowledge Graph consumer.
+
+**3. Status: Actioned (2026-07-27).** Both fixes are implemented, tested
+(`pytest`, `mypy --strict`, dependency-governance checks all green), and
+documented in ADR-025 §18 and `services/knowledge-graph/README.md`'s
+"Authorization" section ("Known limitation"). **The registry-allow-list gap
+(finding 2's second half) remains open** as a follow-up task, out of Group
+C's authorized scope — introducing such a registry (mirroring
+`identity`/`audit`) is a candidate for a future, narrowly-scoped
+implementation task, not a new ADR (the mechanism already exists elsewhere in
+the repo; this is a reuse/extension, not a new design decision).
+
+---
+
+### OBS-A-004 — ADR-026 Revision 2 Knowledge Graph Classification Enforcement — Phase 2 (D7–D13) completion record
+
+**Trigger:** ADR-026 Revision 2 (Knowledge Graph Classification Enforcement
+Model) was approved with Phase 1 (D1–D6, plus the Part F remediation) and
+Phase 2 (D7–D13) delivered as a sequence of independently-reviewed batches:
+Batch 1 (D7 DTO projection + D8 the `classification.py` HTTP adapter),
+Batch 2 (D9 route wiring + D10 deployment docs, followed by a remediation
+of two findings from independent verification), and Batch 3 (D11 full test
+suite + D12 boundary verification + D13, this record). All three batches
+are now complete; this entry is the governance record D13 requires.
+
+**1. What is now fully implemented, end-to-end.** All seven Knowledge Graph
+Query API routes enforce classification per returned object, via a second
+`PolicyEnforcementPoint.authorize()` call (identical mechanism to ADR-025's
+existing operation-level check, never a second engine), using
+`resource_attributes={"classification": <object>.classification.value}`.
+`emg_knowledge_graph_api.classification` is the sole place this decision is
+applied at the HTTP layer; every route calls exactly one of its
+`filter_*`/`gate_*` functions and applies the result using its own
+pre-existing not-found/empty/no-value shape (ADR-026 Revision 2 §8.5's
+uniform denial principle) — never a new error type or status code.
+`config/policy.example.yaml` (Group D6, authored in Phase 1) is the real,
+enumerated policy data exercised end-to-end for the first time in Group
+D11's test suite (`services/knowledge-graph/tests/api/
+test_classification_scenarios.py`): dominance-boundary tests across all
+four clearance tiers, per-endpoint pruning, shortest-path and history
+blocking, `get_entity`/`get_edge` 404-on-denial, the default-`UNCLASSIFIED`
+path, and a regression test confirming ADR-025's 403 still fires before any
+classification logic runs.
+
+**2. Two audited findings during Phase 2, both remediated (not a new
+decision — implementation-detail fixes against ADR-026 Revision 2's own
+§8.5 uniform-denial principle).**
+
+- **Pagination metadata leak.** The first Batch 2 delivery derived
+  `has_more`/`next_cursor` from the raw, unfiltered application-layer page,
+  which could let a client infer a hidden classified object's existence
+  (most directly: `next_cursor` could literally be a denied object's own
+  id). **Fixed:** the three paginated routes now perform HTTP-layer
+  look-ahead (`_authorized_page` in `routers/knowledge_graph.py`),
+  re-deriving `returned_count`/`has_more`/`next_cursor` entirely from the
+  authorized (post-filter) item set — still calling only the existing
+  `PolicyEnforcementPoint`/`classification.filter_*` functions, no
+  comparison or ranking logic added.
+- **Denied-history classification leak.** `classification.
+  gate_history_fact` preserved the real `classification` value on a denied
+  `EntityHistoryResult` even though `item` was cleared to `None`. **Fixed:**
+  `EntityHistoryResult.classification` is now `Classification | None`, and
+  the denied branch sets it to `None` too — the true value is used
+  internally to make the one decision it exists for, and is never handed
+  back once that decision is "deny". (Independent verification at the time
+  found the HTTP response body itself never serialized this field either
+  way — `mapping.py`/`schemas.py` have no `classification` field on
+  `EntityHistoryResultResponse` — but the DTO-level fix closes the gap at
+  its source rather than relying solely on the mapping layer never
+  changing.)
+
+Both fixes were regression-tested (6 required categories: empty filtered
+page, `has_more` non-leak, `next_cursor` non-leak, pagination metadata
+authorized-only, denied history never serializing classification, denied
+history indistinguishable from the pre-existing no-value response) and are
+covered by `services/knowledge-graph/tests/api/test_classification_wiring.py`.
+
+**3. Boundary verification (Group D12), now an executable guarantee.**
+`services/knowledge-graph/tests/test_dependency_boundary.py` gained two new
+tests confirming `emg_knowledge_graph` (the Query Engine/domain layer)
+imports neither `emg_auth_client` nor `emg_policy_engine`, and declares none
+of `Principal`/`ServicePrincipal`/`PolicyEngine`/`PolicyRule`/
+`PolicyEnforcementPoint`/`AuthorizationRequest`/`Decision` as a type name —
+i.e. the D7 `results.py` field additions (classification *data* only)
+introduced no principal/authorization concept into the domain package.
+`libs/python/emg-policy-engine/tests/test_no_scripting_capability.py` (new)
+confirms `PolicyRule`'s field set is unchanged from Amendment 1 and that no
+`eval`/`exec`/`compile` call or ranking/dominance-comparator function exists
+anywhere in `emg_policy_engine`'s source. All pre-existing boundary tests
+continue to pass unmodified.
+
+**4. Standing rule adopted (D13's second requirement): Appendix ADR-026A's
+three governing principles, as recorded in
+`docs/architecture/EMG_ADR-026_KNOWLEDGE_GRAPH_CLASSIFICATION_ENFORCEMENT_MODEL.md`,
+apply to *any future* reuse of `required_resource_attributes` — not only
+classification — and are adopted here as a standing architectural rule,
+not a one-time exception for this ADR:**
+
+1. The Policy Engine remains a purely declarative, allow-list/all-of
+   matching schema. `required_resource_attributes` (or any future
+   resource-attribute-conditioned field) must never become an expression
+   language, a scripting hook, or gain an ordinal/ranking comparison
+   primitive — an ordinal concept (such as classification dominance) is
+   always expressed as enumerated policy data (one rule per satisfying
+   combination), never as new code in `PolicyRule`/`PolicyEngine`.
+2. `required_resource_attributes` stays symmetric with `required_attributes`
+   in shape and evaluation (all-of, matched against an allow-list); no
+   parallel or special-cased policy model is introduced for a new
+   resource-attribute use case, and the engine itself never special-cases
+   any specific attribute name (e.g. `"classification"`) — the same generic
+   matching logic must serve every future attribute unchanged.
+3. Any future resource-attribute-conditioned concept (need-to-know,
+   compartments, data residency, or similar) requires its own, independent
+   ADR before being wired into live enforcement — this reuse pattern being
+   easy to repeat is not itself authorization to repeat it without review.
+
+**5. Status: Actioned (2026-07-27).** ADR-026 Revision 2 is recorded as
+fully implemented (Phase 1 + Phase 2). Full `pytest`/`ruff`/`black`/
+`mypy --strict`/dependency-governance validation passed repo-wide for every
+batch, including this one. No code was committed as part of this
+documentation-only update.
 
 ---
 

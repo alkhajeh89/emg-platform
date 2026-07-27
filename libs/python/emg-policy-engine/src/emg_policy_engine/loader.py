@@ -64,7 +64,12 @@ def validate_policy_config(config: PolicyConfig) -> list[str]:
             errors.append(f"Duplicate rule_id '{rule.rule_id}'")
         seen_rule_ids.add(rule.rule_id)
 
-        if not rule.required_roles and not rule.required_attributes and not rule.required_scopes:
+        if (
+            not rule.required_roles
+            and not rule.required_attributes
+            and not rule.required_scopes
+            and not rule.required_resource_attributes
+        ):
             errors.append(
                 f"Rule '{rule.rule_id}' ({rule.resource_type}/{rule.action}) has no "
                 "conditions at all — it would match every principal unconditionally"
@@ -74,6 +79,17 @@ def validate_policy_config(config: PolicyConfig) -> list[str]:
             if not allowed_values:
                 errors.append(
                     f"Rule '{rule.rule_id}' required_attributes['{attribute_name}'] "
+                    "has an empty allow-list, which can never be satisfied"
+                )
+
+        # ADR-026 Revision 2, Amendment 1: required_resource_attributes is
+        # symmetric with required_attributes — the same empty-allow-list
+        # mistake is just as possible (and just as unsatisfiable) on the
+        # resource side.
+        for attribute_name, allowed_values in rule.required_resource_attributes.items():
+            if not allowed_values:
+                errors.append(
+                    f"Rule '{rule.rule_id}' required_resource_attributes['{attribute_name}'] "
                     "has an empty allow-list, which can never be satisfied"
                 )
 

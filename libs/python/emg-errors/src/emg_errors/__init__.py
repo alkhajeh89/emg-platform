@@ -11,6 +11,7 @@ from .catalog import (
     AuthorizationError,
     ConflictError,
     NotFoundError,
+    PermissionDeniedError,
     UpstreamServiceError,
     ValidationError,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "EMGError",
     "ValidationError",
     "AuthorizationError",
+    "PermissionDeniedError",
     "NotFoundError",
     "ConflictError",
     "UpstreamServiceError",

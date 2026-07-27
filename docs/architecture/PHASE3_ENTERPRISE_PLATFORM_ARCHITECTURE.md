@@ -33,7 +33,7 @@ document relies on:
 | Identity & IAM | Module 4 (Identity & Authentication) | — | **Live**: `services/identity`, `emg-auth-client` |
 | Governance & Compliance (authorization/policy half) | Module 5 (Authorization & Policy) | — | Library-first: `emg-policy-engine`; `services/authz` scaffolded |
 | Audit & Evidence Layer | Module 6 (Audit) | Audit APIs (M18) | **Live**: `services/audit`, `emg-audit-client`, `emg-audit-pipeline` |
-| Knowledge Graph Expansion | Module 7 (Knowledge Graph) | Graph APIs (M04), Knowledge APIs (M02) | Libraries complete (`emg-ontology`, `emg-knowledge-pipeline`, `emg-trust-scoring`, `emg-semantic-layer`, `emg-knowledge-lifecycle`, `emg-memory-graph`); `services/knowledge-graph` scaffolded |
+| Knowledge Graph Expansion | Module 7 (Knowledge Graph) | Graph APIs (M04), Knowledge APIs (M02) | Libraries complete (`emg-ontology`, `emg-knowledge-pipeline`, `emg-trust-scoring`, `emg-semantic-layer`, `emg-knowledge-lifecycle`, `emg-memory-graph`); `services/knowledge-graph` **Live** (read-only Query Engine REST API, Sprint 7.1-7.4); no mutation/ingestion endpoint yet |
 | Knowledge Ingestion Layer | Module 7 (ingestion sub-scope) | Knowledge APIs (M02) | Library complete (`emg-knowledge-pipeline`); no live ingestion service |
 | Enterprise API Gateway | (not modeled as its own Module) | API Gateway Design (§16), Administration APIs (M12) | Not started — no gateway process exists |
 | AI Orchestration Layer | Module 9 (AI Orchestration) | AI APIs (M07/M08), AI Agent Ecosystem (v2 Ch. 34) | `services/ai-orchestration` scaffolded, zero LOC |
@@ -312,9 +312,10 @@ Graph layer with full provenance.
 `emg-knowledge-pipeline` (1,407 LOC, 7 tests, Module 7 FEAT-05-2, "Complete"
 per `ARCHITECTURE_STATUS.md`). What's missing is the live ingestion
 **service** that accepts real documents (files, emails, API payloads) and
-invokes this library — `services/knowledge-graph` remains scaffolded with
-zero LOC. ADR-020 (companion document, this pass) makes the binding decision
-for how that service is built.
+invokes this library — `services/knowledge-graph` now implements a read-only
+Query Engine and REST API (Sprint 7.1-7.4) but still exposes no
+mutation/ingestion endpoint. ADR-020 (companion document, this pass) makes
+the binding decision for how that write path is built.
 
 **Components.** Document intake (multi-format, multi-language), OCR (for
 scanned Arabic/English documents), extraction/classification/chunking,
@@ -510,14 +511,17 @@ layer reads from and writes to.
 `emg-knowledge-pipeline`, `emg-trust-scoring`, `emg-semantic-layer`,
 `emg-knowledge-lifecycle`, `emg-memory-graph` (Module 7, FEAT-05-1 through
 05-5, all "Complete" per `ARCHITECTURE_STATUS.md`). `services/knowledge-graph`
-remains scaffolded with zero LOC — the live service binding these libraries
-to Neo4j (per Master Plan Technology Choice #4) and exposing Graph APIs
-(reference corpus §24, M04) has not been built. This is the single largest
-"library exists, service doesn't" gap in the repository (gap analysis §3).
+is now live (Sprint 7.1-7.4, FEAT-05-6): it exposes a read-only Query Engine
+REST API (Graph APIs, reference corpus §24, M04) over the PostgreSQL-
+authoritative `GraphStore`. The Neo4j serving projection (per Master Plan
+Technology Choice #4) remains unwired to this service and its projection
+worker remains unscheduled — this, plus the still-missing mutation/ingestion
+endpoint, are what remain of the original "library exists, service doesn't"
+gap (gap analysis §3); the gap is now narrower, not closed.
 
 **Components.** The six libraries above, `emg-persistence` (Phase 2,
 PostgreSQL-authoritative / Neo4j serving-projection per ADR-1 and ADR-5), and
-the not-yet-built `services/knowledge-graph` process that exposes them.
+`services/knowledge-graph`, the live read-only process that exposes them.
 
 **Responsibilities.** Per ADR-018 §1: ontology entities, relationships, and
 metadata must carry Arabic and English content, preserve `source_language`,
@@ -536,7 +540,7 @@ flowchart TB
     Lifecycle --> MemGraph[emg-memory-graph]
     MemGraph --> Persistence["emg-persistence (PostgreSQL authoritative)"]
     Persistence -.projection.-> Neo4j[(Neo4j serving projection)]
-    Service["services/knowledge-graph (not yet built)"] --> MemGraph
+    Service["services/knowledge-graph (live, read-only Query API)"] --> MemGraph
 ```
 
 **API example.** Unchanged existing contract shape (Graph APIs, reference

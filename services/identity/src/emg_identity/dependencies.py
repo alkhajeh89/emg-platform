@@ -50,6 +50,10 @@ SettingsDep = Annotated[Settings, Depends(settings_dependency)]
 
 
 def keycloak_client_dependency(settings: SettingsDep) -> KeycloakClient:
+    """Constructed with default JWKS-based verification for the human-grant
+    access-token claims (Group D Phase 1 Remediation, Blocking Fix 1) — no
+    signing_key_resolver override in production; only tests inject one to
+    avoid a live Keycloak/JWKS dependency."""
     return KeycloakClient(settings)
 
 

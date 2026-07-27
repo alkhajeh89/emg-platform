@@ -31,11 +31,65 @@ from typing import Literal
 
 import jwt
 from emg_auth_client import Principal
+from emg_common_types import normalize_classification_clearance
 from emg_errors import AuthorizationError
 
 from .config import Settings
 
 TokenType = Literal["access", "refresh"]
+
+
+def _normalize_human_attributes(attributes: dict[str, str]) -> dict[str, str]:
+    """Ensure a human Principal's `classification_clearance` attribute is
+    always present and resolvable to a real value — never absent, blank, or
+    a non-string leftover.
+
+    **Group D Phase 1 Remediation (Legacy Session Normalization):** the
+    original human-provisioning fix (routers/auth.py's login flow) only
+    guaranteed this for a *freshly minted* session, built from a
+    just-verified Keycloak access token. It did not cover an EMG session
+    token minted *before* that fix existed: such a token's own
+    `attributes` claim was persisted as `{}` (or without
+    `classification_clearance` at all) at issuance time, and
+    `SessionManager.verify()`/`SessionAuthClient.authenticate()` previously
+    passed that stored value straight through unchanged, forever — a
+    caller who logged in before this remediation and simply keeps refreshing
+    their session would never receive a `classification_clearance` value,
+    silently defeating the fail-closed guarantee (`PolicyRule` matching has
+    no "attribute absent" special case, so an absent/blank/malformed value
+    satisfies neither an allow rule requiring a specific clearance nor a
+    deny rule keyed on the literal `"UNCLASSIFIED"` string).
+
+    This is the single point both the login flow (`routers/auth.py`) and
+    every session-reconstruction path (`SessionManager.verify()`, and
+    therefore also `SessionManager.refresh()` and
+    `SessionAuthClient.authenticate()`, both of which call `verify()`) share,
+    so a legacy session is normalized -- and, once refreshed, re-minted with
+    the normalized value going forward -- identically to how a brand-new
+    login is. Applying this once, here, rather than separately at each of
+    the several `Principal(...)` construction call sites, is what "avoid
+    duplicate logic" (Legacy Session Normalization scope) means in practice.
+
+    A value counts as valid only if it is a `str` with at least one
+    non-whitespace character AND matches a recognized `Classification` enum
+    member; missing, empty, whitespace-only, non-string, or unrecognized
+    values (e.g. `"banana"`, `"SUPER_SECRET"`) are all replaced with the
+    literal `"UNCLASSIFIED"` (ADR-026 final blocker fix, closing the gap
+    where an unrecognized clearance string previously survived normalization
+    unchanged and satisfied none of `PolicyRule`'s per-classification deny
+    rules). This validation is delegated to
+    `emg_common_types.normalize_classification_clearance` — the single
+    shared helper every `classification_clearance` normalization boundary in
+    the platform calls, rather than each boundary re-implementing the check.
+    Every other attribute (e.g. `department`) passes through completely
+    unchanged -- this function has no opinion on, and does not touch, any
+    key besides `classification_clearance`.
+    """
+    raw_clearance = attributes.get("classification_clearance")
+    clearance = normalize_classification_clearance(raw_clearance)
+    normalized = dict(attributes)
+    normalized["classification_clearance"] = clearance
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -113,7 +167,7 @@ class SessionManager:
         return SessionClaims(
             subject=payload["sub"],
             roles=tuple(payload.get("roles", ())),
-            attributes=dict(payload.get("attributes", {})),
+            attributes=_normalize_human_attributes(dict(payload.get("attributes", {}))),
             token_type=payload["token_type"],
             jti=payload["jti"],
             issued_at=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),

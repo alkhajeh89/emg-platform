@@ -67,6 +67,39 @@ def get_own_package_name(pyproject_data: dict) -> str | None:
     return pyproject_data.get("project", {}).get("name")
 
 
+def get_own_modules(pyproject_data: dict) -> set[str]:
+    """Return every top-level importable module this component's own
+    pyproject.toml actually builds.
+
+    Almost every component in this repository ships exactly one package,
+    matching `[project].name` (dash -> underscore) -- that remains the
+    fallback below. `services/knowledge-graph` is a documented exception
+    (OBS-A-002, EMG_ARCHITECTURE_DECISION_REGISTER.md): it ships two sibling
+    packages (`emg_knowledge_graph`, `emg_knowledge_graph_api`) from one
+    `pyproject.toml` whose `[project].name`
+    ("emg-knowledge-graph-service") matches neither -- so an
+    `emg_knowledge_graph_api` -> `emg_knowledge_graph` import is an
+    intra-distribution sibling import, not a cross-package dependency, and
+    must not be flagged as an undeclared external dependency. Reading the
+    actual `[tool.hatch.build.targets.wheel].packages` list (the
+    ground-truth set of packages this pyproject.toml builds) when present
+    handles this -- and any future multi-package component -- without
+    another name-based special case.
+    """
+    wheel_packages = (
+        pyproject_data.get("tool", {})
+        .get("hatch", {})
+        .get("build", {})
+        .get("targets", {})
+        .get("wheel", {})
+        .get("packages", [])
+    )
+    if wheel_packages:
+        return {Path(pkg).name for pkg in wheel_packages}
+    own_name = get_own_package_name(pyproject_data)
+    return {own_name.replace("-", "_")} if own_name else set()
+
+
 def module_to_package(module_name: str) -> str | None:
     """Map an importable top-level module name to its dash-cased emg-*
     package name, e.g. emg_common_types -> emg-common-types. Returns None
@@ -144,7 +177,8 @@ class _ImportVisitor(ast.NodeVisitor):
         )
 
 
-def scan_imports(src_root: Path, own_module: str | None) -> list[ImportFinding]:
+def scan_imports(src_root: Path, own_modules: set[str]) -> list[ImportFinding]:
+    own_packages = {module_to_package(m) for m in own_modules} - {None}
     findings: list[ImportFinding] = []
     for py_file in sorted(src_root.rglob("*.py")):
         try:
@@ -155,8 +189,9 @@ def scan_imports(src_root: Path, own_module: str | None) -> list[ImportFinding]:
         visitor = _ImportVisitor(py_file)
         visitor.visit(tree)
         for finding in visitor.findings:
-            if own_module and finding.package == module_to_package(own_module):
-                continue  # self-import
+            if finding.package in own_packages:
+                continue  # self-import, or a sibling package in the same
+                # distribution (see get_own_modules)
             findings.append(finding)
     return findings
 
@@ -171,15 +206,14 @@ def check_component(name: str, component: dict) -> bool:
 
     pyproject_data = load_pyproject(pyproject_path)
     declared = get_declared_emg_dependencies(pyproject_data)
-    own_name = get_own_package_name(pyproject_data)
-    own_module = own_name.replace("-", "_") if own_name else None
+    own_modules = get_own_modules(pyproject_data)
 
     src_root = path / "src"
     if not src_root.exists():
         print(f"⚠️ {name}: no src/ directory, skipping")
         return True
 
-    findings = scan_imports(src_root, own_module)
+    findings = scan_imports(src_root, own_modules)
 
     runtime_missing = {f.package for f in findings if not f.type_only} - declared
     type_only_missing = {f.package for f in findings if f.type_only} - declared

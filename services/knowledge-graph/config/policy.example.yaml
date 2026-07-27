@@ -1,0 +1,355 @@
+# Example ABAC policy configuration for the Knowledge Graph Query API
+# (ADR-025 Group C4; classification-enforcement rules added by ADR-026
+# Revision 2, Amendment 1, Group D6 — see the dedicated comment block below
+# the five original "*-read" allow rules).
+#
+# Illustrative and local-development-only, same status as
+# services/identity/config/policy.example.yaml: a real deployment authors
+# its own policy file and points
+# EMG_KNOWLEDGE_GRAPH_API_POLICY_CONFIG_PATH at it. There is no "default
+# effect" field here on purpose — PolicyEngine is unconditionally
+# default-deny, so a resource/action pair with no rule below is always
+# denied, and an empty or missing file denies everything (see
+# emg_policy_engine.loader). The five original "*-read" allow rules are
+# exercised by tests/api/test_authorization.py (ADR-025 Group C9); the
+# classification deny rules below are exercised by
+# libs/python/emg-policy-engine/tests/test_engine.py's
+# resource-attribute-symmetry tests (Group D Phase 1) and by the
+# HTTP-layer classification tests Group D Phase 2 adds. Per-object
+# classification enforcement is not yet wired into the seven HTTP routes as
+# of Phase 1 (Group D8/D9, Phase 2) — this file's classification rules are,
+# for now, validated as policy *data* (loadable, non-malformed, internally
+# consistent), not yet exercised end-to-end through the REST API.
+#
+# Role-catalog review (ADR-025 Group C8): the roles referenced below
+# (`investigator`, `decision-maker`, `knowledge-steward`, `service-account`)
+# already exist in `emg_policy_engine.roles.ROLE_CATALOG` and in the
+# Keycloak realm seed (tools/seed-data/keycloak/emg-realm.json). No new
+# role was added — repository evidence did not show an actual gap the
+# existing catalog fails to cover (see the Group C implementation report
+# for the full review). `platform-user` (the baseline, no-job-function-tie
+# human role) is deliberately NOT granted here: of the four human roles,
+# only investigator ("Investigation Agent scope"), decision-maker
+# ("Human Decision Workspace"), and knowledge-steward ("Knowledge Authoring
+# UI") have a job function that plausibly requires reading the knowledge
+# graph, so granting the broader, unrelated `platform-user` role would not
+# be the minimum permission set this task requires.
+#
+# Known, evidenced gap this file does NOT invent a role to paper over: no
+# service client is registered in services/identity's SERVICE_REGISTRY (or
+# the Keycloak realm seed) specifically as a consumer of the Knowledge
+# Graph Query API — only identity, authorization, and audit's own service
+# principals are registered today. Every currently-registered service
+# principal already carries the baseline `service-account` realm role
+# (tools/seed-data/keycloak/emg-realm.json), so granting `service-account`
+# below is the least-privilege choice available in the *existing* catalog;
+# it is not a statement that any specific future consumer service has been
+# reviewed or approved. Registering an actual Knowledge-Graph-consuming
+# service client is a separate, not-yet-done task outside this ADR's scope
+# (see the Group C implementation report's "architectural concerns").
+#
+# One rule per resource_type (ADR-025 §8.5): `required_roles` is any-of and
+# is evaluated against a human Principal's roles OR a service principal's
+# roles (PolicyEngine dispatches by identity kind); leaving
+# `required_scopes`/`required_attributes` empty means no additional
+# scope/attribute condition is enforced beyond the role check itself.
+
+rules:
+  - rule_id: kg-entity-read
+    resource_type: knowledge-graph.entity
+    action: read
+    effect: allow
+    description: >-
+      Investigators, decision-makers, knowledge stewards, and registered
+      EMG service principals may read Knowledge Graph entities within
+      their own tenant.
+    required_roles:
+      - investigator
+      - decision-maker
+      - knowledge-steward
+      - service-account
+
+  - rule_id: kg-edge-read
+    resource_type: knowledge-graph.edge
+    action: read
+    effect: allow
+    description: >-
+      Investigators, decision-makers, knowledge stewards, and registered
+      EMG service principals may read Knowledge Graph edges within their
+      own tenant.
+    required_roles:
+      - investigator
+      - decision-maker
+      - knowledge-steward
+      - service-account
+
+  - rule_id: kg-neighbors-read
+    resource_type: knowledge-graph.neighbors
+    action: read
+    effect: allow
+    description: >-
+      Investigators, decision-makers, knowledge stewards, and registered
+      EMG service principals may traverse an entity's neighbors within
+      their own tenant.
+    required_roles:
+      - investigator
+      - decision-maker
+      - knowledge-steward
+      - service-account
+
+  - rule_id: kg-path-read
+    resource_type: knowledge-graph.path
+    action: read
+    effect: allow
+    description: >-
+      Investigators, decision-makers, knowledge stewards, and registered
+      EMG service principals may search for shortest paths between
+      entities within their own tenant.
+    required_roles:
+      - investigator
+      - decision-maker
+      - knowledge-steward
+      - service-account
+
+  - rule_id: kg-history-read
+    resource_type: knowledge-graph.history
+    action: read
+    effect: allow
+    description: >-
+      Investigators, decision-makers, knowledge stewards, and registered
+      EMG service principals may read an entity attribute's temporal
+      history within their own tenant.
+    required_roles:
+      - investigator
+      - decision-maker
+      - knowledge-steward
+      - service-account
+
+  # --------------------------------------------------------------------
+  # ADR-026 Revision 2 (Amendment 1, Group D6): classification enforcement,
+  # expressed as deny-overrides rules using the new `required_resource_attributes`
+  # field — NOT as a second, separate ruleset or a replacement of the five
+  # plain "*-read" allow rules above.
+  #
+  # Why deny rules, not additional allow rules: the five plain allow rules
+  # above intentionally carry no `required_resource_attributes` condition —
+  # they are ADR-025's operation-level authorization rules ("may this role
+  # call this route at all"), evaluated once per HTTP request with an empty
+  # `resource_attributes` (Knowledge Graph Integration Closure Group C,
+  # unchanged). ADR-026 Revision 2 §8.2 evaluates classification through the
+  # *same* (resource_type, action) pair a second time, per returned object,
+  # with `resource_attributes={"classification": <object classification>}`
+  # populated. Because PolicyEngine's matching is any-satisfied-allow-wins
+  # unless a deny also matches (deny-overrides), and the five rules above
+  # have no resource-attribute condition at all (vacuously satisfied
+  # regardless of what `resource_attributes` contains), they would otherwise
+  # grant every classification level unconditionally — replacing them with
+  # classification-gated *allow* rules instead would break the
+  # already-implemented, unrelated ADR-025 operation-level check, whose
+  # calls always supply an empty `resource_attributes` and would then no
+  # longer match any allow rule.
+  #
+  # The fix used here leaves the five allow rules above completely
+  # untouched and adds one **deny** rule per clearance level for
+  # "insufficient clearance for this object's classification" — the
+  # deny-overrides semantic then correctly overrides the (otherwise
+  # unconditional) allow exactly when a specific returned object's
+  # classification exceeds the caller's own clearance, and never fires at
+  # all when `resource_attributes` is empty (ADR-025's own per-request
+  # check), since `{}.get("classification")` can never be inside any of
+  # these rules' non-empty `required_resource_attributes.classification`
+  # allow-lists.
+  #
+  # Only three deny rules are needed per resource_type (not four): a caller
+  # already cleared to SECRET has nothing above it to be denied for.
+  # `required_attributes.classification_clearance` here is evaluated
+  # identically for a human Principal or a machine ServicePrincipalLike
+  # (ADR-026 Revision 2, Amendment 2) — one rule set covers both caller
+  # kinds, no separate human/service variants are needed.
+  #
+  # Consequence (disclosed in ADR-026 Revision 2 §13): a caller with no
+  # resolvable `classification_clearance` attribute defaults to
+  # UNCLASSIFIED (fail-closed), so — since MemoryNode/MemoryEdge default to
+  # INTERNAL classification — the `kg-*-deny-unclassified-clearance` rules
+  # below will deny access to most existing data for any caller whose token
+  # does not yet carry the new claim, until deployments are updated.
+
+  - rule_id: kg-entity-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: read
+    effect: deny
+    description: >-
+      A caller with only UNCLASSIFIED clearance may not see an entity
+      classified INTERNAL or above.
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: read
+    effect: deny
+    description: >-
+      A caller with only INTERNAL clearance may not see an entity
+      classified CONFIDENTIAL or above.
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: read
+    effect: deny
+    description: >-
+      A caller with only CONFIDENTIAL clearance may not see an entity
+      classified SECRET.
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-edge-deny-unclassified-clearance
+    resource_type: knowledge-graph.edge
+    action: read
+    effect: deny
+    description: >-
+      A caller with only UNCLASSIFIED clearance may not see an edge
+      classified INTERNAL or above.
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-edge-deny-internal-clearance
+    resource_type: knowledge-graph.edge
+    action: read
+    effect: deny
+    description: >-
+      A caller with only INTERNAL clearance may not see an edge classified
+      CONFIDENTIAL or above.
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-edge-deny-confidential-clearance
+    resource_type: knowledge-graph.edge
+    action: read
+    effect: deny
+    description: >-
+      A caller with only CONFIDENTIAL clearance may not see an edge
+      classified SECRET.
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-neighbors-deny-unclassified-clearance
+    resource_type: knowledge-graph.neighbors
+    action: read
+    effect: deny
+    description: >-
+      A caller with only UNCLASSIFIED clearance may not see a neighbor (or
+      the edge reaching it) classified INTERNAL or above.
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-neighbors-deny-internal-clearance
+    resource_type: knowledge-graph.neighbors
+    action: read
+    effect: deny
+    description: >-
+      A caller with only INTERNAL clearance may not see a neighbor (or the
+      edge reaching it) classified CONFIDENTIAL or above.
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-neighbors-deny-confidential-clearance
+    resource_type: knowledge-graph.neighbors
+    action: read
+    effect: deny
+    description: >-
+      A caller with only CONFIDENTIAL clearance may not see a neighbor (or
+      the edge reaching it) classified SECRET.
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-path-deny-unclassified-clearance
+    resource_type: knowledge-graph.path
+    action: read
+    effect: deny
+    description: >-
+      A caller with only UNCLASSIFIED clearance may not see a path
+      containing a node or edge classified INTERNAL or above.
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-path-deny-internal-clearance
+    resource_type: knowledge-graph.path
+    action: read
+    effect: deny
+    description: >-
+      A caller with only INTERNAL clearance may not see a path containing a
+      node or edge classified CONFIDENTIAL or above.
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-path-deny-confidential-clearance
+    resource_type: knowledge-graph.path
+    action: read
+    effect: deny
+    description: >-
+      A caller with only CONFIDENTIAL clearance may not see a path
+      containing a node or edge classified SECRET.
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-history-deny-unclassified-clearance
+    resource_type: knowledge-graph.history
+    action: read
+    effect: deny
+    description: >-
+      A caller with only UNCLASSIFIED clearance may not see historical
+      values of an entity classified INTERNAL or above.
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-history-deny-internal-clearance
+    resource_type: knowledge-graph.history
+    action: read
+    effect: deny
+    description: >-
+      A caller with only INTERNAL clearance may not see historical values
+      of an entity classified CONFIDENTIAL or above.
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-history-deny-confidential-clearance
+    resource_type: knowledge-graph.history
+    action: read
+    effect: deny
+    description: >-
+      A caller with only CONFIDENTIAL clearance may not see historical
+      values of an entity classified SECRET.
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]

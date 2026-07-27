@@ -13,6 +13,7 @@ ontology, ingestion, API, AI, and frontend layers.
 """
 
 from .classification import Classification
+from .classification_normalization import normalize_classification_clearance
 from .identifiers import CorrelationId, new_correlation_id
 from .language import LanguageCode, Locale, TextDirection
 
@@ -25,5 +26,6 @@ __all__ = [
     "Locale",
     "TextDirection",
     "new_correlation_id",
+    "normalize_classification_clearance",
     "__version__",
 ]

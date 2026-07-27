@@ -34,6 +34,7 @@ def _issue_service_token(
     audience=None,
     issuer=None,
     exp_delta=300,
+    classification_clearance=None,
 ):
     now = int(time.time())
     payload = {
@@ -44,6 +45,8 @@ def _issue_service_token(
         "azp": client_id,
         "scope": scope,
     }
+    if classification_clearance is not None:
+        payload["classification_clearance"] = classification_clearance
     return jwt.encode(payload, private_key, algorithm="RS256")
 
 
@@ -133,3 +136,70 @@ def test_validate_accepts_scope_satisfied_by_registered_role(settings, rsa_keypa
     principal = validator.validate(token, required_scope="svc-authorization")
 
     assert principal.client_id == "emg-svc-authorization"
+
+
+# --- ADR-026 Revision 2 (Amendment 2, Group D5): classification_clearance --
+
+
+def test_validate_extracts_classification_clearance_claim_into_attributes(
+    settings, rsa_keypair, validator
+):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance="CONFIDENTIAL")
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": "CONFIDENTIAL"}
+
+
+def test_validate_defaults_to_unclassified_when_claim_is_absent(settings, rsa_keypair, validator):
+    """ADR-026 Revision 2 §8.4: an unresolved clearance is not an
+    authentication failure — the token is still accepted, resolved to the
+    platform's lowest clearance, fail-closed."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key)  # no classification_clearance claim
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
+
+
+def test_validate_defaults_to_unclassified_when_claim_is_not_a_string(
+    settings, rsa_keypair, validator
+):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=12345)
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
+
+
+@pytest.mark.parametrize("bogus_value", ["banana", "SUPER_SECRET", "foobar"])
+def test_validate_defaults_to_unclassified_when_claim_is_unrecognized(
+    settings, rsa_keypair, validator, bogus_value
+):
+    """ADR-026 final blocker: an unrecognized `classification_clearance`
+    claim value (not a `Classification` enum member) must resolve to
+    `"UNCLASSIFIED"` — it must never survive normalization unchanged."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=bogus_value)
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": "UNCLASSIFIED"}
+
+
+@pytest.mark.parametrize("valid_value", ["UNCLASSIFIED", "INTERNAL", "CONFIDENTIAL", "SECRET"])
+def test_validate_preserves_every_valid_classification_enum_member(
+    settings, rsa_keypair, validator, valid_value
+):
+    """Every recognized `Classification` enum member must survive
+    service-token normalization completely unchanged, not just
+    `"CONFIDENTIAL"` (covered above)."""
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, classification_clearance=valid_value)
+
+    principal = validator.validate(token)
+
+    assert principal.attributes == {"classification_clearance": valid_value}

@@ -55,9 +55,9 @@ status.
 | --- | --- | --- |
 | Modules 1–3 (Foundation) | Complete | Sprint 1 — monorepo, shared library scaffolding, local dev environment, CI skeleton |
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
-| Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4 | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below) |
+| Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4; **first live enforcement adopter delivered (ADR-025, 2026-07-27)** | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below). ADR-025 (Knowledge Graph Integration Closure, Group C) makes `services/knowledge-graph` the first service to actually enforce (not just introspect) an authorization decision using this module's PEP/`emg-policy-engine` stack — see Module 7 row and the ADR-025 entry in the ADRs table below. |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. Clearance-based classification read *authorization* remains a documented follow-up (filter-only). |
-| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 + FEAT-05-2 + FEAT-05-3 + FEAT-05-4 complete (merged); FEAT-05-5 (Knowledge Lifecycle & Versioning) in progress (Sprint 13) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`; FEAT-05-2 (Knowledge Ingestion Pipeline) merged (Sprint 10, PR #10, `bf8d460`) as `libs/python/emg-knowledge-pipeline`; FEAT-05-3 (Knowledge Validation & Trust Scoring) merged (Sprint 11, PR #12, `d27ab59`) as `libs/python/emg-trust-scoring`; FEAT-05-4 (Semantic Layer) merged (Sprint 12, PR #13, `734aa2a`) as `libs/python/emg-semantic-layer`. Sprint 13 adds FEAT-05-5 **library-first** as `libs/python/emg-knowledge-lifecycle`: a **storage-independent, deterministic** managed lifecycle state machine (`proposed → active → deprecated → superseded → archived → retired`, a fixed closed transition table), **immutable version chains** with bounded parent-child lineage, and **pure retention / archive / restore evaluation** against an explicit `as_of`. This is the managed state machine the ontology deferred (`LifecycleStatus` notes "the managed proposed→active→retired state machine is FEAT-05-5"). It **defines lifecycle semantics only — executes nothing, stores nothing**: no persistence, no scheduler, no execution engine, no networking, **no Neo4j**, no retrieval/embeddings/AI/REST/UI. Models are immutable and self-validating (cycles, orphans, duplicate-active, mixed-entity, invalid transitions/timestamps all rejected); traversal is bounded; identifiers are validated against control/bidi characters (no injection surface). Depends only on `emg-common-types`, `emg-errors`, `pydantic` — **not** on `emg-ontology`, `emg-knowledge-pipeline`, `emg-trust-scoring`, or `emg-semantic-layer` (clean direction; integration via future extension points only). `services/knowledge-graph` **remains scaffolded**; the **Neo4j binding** remains **deferred**. With FEAT-05-5, EPIC-05's knowledge-layer feature set (FEAT-05-1 … 05-5) is functionally complete as libraries. |
+| Module 7 (Knowledge Graph) | In Progress — FEAT-05-1 + FEAT-05-2 + FEAT-05-3 + FEAT-05-4 complete (merged); FEAT-05-5 (Knowledge Lifecycle & Versioning) in progress (Sprint 13) | FEAT-05-1 (Core Ontology) merged (Sprint 9, PR #9, `2fcbaa9`) as `libs/python/emg-ontology`; FEAT-05-2 (Knowledge Ingestion Pipeline) merged (Sprint 10, PR #10, `bf8d460`) as `libs/python/emg-knowledge-pipeline`; FEAT-05-3 (Knowledge Validation & Trust Scoring) merged (Sprint 11, PR #12, `d27ab59`) as `libs/python/emg-trust-scoring`; FEAT-05-4 (Semantic Layer) merged (Sprint 12, PR #13, `734aa2a`) as `libs/python/emg-semantic-layer`. Sprint 13 adds FEAT-05-5 **library-first** as `libs/python/emg-knowledge-lifecycle`: a **storage-independent, deterministic** managed lifecycle state machine (`proposed → active → deprecated → superseded → archived → retired`, a fixed closed transition table), **immutable version chains** with bounded parent-child lineage, and **pure retention / archive / restore evaluation** against an explicit `as_of`. This is the managed state machine the ontology deferred (`LifecycleStatus` notes "the managed proposed→active→retired state machine is FEAT-05-5"). It **defines lifecycle semantics only — executes nothing, stores nothing**: no persistence, no scheduler, no execution engine, no networking, **no Neo4j**, no retrieval/embeddings/AI/REST/UI. Models are immutable and self-validating (cycles, orphans, duplicate-active, mixed-entity, invalid transitions/timestamps all rejected); traversal is bounded; identifiers are validated against control/bidi characters (no injection surface). Depends only on `emg-common-types`, `emg-errors`, `pydantic` — **not** on `emg-ontology`, `emg-knowledge-pipeline`, `emg-trust-scoring`, or `emg-semantic-layer` (clean direction; integration via future extension points only). `services/knowledge-graph` **is live** (Sprint 7.1-7.4, FEAT-05-6): a query-engine application service (ADR-022, ADR-023) and a read-only Query REST API (ADR-024) over the PostgreSQL-authoritative `GraphStore` (`service.yaml`: `status: active`); no mutation/ingestion endpoint exists yet, and the **Neo4j binding** remains **deferred** (the serving-projection worker is unscheduled). With FEAT-05-5, EPIC-05's knowledge-layer feature set (FEAT-05-1 … 05-5) is functionally complete as libraries. **Knowledge Graph Integration Closure, Group C (2026-07-27, ADR-025):** the Query API's seven routes now enforce operation-level authorization (RBAC/ABAC via `emg-auth-client`/`emg-policy-engine`, fail-closed, default-deny) in its HTTP layer only — `emg_knowledge_graph` (Query Engine/domain layer), `GraphStore`, persistence, and the Neo4j projection are unchanged. **Classification-level enforcement (ADR-026 Revision 2) is now also fully implemented (2026-07-27, D1–D13)**: the same seven routes additionally enforce per-object classification via a second call into the same Policy Enforcement Point/Policy Engine, fail-closed, no ranking table or second authorization mechanism — see the ADR-026 narrative above. Mutation-API authorization and audit reconciliation remain out of scope (ADR-027/028). |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -96,10 +96,16 @@ Only the following Architecture Decision Records are currently present in
 | ADR-019 | AI Orchestration Layer | Proposed |
 | ADR-020 | Knowledge Ingestion Layer | Proposed |
 | ADR-021 | Enterprise API Strategy | Proposed |
+| ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted — implemented (Group C, 2026-07-27)** |
+| ADR-026 (Revision 2) | Knowledge Graph Classification Enforcement Model | **Accepted — fully implemented (Phase 1 + Phase 2, D1–D13, 2026-07-27)** |
 
 ADR-001 through ADR-013 are **not present in this repository** and must not
 be described as approved, frozen, or existing until they are actually added
-under `docs/architecture/`.
+under `docs/architecture/`. ADR-022/023/024 (Knowledge Graph Revision Build
+Workflow / Revision History & Navigation / Query Engine) are referenced
+elsewhere in this document's Module 7 notes but are not repeated in this
+table; this table records only ADRs whose accept/propose status this
+document is authoritative for.
 
 ADR-019/020/021 accompany `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` and
 `IMPLEMENTATION_GAP_ANALYSIS.md` (2026-07-25). They are architecture-only —
@@ -109,6 +115,50 @@ update the stale "Current Branch" field or the Module/Sprint narrative below,
 which `IMPLEMENTATION_GAP_ANALYSIS.md` §7 (Gap 4) flags as out of date
 relative to the actual current branch,
 `phase2/sprint5-outbox-event-persistence`.
+
+**ADR-025 (2026-07-27) — implemented, not merely accepted.** Unlike
+ADR-019/020/021 above, ADR-025 (Knowledge Graph Tenant & Authorization Model)
+was both approved and fully implemented the same day: the Knowledge Graph
+Query API (`emg_knowledge_graph_api`) now enforces operation-level
+authorization on all seven of its routes via the platform's existing
+`emg-auth-client`/`emg-policy-engine` stack, fail-closed, default-deny. This
+is the platform's **first live enforcement adopter** of that stack —
+`services/identity`'s own use of the same libraries (`GET /authz/check`)
+remains an introspection endpoint, not an enforcement gate. See
+`docs/architecture/EMG_ADR-025_KNOWLEDGE_GRAPH_TENANT_AUTHORIZATION_MODEL.md`
+for the full decision record, including two small implementation-time
+findings (§18 of that document) and one still-open follow-up (no
+registry-based allow-list of recognized Knowledge Graph API client
+`client_id`s exists yet, unlike `audit`/`identity`).
+
+**ADR-026 Revision 2 (2026-07-27) — Knowledge Graph Classification
+Enforcement, fully implemented (Phase 1 + Phase 2).** Layered on top of
+ADR-025's operation-level authorization: the Query API's seven routes now
+additionally enforce per-object classification (`UNCLASSIFIED` /
+`INTERNAL` / `CONFIDENTIAL` / `SECRET`) via a second call, per returned
+object, into the *same* `PolicyEnforcementPoint`/`PolicyEngine` ADR-025
+already wired in — never a second authorization mechanism, a ranking
+table, or a comparator outside the Policy Engine (Amendment 1 extends
+`PolicyRule` with a purely declarative `required_resource_attributes`
+field, matched exactly like the existing `required_attributes`). Phase 1
+(D1–D6: Policy Engine/auth-client extension, claim provisioning for both
+human and machine callers, enumerated policy data) and Phase 2 (D7–D13:
+DTO projection, the `emg_knowledge_graph_api.classification` HTTP-layer
+adapter, route wiring, deployment docs, the full test suite, boundary
+verification, this governance update) are both complete, each delivered
+and independently reviewed as a separate batch. Two audited findings
+during Phase 2 (a pagination-metadata leak and a denied-history
+classification leak) were remediated in the same engagement — see
+`docs/architecture/EMG_ADR-026_KNOWLEDGE_GRAPH_CLASSIFICATION_ENFORCEMENT_MODEL.md`
+Part F (Phase 1 remediation) and OBS-A-004 in
+`EMG_ARCHITECTURE_DECISION_REGISTER.md` (Phase 2 completion record,
+including the remediations and the standing rule Appendix ADR-026A now
+establishes for any future `required_resource_attributes` reuse).
+`emg_knowledge_graph` (the Query Engine/domain layer), `PolicyEngine`, and
+`PolicyEnforcementPoint` were not modified for any of this — verified by
+an extended dependency-boundary test suite (Group D12) confirming no
+principal/authorization concept exists in `emg_knowledge_graph` and no
+scripting/ranking capability exists in `emg_policy_engine`.
 
 ---
 
@@ -345,3 +395,28 @@ database, no new role, no new ADR, no frozen-architecture change, and no
 Module 6 record or hash touched. Per the Definition of Done, formal
 organizational Security Reviewer sign-off remains required before merge and is
 not claimed here.
+
+**Knowledge Graph Integration Closure, Groups A–C (2026-07-27).** Outside the
+Sprint 1–14 / EPIC numbering above (a separate, targeted closure effort against
+the already-live `services/knowledge-graph`, not a new Backlog sprint): Group A
+(dependency/repository hygiene) and Group B (deployment readiness — Dockerfile,
+migration entrypoint, seed data) were completed and validated first. **ADR-025
+(Knowledge Graph Tenant & Authorization Model)** was then designed
+(architecture-board-style review, repository-driven, no code changes) and
+approved, and **Group C (Knowledge Graph Authorization Enforcement)**
+implemented it exactly: the Query API's seven routes now call the platform's
+existing Policy Enforcement Point (`emg-auth-client`) and ABAC evaluator
+(`emg-policy-engine`) in the HTTP layer only, fail-closed and default-deny, with
+a new platform-wide `PermissionDeniedError` (`emg-errors`) mapped to HTTP 403.
+`emg_knowledge_graph` (the Query Engine / domain layer), `GraphStore`,
+persistence, and the Neo4j projection were not modified — the existing
+dependency-boundary test confirming this was re-verified as still passing.
+Full pytest/ruff/black/mypy --strict/dependency-governance validation passed
+repo-wide. Two small implementation-time findings and one still-open follow-up
+(no registry-based allow-list of recognized Knowledge Graph API service
+clients) are recorded in ADR-025 §18 and in
+`services/knowledge-graph/README.md`'s "Authorization" section. Classification
+enforcement (ADR-026 Revision 2) was completed separately and later the same
+day (D1–D13; see the dedicated ADR-026 narrative above and OBS-A-004 in
+`EMG_ARCHITECTURE_DECISION_REGISTER.md`). The Mutation API (ADR-027) and audit
+reconciliation (ADR-028) remain explicitly out of scope and not begun.
