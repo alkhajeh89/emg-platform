@@ -278,6 +278,7 @@ def test_from_ontology_order_independent() -> None:
     g2 = b.from_ontology(entities=(e2, e1), relationships=(rel,), as_of=ASOF).graph
     assert g1.content_hash() == g2.content_hash()
     assert g1.node("ent-1").ontology_entity_id == "ent-1"  # type: ignore[union-attr]
+    assert g1.node("ent-1").owner == "u"  # type: ignore[union-attr]
 
 
 def test_from_ontology_extends_base() -> None:

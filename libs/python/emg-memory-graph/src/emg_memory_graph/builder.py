@@ -26,17 +26,24 @@ from __future__ import annotations
 from datetime import datetime
 
 from emg_common_types import Classification
-from emg_ontology import Entity, Relationship
+from emg_knowledge_lifecycle import (
+    LIVE_STATES,
+    InvalidTransitionError,
+    VersionState,
+    is_valid_transition,
+)
+from emg_ontology import Entity, Relationship, classification_rank
 from pydantic import BaseModel, ConfigDict, Field
 
 from .confidence import ConfidenceEngine
 from .edges import MemoryEdge
 from .enums import EdgeDirection, EvidenceSource
-from .errors import MergeConflictError
+from .errors import EdgeNotFoundError, MergeConflictError, NodeNotFoundError
 from .evidence import EvidenceRef
 from .graph import MemoryGraph
 from .ids import edge_id_for
 from .labels import SafeLabel, SafeText
+from .limits import MAX_SUPERSEDES
 from .metadata import Metadata, MetadataItem
 from .nodes import MemoryNode
 from .temporal import TemporalHistory, TemporalValidity
@@ -146,6 +153,45 @@ class MemoryGraphBuilder:
             base_nodes=base.nodes, base_edges=base.edges, nodes=nodes, edges=edges, as_of=as_of
         )
 
+    def replace(
+        self,
+        base: MemoryGraph,
+        *,
+        node: MemoryNode | None = None,
+        edge: MemoryEdge | None = None,
+        close_edge_id: str | None = None,
+        merge_survivor_id: str | None = None,
+        merge_source_ids: tuple[str, ...] = (),
+        as_of: datetime,
+    ) -> BuildResult:
+        """Construct one immutable replacement snapshot.
+
+        Exactly one mode is accepted: replace a node, replace an edge, close an
+        edge's validity, or merge one or more live source nodes into a live
+        survivor. This path is deliberately separate from ingestion merging.
+        """
+        merge_requested = merge_survivor_id is not None or bool(merge_source_ids)
+        modes = sum(
+            (
+                node is not None,
+                edge is not None,
+                close_edge_id is not None,
+                merge_requested,
+            )
+        )
+        if modes != 1:
+            raise MergeConflictError("replace requires exactly one construction mode")
+
+        if node is not None:
+            return self._replace_node(base, node)
+        if edge is not None:
+            return self._replace_edge(base, edge)
+        if close_edge_id is not None:
+            return self._close_relationship(base, close_edge_id, as_of)
+        if merge_survivor_id is None or not merge_source_ids:
+            raise MergeConflictError("merge requires a survivor and at least one source")
+        return self._merge_entities(base, merge_survivor_id, merge_source_ids, as_of)
+
     # --- ontology integration ------------------------------------------------
     def from_ontology(
         self,
@@ -208,10 +254,33 @@ class MemoryGraphBuilder:
                 )
             )
         if base is not None:
-            return self.extend(
+            result = self.extend(
                 base, nodes=tuple(node_inputs), edges=tuple(edge_inputs), as_of=as_of
             )
-        return self.build(nodes=tuple(node_inputs), edges=tuple(edge_inputs), as_of=as_of)
+        else:
+            result = self.build(nodes=tuple(node_inputs), edges=tuple(edge_inputs), as_of=as_of)
+        owner_by_id = {entity.entity_id: entity.owner for entity in entities}
+        nodes = tuple(
+            (
+                MemoryNode.model_validate(
+                    {
+                        **node.model_dump(),
+                        "owner": owner_by_id[node.node_id],
+                    }
+                )
+                if not node.owner and node.node_id in owner_by_id
+                else node
+            )
+            for node in result.graph.nodes
+        )
+        graph = MemoryGraph(nodes=nodes, edges=result.graph.edges)
+        return BuildResult(
+            graph=graph,
+            nodes_created=result.nodes_created,
+            edges_created=result.edges_created,
+            node_inputs_merged=result.node_inputs_merged,
+            edge_inputs_merged=result.edge_inputs_merged,
+        )
 
     # --- internals -----------------------------------------------------------
     def _assemble(
@@ -262,6 +331,252 @@ class MemoryGraphBuilder:
             edges_created=created_edges,
             node_inputs_merged=merged_node_inputs,
             edge_inputs_merged=merged_edge_inputs,
+        )
+
+    def _replace_node(self, base: MemoryGraph, replacement: MemoryNode) -> BuildResult:
+        current = base.node(replacement.node_id)
+        if current is None:
+            raise NodeNotFoundError(f"node {replacement.node_id!r} is not in the graph")
+        self._validate_owner(replacement)
+        if current.owner and replacement.owner != current.owner:
+            raise MergeConflictError(f"node {replacement.node_id!r} cannot change immutable owner")
+        if replacement.supersedes != current.supersedes:
+            raise MergeConflictError(
+                f"node {replacement.node_id!r} supersedes may only change during merge"
+            )
+        self._validate_lifecycle_transition(current, replacement)
+
+        nodes = {item.node_id: item for item in base.nodes}
+        nodes[replacement.node_id] = replacement
+        graph = MemoryGraph(nodes=tuple(nodes.values()), edges=base.edges)
+        self._validate_supersession(graph)
+        return self._replacement_result(graph)
+
+    def _replace_edge(self, base: MemoryGraph, replacement: MemoryEdge) -> BuildResult:
+        current = base.edge(replacement.edge_id)
+        if current is None:
+            raise EdgeNotFoundError(f"edge {replacement.edge_id!r} is not in the graph")
+        if (replacement.source_id, replacement.target_id) != (
+            current.source_id,
+            current.target_id,
+        ):
+            raise MergeConflictError(
+                f"edge {replacement.edge_id!r} cannot change immutable endpoints"
+            )
+
+        edges = {item.edge_id: item for item in base.edges}
+        edges[replacement.edge_id] = replacement
+        graph = MemoryGraph(nodes=base.nodes, edges=tuple(edges.values()))
+        self._validate_supersession(graph)
+        return self._replacement_result(graph)
+
+    def _close_relationship(self, base: MemoryGraph, edge_id: str, as_of: datetime) -> BuildResult:
+        current = base.edge(edge_id)
+        if current is None:
+            raise EdgeNotFoundError(f"edge {edge_id!r} is not in the graph")
+        closed = self._close_edge(current, as_of)
+        return self._replace_edge(base, closed)
+
+    def _merge_entities(
+        self,
+        base: MemoryGraph,
+        survivor_id: str,
+        source_ids: tuple[str, ...],
+        as_of: datetime,
+    ) -> BuildResult:
+        unique_source_ids = tuple(sorted(set(source_ids)))
+        if len(unique_source_ids) != len(source_ids):
+            raise MergeConflictError("merge source node ids must be unique")
+        if survivor_id in unique_source_ids:
+            raise MergeConflictError("a merge survivor cannot supersede itself")
+
+        survivor = base.node(survivor_id)
+        if survivor is None:
+            raise NodeNotFoundError(f"survivor node {survivor_id!r} is not in the graph")
+        sources: list[MemoryNode] = []
+        for source_id in unique_source_ids:
+            source = base.node(source_id)
+            if source is None:
+                raise NodeNotFoundError(f"source node {source_id!r} is not in the graph")
+            sources.append(source)
+
+        participants = (survivor, *sources)
+        for participant in participants:
+            self._validate_owner(participant)
+            if participant.lifecycle_status not in LIVE_STATES:
+                raise MergeConflictError(
+                    f"node {participant.node_id!r} is not live and cannot participate in merge"
+                )
+
+        supersedes = tuple(sorted((*survivor.supersedes, *unique_source_ids)))
+        if len(supersedes) > MAX_SUPERSEDES:
+            raise MergeConflictError(f"merge exceeds supersedes limit (max {MAX_SUPERSEDES})")
+        if len(supersedes) != len(set(supersedes)):
+            raise MergeConflictError("merge would duplicate a supersedes reference")
+
+        evidence = _merge_evidence(*(item.evidence for item in participants))
+        aliases = tuple(
+            sorted({alias for participant in participants for alias in participant.aliases})
+        )
+        histories = {
+            history.attribute: history for source in sources for history in source.histories
+        }
+        histories.update({history.attribute: history for history in survivor.histories})
+        metadata_items = list(survivor.metadata.items)
+        for source in sources:
+            metadata_items.extend(source.metadata.items)
+        classification = max(
+            (item.classification for item in participants),
+            key=classification_rank,
+        )
+        replacement_survivor = MemoryNode.model_validate(
+            {
+                **survivor.model_dump(),
+                "updated_at": max(survivor.updated_at, as_of),
+                "classification": classification,
+                "evidence": evidence,
+                "aliases": aliases,
+                "histories": tuple(histories.values()),
+                "metadata": _merge_metadata(metadata_items),
+                "supersedes": supersedes,
+            }
+        )
+
+        replacement_sources: list[MemoryNode] = []
+        for source in sources:
+            if not is_valid_transition(source.lifecycle_status, VersionState.SUPERSEDED):
+                raise InvalidTransitionError(
+                    f"invalid lifecycle transition "
+                    f"{source.lifecycle_status.value}->{VersionState.SUPERSEDED.value}"
+                )
+            replacement_sources.append(
+                MemoryNode.model_validate(
+                    {
+                        **source.model_dump(),
+                        "lifecycle_status": VersionState.SUPERSEDED,
+                    }
+                )
+            )
+
+        nodes = {item.node_id: item for item in base.nodes}
+        nodes[survivor_id] = replacement_survivor
+        nodes.update({item.node_id: item for item in replacement_sources})
+        edges = {item.edge_id: item for item in base.edges}
+        created_edges: dict[str, MemoryEdge] = {}
+        source_id_set = set(unique_source_ids)
+        for current in base.edges:
+            if not ({current.source_id, current.target_id} & source_id_set):
+                continue
+            if not current.is_active_at(as_of):
+                continue
+            closed = self._close_edge(current, as_of)
+            edges[current.edge_id] = closed
+            source_id = survivor_id if current.source_id in source_id_set else current.source_id
+            target_id = survivor_id if current.target_id in source_id_set else current.target_id
+            if source_id == target_id:
+                raise MergeConflictError(
+                    f"edge {current.edge_id!r} would become a self-loop after merge"
+                )
+            new_edge_id = self._edge_id_for_reassignment(
+                current.edge_type,
+                source_id,
+                target_id,
+                current.direction,
+            )
+            if new_edge_id in edges or new_edge_id in created_edges:
+                raise MergeConflictError(
+                    f"reassigned edge {new_edge_id!r} collides with an existing edge"
+                )
+            created_edges[new_edge_id] = MemoryEdge.model_validate(
+                {
+                    **current.model_dump(),
+                    "edge_id": new_edge_id,
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "validity": TemporalValidity(
+                        valid_from=as_of,
+                        valid_until=current.validity.valid_until,
+                    ),
+                    "created_at": as_of,
+                    "updated_at": as_of,
+                }
+            )
+        edges.update(created_edges)
+
+        graph = MemoryGraph(nodes=tuple(nodes.values()), edges=tuple(edges.values()))
+        self._validate_supersession(graph)
+        return self._replacement_result(graph, edges_created=len(created_edges))
+
+    @staticmethod
+    def _validate_owner(node: MemoryNode) -> None:
+        if not node.owner or not node.owner.strip():
+            raise MergeConflictError(f"node {node.node_id!r} requires an owner")
+
+    @staticmethod
+    def _validate_lifecycle_transition(current: MemoryNode, replacement: MemoryNode) -> None:
+        if current.lifecycle_status is replacement.lifecycle_status:
+            return
+        if not is_valid_transition(current.lifecycle_status, replacement.lifecycle_status):
+            raise InvalidTransitionError(
+                f"invalid lifecycle transition "
+                f"{current.lifecycle_status.value}->{replacement.lifecycle_status.value}"
+            )
+
+    @staticmethod
+    def _validate_supersession(graph: MemoryGraph) -> None:
+        claimed_by: dict[str, str] = {}
+        for node in graph.nodes:
+            if len(node.supersedes) > MAX_SUPERSEDES:
+                raise MergeConflictError(
+                    f"node {node.node_id!r} exceeds supersedes limit (max {MAX_SUPERSEDES})"
+                )
+            for source_id in node.supersedes:
+                if not graph.has_node(source_id):
+                    raise MergeConflictError(
+                        f"node {node.node_id!r} supersedes missing node {source_id!r}"
+                    )
+                prior = claimed_by.get(source_id)
+                if prior is not None and prior != node.node_id:
+                    raise MergeConflictError(
+                        f"node {source_id!r} is superseded by both "
+                        f"{prior!r} and {node.node_id!r}"
+                    )
+                claimed_by[source_id] = node.node_id
+
+    @staticmethod
+    def _close_edge(edge: MemoryEdge, as_of: datetime) -> MemoryEdge:
+        if not edge.is_active_at(as_of) or as_of == edge.validity.valid_from:
+            raise MergeConflictError(f"edge {edge.edge_id!r} is not active at closure time")
+        return MemoryEdge.model_validate(
+            {
+                **edge.model_dump(),
+                "validity": TemporalValidity(
+                    valid_from=edge.validity.valid_from,
+                    valid_until=as_of,
+                ),
+                "updated_at": max(edge.updated_at, as_of),
+            }
+        )
+
+    @staticmethod
+    def _edge_id_for_reassignment(
+        edge_type: str,
+        source_id: str,
+        target_id: str,
+        direction: EdgeDirection,
+    ) -> str:
+        if direction is EdgeDirection.UNDIRECTED and target_id < source_id:
+            source_id, target_id = target_id, source_id
+        return edge_id_for(edge_type, source_id, target_id)
+
+    @staticmethod
+    def _replacement_result(graph: MemoryGraph, *, edges_created: int = 0) -> BuildResult:
+        return BuildResult(
+            graph=graph,
+            nodes_created=0,
+            edges_created=edges_created,
+            node_inputs_merged=0,
+            edge_inputs_merged=0,
         )
 
     def _merge_node(

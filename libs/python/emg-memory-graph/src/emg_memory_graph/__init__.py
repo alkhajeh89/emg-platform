@@ -46,6 +46,7 @@ from .limits import (
     MAX_LINEAGE_DEPTH,
     MAX_METADATA_ENTRIES,
     MAX_PATH_RESULTS,
+    MAX_SUPERSEDES,
     MAX_TRAVERSAL_DEPTH,
 )
 from .lineage import DecisionLineage, LineageEdgeRef, LineageNode, LineagePath, LineageTrace
@@ -109,6 +110,7 @@ __all__ = [
     "ensure_safe_label",
     "MAX_EVIDENCE_REFS",
     "MAX_METADATA_ENTRIES",
+    "MAX_SUPERSEDES",
     "MAX_TRAVERSAL_DEPTH",
     "MAX_LINEAGE_DEPTH",
     "MAX_PATH_RESULTS",

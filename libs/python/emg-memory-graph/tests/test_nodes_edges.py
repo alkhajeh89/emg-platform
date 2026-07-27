@@ -103,6 +103,7 @@ def test_node_from_entity() -> None:
     assert n.node_type == "Project"
     assert n.confidence == 0.8
     assert n.source == "svc"
+    assert n.owner == "u1"
     assert n.ontology_entity_id == "ent-1"
     assert n.created_at == T0
 
