@@ -80,7 +80,14 @@ def scope(revision_number: int | None = None) -> GraphQueryScope:
             updated_at=T_AWARE,
         ),
         PageInfo(limit=50, returned_count=0, next_cursor=None, has_more=False),
-        PathResult(node_ids=(), edge_ids=(), length=0, found=False),
+        PathResult(
+            node_ids=(),
+            edge_ids=(),
+            length=0,
+            found=False,
+            node_classifications=(),
+            edge_classifications=(),
+        ),
         QueryRevisionContext(revision_number=1, committed_at=T_AWARE, is_current_head=True),
         MetadataPredicate(key="k", value="v"),
     ],
@@ -134,6 +141,7 @@ def test_entity_details_field_shape() -> None:
 
 
 def test_edge_details_field_shape() -> None:
+    # ADR-026 Revision 2, Group D7: `classification` added (projection only).
     assert _field_names(EdgeDetails) == (
         "edge_id",
         "edge_type",
@@ -141,6 +149,7 @@ def test_edge_details_field_shape() -> None:
         "target_id",
         "direction",
         "confidence",
+        "classification",
         "validity",
         "created_at",
         "updated_at",
@@ -149,17 +158,29 @@ def test_edge_details_field_shape() -> None:
 
 
 def test_neighbor_result_field_shape() -> None:
+    # ADR-026 Revision 2, Group D7: `edge_classification` added (the
+    # traversed edge's own classification, distinct from `entity.classification`).
     assert _field_names(NeighborResult) == (
         "entity",
         "via_edge_id",
         "edge_type",
         "confidence",
         "direction",
+        "edge_classification",
     )
 
 
 def test_path_result_field_shape() -> None:
-    assert _field_names(PathResult) == ("node_ids", "edge_ids", "length", "found")
+    # ADR-026 Revision 2, Group D7: `node_classifications`/`edge_classifications`
+    # added, index-aligned with node_ids/edge_ids.
+    assert _field_names(PathResult) == (
+        "node_ids",
+        "edge_ids",
+        "length",
+        "found",
+        "node_classifications",
+        "edge_classifications",
+    )
 
 
 def test_page_info_field_shape() -> None:
