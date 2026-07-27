@@ -21,6 +21,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | D-A-001 | Module Numbering Governance | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §6 (Gap 4a), §7 (Gap 4) | Which numbering scheme is canonical? |
 | D-A-002 | Entity Resolution Ownership | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §2 (Gap 1) | Standalone service, part of `emg-memory-graph`, or shared library? |
+| D-A-003 | Entity/Relationship Identity, Lifecycle & Supersession Model | **Open — ADR-029 drafted (2026-07-27), pending Architecture Board review** | TBD | `docs/architecture/EMG_ADR-029_ENTITY_RELATIONSHIP_IDENTITY_LIFECYCLE_SUPERSESSION_MODEL.md` | Is ADR-029's Alternative D (minimal additive `MemoryNode`/`MemoryEdge` extension) approved, and may ADR-027 Revision 3 consume it? |
 
 ### D-A-001 — Module Numbering Governance
 
