@@ -1,5 +1,12 @@
 """Knowledge Graph service application boundary package."""
 
+from .atomic_mutation import (
+    AtomicMutationExecutionPort,
+    AtomicMutationOutcome,
+    CommittedMutation,
+    InMemoryAtomicMutationExecution,
+    MutationExecutionRequest,
+)
 from .commands import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
     MAX_QUERY_PAGE_SIZE,
@@ -30,18 +37,23 @@ from .commands import (
 from .errors import (
     EdgeNotFoundError,
     EntityNotFoundError,
+    IdempotencyContentionError,
+    IdempotencyMismatchError,
     InvalidHistoryQueryError,
     InvalidMutationCommandError,
     InvalidQueryError,
     InvalidRevisionCommandError,
     InvalidTemporalFilterError,
     KnowledgeGraphApplicationError,
+    LegacyIdempotencyConflictError,
     MutationBuildError,
+    MutationReplayIntegrityError,
     PathDepthExceededError,
     QueryLimitExceededError,
     RevisionBuildError,
     RevisionNotFoundError,
     RevisionRestoreError,
+    UnsupportedFingerprintVersionError,
     UnsupportedHistoryCapabilityError,
 )
 from .results import (
@@ -53,6 +65,7 @@ from .results import (
     EntityQueryResult,
     EntitySummary,
     MutationAuditIntent,
+    MutationReplayProjection,
     MutationResult,
     NeighborResult,
     PagedEdgeResult,
@@ -66,6 +79,7 @@ from .results import (
     RevisionDetails,
     RevisionDiff,
     RevisionSummary,
+    project_mutation_replay,
 )
 from .service import KnowledgeGraphApplication, MutationAuthorizationHook
 
@@ -74,11 +88,14 @@ __all__ = [
     "MAX_QUERY_PROPERTY_PREDICATES",
     "MAX_TRAVERSAL_DEPTH",
     "MAX_IDEMPOTENCY_KEY_LENGTH",
+    "AtomicMutationExecutionPort",
+    "AtomicMutationOutcome",
     "BuildRevisionCommand",
     "BuildRevisionResult",
     "CloseRelationshipCommand",
     "CompareRevisionsQuery",
     "CreateEntityCommand",
+    "CommittedMutation",
     "EdgeDetails",
     "EdgeNotFoundError",
     "EdgeQueryResult",
@@ -94,12 +111,15 @@ __all__ = [
     "GetRevisionQuery",
     "GraphQueryScope",
     "InvalidHistoryQueryError",
+    "IdempotencyContentionError",
+    "IdempotencyMismatchError",
     "InvalidMutationCommandError",
     "InvalidQueryError",
     "InvalidRevisionCommandError",
     "InvalidTemporalFilterError",
     "KnowledgeGraphApplication",
     "KnowledgeGraphApplicationError",
+    "LegacyIdempotencyConflictError",
     "ListEdgesQuery",
     "ListEntitiesQuery",
     "ListNeighborsQuery",
@@ -109,7 +129,11 @@ __all__ = [
     "MutationAuditIntent",
     "MutationAuthorizationHook",
     "MutationBuildError",
+    "MutationExecutionRequest",
+    "MutationReplayIntegrityError",
+    "MutationReplayProjection",
     "MutationResult",
+    "InMemoryAtomicMutationExecution",
     "NeighborDirection",
     "NeighborResult",
     "PagedEdgeResult",
@@ -133,4 +157,6 @@ __all__ = [
     "RevisionSummary",
     "ShortestPathQuery",
     "UnsupportedHistoryCapabilityError",
+    "UnsupportedFingerprintVersionError",
+    "project_mutation_replay",
 ]

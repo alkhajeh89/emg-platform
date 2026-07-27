@@ -33,6 +33,36 @@ class MutationBuildError(KnowledgeGraphApplicationError):
     error_code = "KNOWLEDGE_GRAPH_MUTATION_BUILD_FAILED"
 
 
+class IdempotencyMismatchError(KnowledgeGraphApplicationError):
+    """An idempotency key was reused for a different canonical command."""
+
+    error_code = "KNOWLEDGE_GRAPH_IDEMPOTENCY_MISMATCH"
+
+
+class LegacyIdempotencyConflictError(KnowledgeGraphApplicationError):
+    """A pre-fingerprint idempotency record cannot be replayed safely."""
+
+    error_code = "KNOWLEDGE_GRAPH_LEGACY_IDEMPOTENCY_CONFLICT"
+
+
+class IdempotencyContentionError(KnowledgeGraphApplicationError):
+    """A claim could not be acquired within the configured wait boundary."""
+
+    error_code = "KNOWLEDGE_GRAPH_IDEMPOTENCY_CONTENTION"
+
+
+class MutationReplayIntegrityError(KnowledgeGraphApplicationError):
+    """Persisted replay data failed its ledger integrity checks."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_REPLAY_INTEGRITY"
+
+
+class UnsupportedFingerprintVersionError(KnowledgeGraphApplicationError):
+    """An active replay uses a fingerprint reader not deployed here."""
+
+    error_code = "KNOWLEDGE_GRAPH_UNSUPPORTED_FINGERPRINT_VERSION"
+
+
 class InvalidHistoryQueryError(KnowledgeGraphApplicationError):
     """A history query (list/get/compare) violates an application-boundary
     invariant — including invalid paging (ADR-023 §17). Raised before any

@@ -73,6 +73,38 @@ class MutationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class MutationReplayProjection:
+    """External-safe projection of the internal persisted mutation result."""
+
+    tenant_id: str
+    revision_number: int
+    content_hash: str
+    node_count: int
+    edge_count: int
+    revision_created: bool
+    nodes_created: int
+    edges_created: int
+    node_inputs_merged: int
+    edge_inputs_merged: int
+
+
+def project_mutation_replay(result: MutationResult) -> MutationReplayProjection:
+    """Exclude principal, audit, reason, classification, and ledger metadata."""
+    return MutationReplayProjection(
+        tenant_id=result.tenant.value,
+        revision_number=result.revision_number,
+        content_hash=result.content_hash,
+        node_count=result.node_count,
+        edge_count=result.edge_count,
+        revision_created=result.revision_created,
+        nodes_created=result.nodes_created,
+        edges_created=result.edges_created,
+        node_inputs_merged=result.node_inputs_merged,
+        edge_inputs_merged=result.edge_inputs_merged,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class RevisionSummary:
     """Canonical per-revision list/read item (ADR-023 §10, §12).
 

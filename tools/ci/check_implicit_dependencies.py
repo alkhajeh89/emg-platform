@@ -74,8 +74,8 @@ def get_own_modules(pyproject_data: dict) -> set[str]:
     Almost every component in this repository ships exactly one package,
     matching `[project].name` (dash -> underscore) -- that remains the
     fallback below. `services/knowledge-graph` is a documented exception
-    (OBS-A-002, EMG_ARCHITECTURE_DECISION_REGISTER.md): it ships two sibling
-    packages (`emg_knowledge_graph`, `emg_knowledge_graph_api`) from one
+    (OBS-A-002, EMG_ARCHITECTURE_DECISION_REGISTER.md): it ships sibling
+    application, API, and infrastructure packages from one
     `pyproject.toml` whose `[project].name`
     ("emg-knowledge-graph-service") matches neither -- so an
     `emg_knowledge_graph_api` -> `emg_knowledge_graph` import is an

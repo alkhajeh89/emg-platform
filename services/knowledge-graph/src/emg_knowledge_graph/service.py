@@ -23,6 +23,12 @@ from emg_memory_graph import NodeNotFoundError as _DomainNodeNotFoundError
 from emg_platform_core import RevisionNotFoundError as _PlatformRevisionNotFoundError
 from emg_platform_core.ports import GraphRevisionReader, GraphStore, RevisionMetadata
 
+from .atomic_mutation import (
+    AtomicMutationExecutionPort,
+    CommittedMutation,
+    InMemoryAtomicMutationExecution,
+    MutationExecutionRequest,
+)
 from .commands import (
     BuildRevisionCommand,
     CloseRelationshipCommand,
@@ -265,11 +271,15 @@ class KnowledgeGraphApplication:
         builder: MemoryGraphBuilder | None = None,
         revision_reader: GraphRevisionReader | None = None,
         mutation_authorization_hook: MutationAuthorizationHook | None = None,
+        atomic_mutation_execution: AtomicMutationExecutionPort | None = None,
     ) -> None:
         self._graph_store = graph_store
         self._builder = builder or MemoryGraphBuilder()
         self._revision_reader = revision_reader
         self._mutation_authorization_hook = mutation_authorization_hook
+        self._atomic_mutation_execution = (
+            atomic_mutation_execution or InMemoryAtomicMutationExecution()
+        )
 
     def build_revision(self, command: BuildRevisionCommand) -> BuildRevisionResult:
         """Build and atomically commit the next immutable tenant snapshot."""
@@ -425,8 +435,6 @@ class KnowledgeGraphApplication:
 
     def _prepare_mutation(self, command: MutationCommand) -> None:
         command.validate()
-        if self._mutation_authorization_hook is not None:
-            self._mutation_authorization_hook(command)
 
     def _execute_mutation(
         self,
@@ -441,47 +449,58 @@ class KnowledgeGraphApplication:
         related_resource_ids: tuple[str, ...] = (),
         related_resource_ids_of: Callable[[MemoryGraph], tuple[str, ...]] | None = None,
     ) -> MutationResult:
-        resolved_related_ids = related_resource_ids
-        with self._graph_store.transaction(command.tenant, command.principal) as transaction:
-            current = transaction.read()
-            if related_resource_ids_of is not None:
-                resolved_related_ids = related_resource_ids_of(current)
-            try:
-                result = build(current)
-            except MemoryGraphError as exc:
-                raise MutationBuildError(
-                    f"failed to {action} {resource_type} {resource_id!r}: {exc}"
-                ) from exc
-            transaction.stage(result.graph)
+        replay = self._atomic_mutation_execution.lookup(command)
+        if replay is not None:
+            return replay.result
+        request = MutationExecutionRequest.from_command(command)
+        if self._mutation_authorization_hook is not None:
+            self._mutation_authorization_hook(command)
 
-        receipt = transaction.receipt
-        audit_intent = MutationAuditIntent(
-            tenant=receipt.tenant,
-            principal=receipt.principal,
-            idempotency_key=command.idempotency_key,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            related_resource_ids=tuple(sorted(resolved_related_ids)),
-            classification=classification_of(result.graph),
-            reason=reason,
-            revision_number=receipt.revision_number,
-            content_hash=receipt.content_hash,
-        )
-        return MutationResult(
-            tenant=receipt.tenant,
-            principal=receipt.principal,
-            revision_number=receipt.revision_number,
-            content_hash=receipt.content_hash,
-            node_count=receipt.node_count,
-            edge_count=receipt.edge_count,
-            revision_created=receipt.revision_created,
-            nodes_created=result.nodes_created,
-            edges_created=result.edges_created,
-            node_inputs_merged=result.node_inputs_merged,
-            edge_inputs_merged=result.edge_inputs_merged,
-            audit_intents=(audit_intent,),
-        )
+        def commit() -> CommittedMutation:
+            resolved_related_ids = related_resource_ids
+            with self._graph_store.transaction(command.tenant, command.principal) as transaction:
+                current = transaction.read()
+                if related_resource_ids_of is not None:
+                    resolved_related_ids = related_resource_ids_of(current)
+                try:
+                    result = build(current)
+                except MemoryGraphError as exc:
+                    raise MutationBuildError(
+                        f"failed to {action} {resource_type} {resource_id!r}: {exc}"
+                    ) from exc
+                transaction.stage(result.graph)
+
+            receipt = transaction.receipt
+            audit_intent = MutationAuditIntent(
+                tenant=receipt.tenant,
+                principal=receipt.principal,
+                idempotency_key=command.idempotency_key,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                related_resource_ids=tuple(sorted(resolved_related_ids)),
+                classification=classification_of(result.graph),
+                reason=reason,
+                revision_number=receipt.revision_number,
+                content_hash=receipt.content_hash,
+            )
+            mutation_result = MutationResult(
+                tenant=receipt.tenant,
+                principal=receipt.principal,
+                revision_number=receipt.revision_number,
+                content_hash=receipt.content_hash,
+                node_count=receipt.node_count,
+                edge_count=receipt.edge_count,
+                revision_created=receipt.revision_created,
+                nodes_created=result.nodes_created,
+                edges_created=result.edges_created,
+                node_inputs_merged=result.node_inputs_merged,
+                edge_inputs_merged=result.edge_inputs_merged,
+                audit_intents=(audit_intent,),
+            )
+            return CommittedMutation(result=mutation_result, receipt=receipt)
+
+        return self._atomic_mutation_execution.execute(request, commit).result
 
     @staticmethod
     def _node_classification(graph: MemoryGraph, node_id: str) -> Classification:

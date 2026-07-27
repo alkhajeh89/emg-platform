@@ -13,16 +13,18 @@ def test_default_dirs_contain_baseline() -> None:
     assert (pg_dir / "V001__baseline.sql").is_file()
     assert (pg_dir / "V002__projection_checkpoints.sql").is_file()
     assert (pg_dir / "V003__mutation_idempotency.sql").is_file()
+    assert (pg_dir / "V004__mutation_ledger.sql").is_file()
     assert (neo_dir / "M001__constraints.cypher").is_file()
 
 
 def test_run_migrations_applies_packaged_postgres_baseline() -> None:
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     applied = run_migrations(ex)  # uses the packaged default dir
-    assert [a.version for a in applied] == [1, 2, 3]
+    assert [a.version for a in applied] == [1, 2, 3, 4]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"
+    assert applied[3].name == "mutation_ledger"
     # idempotent second run
     assert run_migrations(ex) == ()
 
@@ -37,7 +39,7 @@ def test_run_migrations_applies_packaged_neo4j_baseline() -> None:
 def test_migration_status_reports_pending_baseline() -> None:
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     status = migration_status(ex)
-    assert [m.version for m in status.pending] == [1, 2, 3]
+    assert [m.version for m in status.pending] == [1, 2, 3, 4]
     assert status.is_up_to_date is False
 
 

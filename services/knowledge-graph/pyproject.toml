@@ -38,6 +38,7 @@ dependencies = [
   # as the API dependencies above.
   "emg-auth-client",
   "emg-policy-engine",
+  "rfc8785>=0.1.4,<1",
 ]
 
 [project.optional-dependencies]
@@ -53,12 +54,16 @@ dev = [
 dev-mode-dirs = ["src"]
 
 [tool.hatch.build.targets.wheel]
-# Two packages from one pyproject.toml — see emg_knowledge_graph_api's
-# package docstring (src/emg_knowledge_graph_api/__init__.py) for the
-# architectural rationale; this is a documented, intentional divergence from
-# the repo's otherwise-universal one-package-per-pyproject convention, not
-# an oversight.
-packages = ["src/emg_knowledge_graph", "src/emg_knowledge_graph_api"]
+# Three packages from one service distribution: the application boundary,
+# HTTP adapter, and ADR-030 composition/infrastructure adapter. Keeping the
+# latter outside ``emg_knowledge_graph`` preserves application-to-persistence
+# dependency inversion without creating a reverse dependency from the
+# reusable persistence library back into this service.
+packages = [
+  "src/emg_knowledge_graph",
+  "src/emg_knowledge_graph_api",
+  "src/emg_knowledge_graph_infrastructure",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
