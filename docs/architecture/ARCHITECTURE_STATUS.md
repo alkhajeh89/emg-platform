@@ -98,6 +98,12 @@ Only the following Architecture Decision Records are currently present in
 | ADR-021 | Enterprise API Strategy | Proposed |
 | ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted — implemented (Group C, 2026-07-27)** |
 | ADR-026 (Revision 2) | Knowledge Graph Classification Enforcement Model | **Accepted — fully implemented (Phase 1 + Phase 2, D1–D13, 2026-07-27)** |
+| ADR-027 (Revision 3) | Knowledge Graph Mutation API | **Approved (PASS) — Implementation complete through Stage 3 (2026-07-28)**: Stage 0 (idempotency migration `V003`, role catalog `svc-knowledge-graph-writer`) complete. Stage 1 (Fine-grained mutation commands implemented) complete (tag `adr-027-stage-1`, commit `88397a6`). Stage 3 (Atomic Mutation Ledger) complete (tag `adr-027-stage-3`, commit `2dab646`). Authorization policy and writer service role enforced (see notes below). Stage 4 (HTTP layer/Routes) not started. |
+| ADR-029 | Canonical Entity/Relationship Identity, Lifecycle, and Supersession Model | **Accepted — implemented (commit 97b211d, tag `adr-029-approved-implementation`)** |
+
+*Implementation Notes (Authorization/Policy):*
+- Mutation authorization policy: implemented (commit `78108c9`)
+- Writer service role: implemented (commit `6c28b1d`)
 
 ADR-001 through ADR-013 are **not present in this repository** and must not
 be described as approved, frozen, or existing until they are actually added
