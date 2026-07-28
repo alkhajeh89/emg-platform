@@ -6,11 +6,9 @@ Mutation Ledger & Atomic Idempotency
 
 ## 2. Status
 
-**Approved — Revision 3.**
+**Accepted — Revision 4.**
 
-**Architecture Board approval:** 2026-07-28 — **APPROVED WITH MINOR
-CHANGES**, confidence **97/100**. Revision 3 incorporates all three approved
-editorial clarifications; no architectural behavior changed.
+**Architecture Board approval:** 2026-07-28 — **RATIFIED**. Revision 4 updates the public API projection to include operational metadata required for Stage 4 implementation.
 
 **Date:** 2026-07-28
 
@@ -18,13 +16,13 @@ editorial clarifications; no architectural behavior changed.
 Platform)
 
 **Depends on:** ADR-022 (Revision Build Workflow), ADR-023 (Revision History
-and Navigation), ADR-027 Revision 3 (Knowledge Graph Mutation API), ADR-029
+and Navigation), ADR-027 Revision 4 (Knowledge Graph Mutation API), ADR-029
 (Canonical Entity and Relationship Identity, Lifecycle, and Supersession
 Model)
 
 **Related:** ADR-025 (Tenant and Authorization Model), ADR-026 Revision 2
 (Classification Enforcement Model), ADR-028 (Audit reconciliation, when
-approved)
+approved), ADR-032 (Knowledge Graph Schema Versioning & Evolution)
 
 This ADR resolves the atomicity, concurrency, deterministic-replay, audit
 foundation, and event-publication blockers for ADR-027 Stage 3. It does not
@@ -703,8 +701,14 @@ projection** containing only:
 - `revision_created`;
 - `nodes_created`;
 - `edges_created`;
-- `node_inputs_merged`; and
-- `edge_inputs_merged`.
+- `node_inputs_merged`;
+- `edge_inputs_merged`;
+- `mutation_id`;
+- `audit_reference`;
+- `replayed`; and
+- `timestamp`.
+
+These fields are operational metadata only. They MUST NOT be interpreted as business state or mutation semantics.
 
 It explicitly excludes `MutationAuditIntent`, principal provenance, reason,
 classification, related-resource identities, internal ledger status,
@@ -1390,7 +1394,13 @@ Minimum acceptance evidence for a future implementation includes:
 
 ## 20. Change Log
 
-### 20.1 Revision 3 — Architecture Board finalization
+### 20.1 Revision 4 — Stage 4 operational requirements
+
+Revision 4 updates the public mutation response projection to include
+operational metadata (`mutation_id`, `audit_reference`, `replayed`,
+`timestamp`) required for Stage 4 implementation.
+
+### 20.2 Revision 3 — Architecture Board finalization
 
 Revision 3 applies only the three editorial clarifications approved by the
 Architecture Board:
