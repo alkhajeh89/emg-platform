@@ -1,13 +1,6 @@
-# ADR-027 (Revision 3) — Knowledge Graph Mutation API
+# ADR-027 (Revision 4) — Knowledge Graph Mutation API
 
-**This revision supersedes ADR-027 Revision 2 in full.** Revision 2 correctly
-settled the Mutation API's transport, authorization, idempotency,
-concurrency, batch, audit, and operational decisions, but also attempted to
-define canonical identity, lifecycle, supersession, relationship-validity
-closure, and graph-level Merge semantics. Those domain concepts are now
-owned exclusively by approved ADR-029. Revision 3 removes the duplicated and
-obsolete assumptions and makes this ADR a consumer of ADR-029. No
-implementation code has been written or modified to produce this revision.
+**This revision supersedes ADR-027 Revision 3 in full.**
 
 ## 1. Title
 
@@ -17,13 +10,10 @@ Authorization/Classification Pipeline
 
 ## 2. Status
 
-**Proposed — Revision 3 (ADR-029 integration), Stage 0 complete
+**Accepted — Revision 4 (ADR-029 integration, Stage 4 Preflight), Stage 0 complete
 (2026-07-28).**
 Architecture-only design, produced under
-`docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`. Revision 2 was approved
-by the Architecture Board; Revision 3 requires review because it changes the
-dependency boundary between ADR-027 and ADR-029 without reopening ADR-027's
-remaining decisions. **Stage 0 status:** the `svc-knowledge-graph-writer`
+`docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`. Revision 4 incorporates the Architecture Board’s ratified Stage 4 requirements without reopening the previously accepted ADR-027 decisions. **Stage 0 status:** the `svc-knowledge-graph-writer`
 role-catalog entry (§5) and the `mutation_idempotency` table migration
 (§8.2) are **complete**. GraphStore Protocol unification (§4.5) remains
 **deferred out of this ADR's mandatory implementation gate** — see §4.7
@@ -39,7 +29,7 @@ Platform); Chief Data Officer (Accountable Owner, Module 7 — ADR-016 §1)
 Navigation), ADR-024 (Query Engine), ADR-025 (Tenant & Authorization Model),
 ADR-026 Revision 2 (Classification Enforcement Model),
 ADR-029 (Canonical Entity and Relationship Identity, Lifecycle, and
-Supersession Model),
+Supersession Model), ADR-030 Revision 4 (Mutation Ledger & Atomic Idempotency), ADR-032 (Knowledge Graph Schema Versioning & Evolution),
 `EMG_ARCHITECTURE_DECISION_REGISTER.md`, `EMG_PRODUCTION_READINESS_ROADMAP.md`
 **Explicitly does not supersede or reopen:** ADR-022/023/024 (revision
 model, pagination, temporal semantics), ADR-025 (authorization decision, PEP
@@ -434,6 +424,10 @@ principal side, `required_resource_attributes` for the object-classification
 side) evaluated by the **unchanged** `PolicyEngine`/`PolicyEnforcementPoint`
 — no new authorization mechanism, exactly per ADR-025/026's own precedent
 and Appendix ADR-026A's standing rule.
+
+### 5.4 Authorization Preflight and Resource Metadata
+
+Authorization preflight occurs before opening `GraphStore.transaction()`. Ownership and classification metadata are retrieved through a read-only application-layer interface named `IResourceMetadataReader`. Routers must not access `GraphStore` directly. Mutation execution uses `AtomicMutationExecutionPort` under ADR-030. Schema negotiation follows ADR-032 before command construction. The public response follows ADR-030 Revision 4.
 
 **One new role-catalog vocabulary entry is required** (data only, per the
 exact precedent `svc-identity`/`svc-authorization`/`svc-audit` already set
@@ -957,6 +951,14 @@ logic.
    are done, and the one item that does not gate Stage 1 (GraphStore
    unification) has been explicitly removed from the gate rather than left
    blocking indefinitely.
+
+### Stage 4 — HTTP/API Delivery Layer
+
+1.  **Schema Negotiation (ADR-032):** The API layer negotiates the schema version before any command construction.
+2.  **Authorization Preflight:** Before the `GraphStore` transaction, evaluate metadata via `IResourceMetadataReader`.
+3.  **Application Metadata Interface:** Implement `IResourceMetadataReader` (Application Layer) to fetch resource metadata.
+4.  **Transaction Execution:** The mutation is performed atomically using the `AtomicMutationExecutionPort` (ADR-030).
+5.  **Audit/Ledger Mapping:** Map the ledger response to the public response envelope (ADR-030 Revision 4).
 2. **ADR-029 implementation prerequisite.** Implement and independently
    validate ADR-029's approved additive `emg-memory-graph` contract before
    Stage 1 begins. ADR-027 does not absorb that implementation into Stage 1
