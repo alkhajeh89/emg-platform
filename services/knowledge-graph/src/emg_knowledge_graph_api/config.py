@@ -14,6 +14,7 @@ new, Sprint-7.4-only convention with no existing repository precedent).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -64,6 +65,13 @@ class Settings(BaseSettings):
     # misconfigured deployment fails closed (denies everything) instead of
     # failing to start or silently allowing everything.
     policy_config_path: Path = Path("services/knowledge-graph/config/policy.example.yaml")
+
+    # ADR-033 Revision 2: the externally supplied, version-controlled catalog
+    # is loaded once during startup. Phase 2 deliberately supplies no default
+    # artifact; Phase 3 owns shipping the first catalog.
+    schema_catalog_path: Path | None = None
+    deployment_environment: Literal["development", "test", "production"] = "development"
+    allow_unconfigured_schema_negotiation: bool = False
 
     @property
     def keycloak_issuer(self) -> str:

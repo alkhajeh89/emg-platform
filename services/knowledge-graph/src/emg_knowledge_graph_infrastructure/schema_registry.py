@@ -292,11 +292,12 @@ class RegistryBackedCompatibilityAdapterRegistry:
         request: Any,
         *,
         source_version: str,
-        target_version: str,
+        target_version: str | None = None,
     ) -> Any:
         entry = self._entries.get(source_version)
         if entry is None or not entry.normalization_required:
             return request
+        target_version = target_version or self.catalog.canonical_version
         matches = self.registrations_for(source_version, target_version)
         if len(matches) != 1:
             raise _adapter_failure(

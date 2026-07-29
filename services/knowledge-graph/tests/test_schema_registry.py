@@ -14,7 +14,7 @@ from emg_knowledge_graph import (
     SchemaNegotiationResult,
     SchemaNegotiator,
 )
-from emg_knowledge_graph_api.dependencies import schema_negotiator_dependency
+from emg_knowledge_graph_api.dependencies import _schema_components_singleton
 from emg_knowledge_graph_infrastructure import (
     CompatibilityNormalizerRegistration,
     RegistryBackedCompatibilityAdapterRegistry,
@@ -462,10 +462,15 @@ def test_registry_converts_authority_shape_and_execution_defects_to_adapter_fail
     assert caught.value.failure_code == "ADAPTER_FAILURE"
 
 
-def test_runtime_composition_remains_explicitly_fail_closed_in_phase_one() -> None:
-    negotiator = schema_negotiator_dependency()
+def test_explicit_non_production_placeholder_remains_fail_closed() -> None:
+    negotiator, _ = _schema_components_singleton(None, True, "test")
 
     with pytest.raises(SchemaNegotiationError) as caught:
         negotiator.negotiate(SchemaNegotiationRequest(preferred_version="2.1.0"))
 
     assert caught.value.failure_code == "NEGOTIATION_UNCONFIGURED"
+
+
+def test_placeholder_is_prohibited_in_production() -> None:
+    with pytest.raises(SchemaCatalogValidationError, match="prohibited in production"):
+        _schema_components_singleton(None, True, "production")

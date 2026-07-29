@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from emg_knowledge_graph import (
     CloseRelationshipCommand,
+    CompatibilityAdapterRegistry,
     CreateEntityCommand,
     MergeEntitiesCommand,
     ReplaceEntityCommand,
@@ -35,8 +36,13 @@ class PreparedMutation:
 class MutationRequestPreparer:
     """Negotiate first, then map the already-validated transport request."""
 
-    def __init__(self, schema_negotiator: SchemaNegotiator) -> None:
+    def __init__(
+        self,
+        schema_negotiator: SchemaNegotiator,
+        compatibility_adapters: CompatibilityAdapterRegistry,
+    ) -> None:
         self._schema_negotiator = schema_negotiator
+        self._compatibility_adapters = compatibility_adapters
 
     def prepare(
         self,
@@ -50,8 +56,16 @@ class MutationRequestPreparer:
         negotiated = self._schema_negotiator.negotiate(
             SchemaNegotiationRequest(preferred_version=preferred_schema_version)
         )
+        canonical_request = (
+            self._compatibility_adapters.normalize(
+                request,
+                source_version=negotiated.effective_version,
+            )
+            if negotiated.adapter_required
+            else request
+        )
         command = map_mutation_request(
-            request,
+            canonical_request,
             tenant=tenant,
             principal=principal,
             idempotency_key=idempotency_key,

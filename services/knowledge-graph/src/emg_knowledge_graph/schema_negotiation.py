@@ -41,7 +41,7 @@ class CompatibilityAdapterRegistry(Protocol):
         request: _RequestT,
         *,
         source_version: str,
-        target_version: str,
+        target_version: str | None = None,
     ) -> _RequestT:
         """Return the same DTO family with canonical, non-authority-bearing values."""
         ...

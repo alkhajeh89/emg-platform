@@ -147,6 +147,17 @@ class _Negotiator:
         return SchemaNegotiationResult(effective_version=request.preferred_version)
 
 
+class _IdentityCompatibilityAdapters:
+    def normalize(
+        self,
+        request: Any,
+        *,
+        source_version: str,
+        target_version: str | None = None,
+    ) -> Any:
+        return request
+
+
 class _ApplicationSpy:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
@@ -175,7 +186,7 @@ class _ApplicationSpy:
 def route_client() -> tuple[TestClient, _ApplicationSpy, _Negotiator]:
     application = _ApplicationSpy()
     negotiator = _Negotiator()
-    preparer = MutationRequestPreparer(negotiator)
+    preparer = MutationRequestPreparer(negotiator, _IdentityCompatibilityAdapters())
     app = create_app()
     app.dependency_overrides[require_tenant_context] = lambda: CallerContext(
         principal=ServicePrincipal(client_id="phase4a-writer"),

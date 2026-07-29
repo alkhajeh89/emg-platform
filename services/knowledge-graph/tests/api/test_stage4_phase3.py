@@ -190,9 +190,20 @@ class _SchemaNegotiatorSpy:
         return SchemaNegotiationResult(effective_version="1.0.0")
 
 
+class _IdentityCompatibilityAdapters:
+    def normalize(
+        self,
+        request: MutationRequest,
+        *,
+        source_version: str,
+        target_version: str | None = None,
+    ) -> MutationRequest:
+        return request
+
+
 def test_schema_negotiator_is_invoked_before_command_is_returned() -> None:
     negotiator = _SchemaNegotiatorSpy()
-    preparer = MutationRequestPreparer(negotiator)
+    preparer = MutationRequestPreparer(negotiator, _IdentityCompatibilityAdapters())
 
     prepared = preparer.prepare(
         _create_request(),
@@ -333,7 +344,7 @@ def test_registered_dependency_factories_return_phase3_services() -> None:
     store = InMemoryGraphStore()
     metadata_reader = resource_metadata_reader_dependency(store)
     negotiator = _SchemaNegotiatorSpy()
-    preparer = mutation_request_preparer_dependency(negotiator)
+    preparer = mutation_request_preparer_dependency(negotiator, _IdentityCompatibilityAdapters())
 
     assert isinstance(metadata_reader, GraphResourceMetadataReader)
     assert isinstance(preparer, MutationRequestPreparer)

@@ -20,6 +20,7 @@ from emg_telemetry import set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from .dependencies import validate_schema_runtime_configuration
 from .errors import DEFAULT_ERROR_STATUS, ERROR_STATUS_MAP
 from .routers.health import router as health_router
 from .routers.knowledge_graph import router as knowledge_graph_router
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
     )
+    app.router.add_event_handler("startup", validate_schema_runtime_configuration)
 
     @app.middleware("http")
     async def correlation_id_middleware(
