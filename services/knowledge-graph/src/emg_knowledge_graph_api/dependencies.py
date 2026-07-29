@@ -236,6 +236,15 @@ def validate_schema_runtime_configuration() -> None:
         raise RuntimeError(
             "knowledge-graph cannot start in production with the in-memory store backend"
         )
+    if (
+        settings.deployment_environment == "production"
+        and settings.store_backend == "postgres"
+        and settings.postgres_dsn == settings.migration_postgres_dsn
+    ):
+        raise RuntimeError(
+            "knowledge-graph production runtime and migration database credentials "
+            "must be distinct"
+        )
     _policy_enforcement_point_singleton()
     _schema_components()
 

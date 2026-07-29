@@ -1,5 +1,10 @@
 # services/audit
 
+Audit ingestion derives `tenant_id` from the verified service token. Event
+lookup, listing, pagination, and export are constrained by that tenant and
+by classifications authorized through the configured Policy Enforcement
+Point. Client-supplied filters can only narrow this server-owned scope.
+
 Module 6 — Enterprise Audit, Provenance & Digital Evidence Platform.
 
 - **Sprint 6:** **FEAT-04-1 (Audit Event Pipeline)** — activated as a minimal

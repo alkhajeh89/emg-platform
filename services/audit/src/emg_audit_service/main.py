@@ -13,11 +13,18 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from emg_api_contracts import ApiError, ApiResponse
-from emg_errors import AuthorizationError, EMGError, UpstreamServiceError, ValidationError
+from emg_errors import (
+    AuthorizationError,
+    EMGError,
+    PermissionDeniedError,
+    UpstreamServiceError,
+    ValidationError,
+)
 from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from .authorization import validate_audit_policy_configuration
 from .config import get_settings, validate_runtime_configuration
 from .routers.custody import router as custody_router
 from .routers.events import router as events_router
@@ -29,6 +36,7 @@ _log = get_logger("audit.api")
 _ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     ValidationError: 400,
     AuthorizationError: 401,
+    PermissionDeniedError: 403,
     UpstreamServiceError: 502,
 }
 
@@ -50,10 +58,12 @@ def create_app() -> FastAPI:
         ),
         version="0.3.0",
     )
-    app.router.add_event_handler(
-        "startup",
-        lambda: validate_runtime_configuration(get_settings()),
-    )
+
+    def validate_startup() -> None:
+        validate_runtime_configuration(get_settings())
+        validate_audit_policy_configuration()
+
+    app.router.add_event_handler("startup", validate_startup)
 
     @app.middleware("http")
     async def correlation_id_middleware(
@@ -108,6 +118,8 @@ def _envelope_dict(envelope: ApiResponse[None]) -> dict[str, object]:
 def _public_error_message(exc: EMGError, status_code: int) -> str:
     if isinstance(exc, AuthorizationError):
         return "Authentication failed"
+    if isinstance(exc, PermissionDeniedError):
+        return "Access denied"
     if isinstance(exc, UpstreamServiceError):
         return "Upstream service unavailable"
     if status_code >= 500:

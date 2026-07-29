@@ -91,6 +91,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')" || exit 1
 
-# Apply any pending PostgreSQL migrations (Group B4; no-op unless
-# EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND=postgres) before serving traffic.
-CMD ["sh", "-c", "python -m emg_knowledge_graph_api.migrate && uvicorn emg_knowledge_graph_api.main:app --host 0.0.0.0 --port 8000"]
+# Migrations run as a separate deployment job with the owner credential.
+# The serving process receives only the least-privileged runtime credential.
+CMD ["uvicorn", "emg_knowledge_graph_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

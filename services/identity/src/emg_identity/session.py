@@ -35,6 +35,7 @@ from emg_common_types import normalize_classification_clearance
 from emg_errors import AuthorizationError
 
 from .config import Settings
+from .refresh_tokens import InMemoryRefreshTokenStore, RefreshTokenStore
 
 TokenType = Literal["access", "refresh"]
 
@@ -101,6 +102,7 @@ class SessionClaims:
     attributes: dict[str, str]
     token_type: TokenType
     jti: str
+    family_id: str | None
     issued_at: datetime
     expires_at: datetime
 
@@ -116,14 +118,49 @@ class SessionTokenPair:
 class SessionManager:
     """Mints and verifies EMG session tokens for a given Settings instance."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        refresh_tokens: RefreshTokenStore | None = None,
+    ) -> None:
         self._settings = settings
+        self._refresh_tokens = refresh_tokens or InMemoryRefreshTokenStore()
 
     def issue(self, principal: Principal) -> SessionTokenPair:
         """Mint a fresh access/refresh token pair for an authenticated
         Principal (called immediately after a successful Keycloak login)."""
-        access_token = self._mint(principal, "access", self._settings.access_token_ttl_seconds)
-        refresh_token = self._mint(principal, "refresh", self._settings.refresh_token_ttl_seconds)
+        family_id = str(uuid.uuid4())
+        refresh_jti = str(uuid.uuid4())
+        refresh_expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=self._settings.refresh_token_ttl_seconds
+        )
+        self._refresh_tokens.register(family_id, refresh_jti, refresh_expires_at)
+        return self._issue_pair(
+            principal,
+            family_id=family_id,
+            refresh_jti=refresh_jti,
+        )
+
+    def _issue_pair(
+        self,
+        principal: Principal,
+        *,
+        family_id: str,
+        refresh_jti: str,
+    ) -> SessionTokenPair:
+        access_token = self._mint(
+            principal,
+            "access",
+            self._settings.access_token_ttl_seconds,
+            family_id=family_id,
+        )
+        refresh_token = self._mint(
+            principal,
+            "refresh",
+            self._settings.refresh_token_ttl_seconds,
+            family_id=family_id,
+            jti=refresh_jti,
+        )
         return SessionTokenPair(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -138,10 +175,27 @@ class SessionManager:
         or not of type "refresh" (e.g. an access token was presented here).
         """
         claims = self.verify(refresh_token, expected_type="refresh")
+        if claims.family_id is None:
+            raise AuthorizationError("Legacy refresh tokens must authenticate again")
+        next_jti = str(uuid.uuid4())
+        next_expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=self._settings.refresh_token_ttl_seconds
+        )
+        if not self._refresh_tokens.rotate(
+            claims.family_id,
+            claims.jti,
+            next_jti,
+            next_expires_at,
+        ):
+            raise AuthorizationError("Refresh token reuse detected; session revoked")
         principal = Principal(
             subject=claims.subject, roles=claims.roles, attributes=claims.attributes
         )
-        return self.issue(principal)
+        return self._issue_pair(
+            principal,
+            family_id=claims.family_id,
+            refresh_jti=next_jti,
+        )
 
     def verify(self, token: str, *, expected_type: TokenType) -> SessionClaims:
         """Verify signature, expiry, issuer, and audience; raises
@@ -164,24 +218,44 @@ class SessionManager:
                 f"Expected a '{expected_type}' token, got '{payload.get('token_type')}'"
             )
 
+        family_id = payload.get("family_id")
+        if family_id is not None and not isinstance(family_id, str):
+            raise AuthorizationError("Session token has an invalid token family")
+        if (
+            expected_type == "access"
+            and family_id is not None
+            and not self._refresh_tokens.family_is_active(family_id)
+        ):
+            raise AuthorizationError("Session token family has been revoked")
+
         return SessionClaims(
             subject=payload["sub"],
             roles=tuple(payload.get("roles", ())),
             attributes=_normalize_human_attributes(dict(payload.get("attributes", {}))),
             token_type=payload["token_type"],
             jti=payload["jti"],
+            family_id=family_id,
             issued_at=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
             expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
         )
 
-    def _mint(self, principal: Principal, token_type: TokenType, ttl_seconds: int) -> str:
+    def _mint(
+        self,
+        principal: Principal,
+        token_type: TokenType,
+        ttl_seconds: int,
+        *,
+        family_id: str,
+        jti: str | None = None,
+    ) -> str:
         now = datetime.now(timezone.utc)
         payload = {
             "sub": principal.subject,
             "roles": list(principal.roles),
             "attributes": dict(principal.attributes),
             "token_type": token_type,
-            "jti": str(uuid.uuid4()),
+            "jti": jti or str(uuid.uuid4()),
+            "family_id": family_id,
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
             "iss": self._settings.token_issuer,

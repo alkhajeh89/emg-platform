@@ -18,6 +18,7 @@ from emg_knowledge_graph import (
     InvalidQueryError,
     InvalidTemporalFilterError,
     LegacyIdempotencyConflictError,
+    MutationAuthorizationConflictError,
     MutationBuildError,
     MutationReplayIntegrityError,
     MutationResourceMetadataError,
@@ -44,6 +45,7 @@ ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     # ADR-027/030 mutation failures.
     InvalidMutationCommandError: 400,
     MutationResourceMetadataError: 404,
+    MutationAuthorizationConflictError: 409,
     IdempotencyMismatchError: 409,
     LegacyIdempotencyConflictError: 409,
     PersistenceConflictError: 409,

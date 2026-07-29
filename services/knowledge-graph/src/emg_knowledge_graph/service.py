@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TypeVar
+from typing import Protocol, TypeVar, cast
 
 from emg_common_types import Classification
 from emg_memory_graph import (
@@ -64,6 +64,7 @@ from .errors import (
     RevisionRestoreError,
     UnsupportedHistoryCapabilityError,
 )
+from .resource_metadata import MutationAuthorizationContext
 from .results import (
     BuildRevisionResult,
     EdgeDetails,
@@ -90,7 +91,22 @@ from .results import (
 )
 
 _T = TypeVar("_T")
-MutationAuthorizationHook = Callable[[MutationCommand], None]
+
+
+class MutationAuthorizationHook(Protocol):
+    def __call__(self, command: MutationCommand) -> MutationAuthorizationContext: ...
+
+    def authorize_current(self, command: MutationCommand) -> None: ...
+
+    def revalidate(
+        self,
+        command: MutationCommand,
+        expected: MutationAuthorizationContext,
+        graph: MemoryGraph,
+    ) -> None: ...
+
+
+LegacyMutationAuthorizationHook = Callable[[MutationCommand], object]
 
 
 def _summary_from_metadata(metadata: RevisionMetadata) -> RevisionSummary:
@@ -271,7 +287,9 @@ class KnowledgeGraphApplication:
         *,
         builder: MemoryGraphBuilder | None = None,
         revision_reader: GraphRevisionReader | None = None,
-        mutation_authorization_hook: MutationAuthorizationHook | None = None,
+        mutation_authorization_hook: (
+            MutationAuthorizationHook | LegacyMutationAuthorizationHook | None
+        ) = None,
         atomic_mutation_execution: AtomicMutationExecutionPort | None = None,
     ) -> None:
         self._graph_store = graph_store
@@ -452,6 +470,7 @@ class KnowledgeGraphApplication:
     ) -> MutationExecutionResult:
         replay = self._atomic_mutation_execution.lookup(command)
         if replay is not None:
+            self._authorize_replay(command)
             return MutationExecutionResult.from_mutation(
                 replay.result,
                 mutation_id=replay.mutation_id,
@@ -459,13 +478,13 @@ class KnowledgeGraphApplication:
                 replayed=replay.replayed,
             )
         request = MutationExecutionRequest.from_command(command)
-        if self._mutation_authorization_hook is not None:
-            self._mutation_authorization_hook(command)
+        authorization_context = self._authorize_preflight(command)
 
         def commit() -> CommittedMutation:
             resolved_related_ids = related_resource_ids
             with self._graph_store.transaction(command.tenant, command.principal) as transaction:
                 current = transaction.read()
+                self._revalidate_authorization(command, authorization_context, current)
                 if related_resource_ids_of is not None:
                     resolved_related_ids = related_resource_ids_of(current)
                 try:
@@ -507,12 +526,50 @@ class KnowledgeGraphApplication:
             return CommittedMutation(result=mutation_result, receipt=receipt)
 
         outcome = self._atomic_mutation_execution.execute(request, commit)
+        if outcome.replayed:
+            self._authorize_replay(command)
         return MutationExecutionResult.from_mutation(
             outcome.result,
             mutation_id=outcome.mutation_id,
             ledger_completed_at=outcome.ledger_completed_at,
             replayed=outcome.replayed,
         )
+
+    def _authorize_preflight(self, command: MutationCommand) -> object | None:
+        hook = self._mutation_authorization_hook
+        return None if hook is None else hook(command)
+
+    def _authorize_replay(self, command: MutationCommand) -> None:
+        hook = self._mutation_authorization_hook
+        if hook is None:
+            return
+        authorize_current = getattr(hook, "authorize_current", None)
+        if callable(authorize_current):
+            authorize_current(command)
+        else:
+            hook(command)
+
+    def _revalidate_authorization(
+        self,
+        command: MutationCommand,
+        expected: object | None,
+        graph: MemoryGraph,
+    ) -> None:
+        hook = self._mutation_authorization_hook
+        if hook is None:
+            return
+        revalidate = getattr(hook, "revalidate", None)
+        if callable(revalidate):
+            revalidate(
+                command,
+                cast(MutationAuthorizationContext, expected),
+                graph,
+            )
+        else:
+            # Compatibility for existing application-level callbacks. The
+            # callback is repeated inside the write transaction so its
+            # decision applies to the snapshot about to be mutated.
+            hook(command)
 
     @staticmethod
     def _node_classification(graph: MemoryGraph, node_id: str) -> Classification:

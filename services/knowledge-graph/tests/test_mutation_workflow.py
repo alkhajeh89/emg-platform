@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from emg_common_types import Classification
-from emg_errors import ConflictError
+from emg_errors import ConflictError, PermissionDeniedError
 from emg_knowledge_graph import (
     CloseRelationshipCommand,
     CreateEntityCommand,
@@ -13,9 +13,12 @@ from emg_knowledge_graph import (
     InvalidMutationCommandError,
     KnowledgeGraphApplication,
     MergeEntitiesCommand,
+    MutationAuthorizationConflictError,
+    MutationAuthorizationPreflight,
     MutationBuildError,
     ReplaceEntityCommand,
     ReplaceRelationshipCommand,
+    ResourceMetadata,
 )
 from emg_knowledge_lifecycle import InvalidTransitionError, VersionState
 from emg_memory_graph import (
@@ -162,6 +165,85 @@ def test_authorization_hook_runs_once_before_transaction_and_can_fail_closed() -
 
     assert seen == [create_command()]
     assert store.tenants() == ()
+
+
+class _MetadataReader:
+    def __init__(self, metadata: ResourceMetadata | None = None) -> None:
+        self.metadata = metadata
+
+    def read_entity(self, tenant: TenantId, entity_id: str) -> ResourceMetadata | None:
+        return self.metadata
+
+    def read_relationship(self, tenant: TenantId, relationship_id: str) -> ResourceMetadata | None:
+        return self.metadata
+
+
+class _ToggleEvaluator:
+    def __init__(self) -> None:
+        self.allowed = True
+
+    def authorize(self, command: object, context: object) -> None:
+        if not self.allowed:
+            raise PermissionDeniedError("permission was revoked")
+
+
+def test_stale_authorization_metadata_cannot_commit() -> None:
+    store = InMemoryGraphStore()
+    seed(
+        store,
+        entities=(entity("entity-1", classification=Classification.CONFIDENTIAL),),
+    )
+    current = store.read(TENANT).node("entity-1")
+    assert current is not None
+    replacement = MemoryNode.model_validate({**current.model_dump(), "updated_at": T1})
+    preflight = MutationAuthorizationPreflight(
+        _MetadataReader(
+            ResourceMetadata(
+                resource_type="knowledge-graph.entity",
+                resource_id="entity-1",
+                classification=Classification.INTERNAL,
+                owner="owner-a",
+            )
+        ),
+        _ToggleEvaluator(),
+    )
+    app = KnowledgeGraphApplication(store, mutation_authorization_hook=preflight)
+
+    with pytest.raises(MutationAuthorizationConflictError):
+        app.replace_entity(
+            ReplaceEntityCommand(
+                tenant=TENANT,
+                principal=PRINCIPAL,
+                replacement=replacement,
+                action=EntityReplacementAction.UPDATE,
+                idempotency_key="stale-auth",
+                as_of=T1,
+            )
+        )
+
+    assert (
+        store.read(TENANT).content_hash()
+        == seed(
+            InMemoryGraphStore(),
+            entities=(entity("entity-1", classification=Classification.CONFIDENTIAL),),
+        ).content_hash()
+    )
+
+
+def test_replay_is_denied_after_current_permission_is_revoked() -> None:
+    evaluator = _ToggleEvaluator()
+    preflight = MutationAuthorizationPreflight(_MetadataReader(), evaluator)
+    app = KnowledgeGraphApplication(
+        InMemoryGraphStore(),
+        mutation_authorization_hook=preflight,
+    )
+    command = create_command(idempotency_key="reauthorize-replay")
+    first = app.create_entity(command)
+    assert first.replayed is False
+
+    evaluator.allowed = False
+    with pytest.raises(PermissionDeniedError, match="revoked"):
+        app.create_entity(command)
 
 
 def test_replace_entity_reuses_lifecycle_validation_and_preserves_base() -> None:

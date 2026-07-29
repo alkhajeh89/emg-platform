@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from emg_audit_client import (
     EVENT_SCHEMA_VERSION_V1,
     EVENT_SCHEMA_VERSION_V2,
+    EVENT_SCHEMA_VERSION_V3,
     AuditEvent,
     ProvenanceRecord,
     SubmittedAuditEvent,
@@ -90,6 +91,7 @@ def canonical_payload(
     submitted: SubmittedAuditEvent,
     prev_hash: str,
     schema_version: int = EVENT_SCHEMA_VERSION_V1,
+    tenant_id: str | None = None,
 ) -> str:
     """Return the deterministic canonical string that `event_hash` is computed
     over. Includes every immutable field plus `prev_hash` (the chain link).
@@ -131,6 +133,8 @@ def canonical_payload(
         payload["provenance"] = (
             None if submitted.provenance is None else _canonical_provenance(submitted.provenance)
         )
+    if schema_version >= EVENT_SCHEMA_VERSION_V3:
+        payload["tenant_id"] = tenant_id
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
@@ -144,6 +148,7 @@ def compute_hash(
     submitted: SubmittedAuditEvent,
     prev_hash: str,
     schema_version: int = EVENT_SCHEMA_VERSION_V1,
+    tenant_id: str | None = None,
 ) -> str:
     """Compute the SHA-256 `event_hash` for one event."""
     payload = canonical_payload(
@@ -155,6 +160,7 @@ def compute_hash(
         submitted=submitted,
         prev_hash=prev_hash,
         schema_version=schema_version,
+        tenant_id=tenant_id,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -192,4 +198,5 @@ def recompute_event_hash(event: AuditEvent) -> str:
         submitted=submitted,
         prev_hash=event.prev_hash,
         schema_version=event.schema_version,
+        tenant_id=event.tenant_id,
     )

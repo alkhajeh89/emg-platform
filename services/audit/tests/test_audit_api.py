@@ -20,6 +20,7 @@ def issue_service_token(
     issuer: str | None = None,
 ) -> str:
     now = int(time.time())
+    role = scope
     return jwt.encode(
         {
             "iat": now,
@@ -28,6 +29,9 @@ def issue_service_token(
             "aud": audience if audience is not None else settings.service_token_audience,
             "azp": client_id,
             "scope": scope,
+            "tenant_id": "tenant-a",
+            "classification_clearance": "SECRET",
+            "realm_access": {"roles": ["service-account", role]},
         },
         private_key,
         algorithm="RS256",
@@ -79,7 +83,7 @@ def test_query_requires_svc_audit_role(client, settings, rsa_keypair):
     # emg-svc-identity may ingest but must NOT be able to read audit records.
     token = issue_service_token(settings, private_key, client_id="emg-svc-identity")
     response = client.get("/audit/events", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 def test_integrity_requires_svc_audit_role(client, settings, rsa_keypair):
@@ -141,7 +145,7 @@ def test_query_denied_for_svc_authorization(client, settings, rsa_keypair):
         settings, private_key, client_id="emg-svc-authorization", scope="svc-authorization"
     )
     response = client.get("/audit/events", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 def test_integrity_denied_for_svc_authorization(client, settings, rsa_keypair):

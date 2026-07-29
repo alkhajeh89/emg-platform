@@ -46,9 +46,9 @@ def _issue_service_token(
     settings,
     private_key,
     *,
-    client_id="emg-svc-test",
-    scope="",
-    roles=("service-account",),
+    client_id="emg-svc-identity",
+    scope="svc-identity",
+    roles=("service-account", "svc-identity"),
     tenant_id="tenant-a",
     exp_delta=300,
     classification_clearance=None,
@@ -61,7 +61,7 @@ def _issue_service_token(
         "aud": settings.service_token_audience,
         "azp": client_id,
         "scope": scope,
-        "roles": list(roles),
+        "realm_access": {"roles": list(roles)},
         "tenant_id": tenant_id,
     }
     if classification_clearance is not None:
@@ -134,8 +134,9 @@ def test_validate_still_requires_tenant_claim(settings, rsa_keypair, validator):
         "exp": now + 300,
         "iss": settings.keycloak_issuer,
         "aud": settings.service_token_audience,
-        "azp": "emg-svc-test",
+        "azp": "emg-svc-identity",
         "scope": "",
+        "realm_access": {"roles": ["service-account", "svc-identity"]},
         "classification_clearance": "SECRET",
         # tenant_id deliberately omitted
     }
@@ -150,11 +151,36 @@ def test_validate_still_resolves_tenant_and_roles(settings, rsa_keypair, validat
     role extraction (pre-existing Sprint 7.4 behavior) are unaffected."""
     private_key, _ = rsa_keypair
     token = _issue_service_token(
-        settings, private_key, roles=("service-account", "investigator"), tenant_id="tenant-b"
+        settings,
+        private_key,
+        roles=("service-account", "svc-identity", "investigator"),
+        tenant_id="tenant-b",
     )
 
     caller = validator.validate(token)
 
     assert caller.tenant.value == "tenant-b"
     assert "investigator" in caller.principal.roles
-    assert caller.principal.client_id == "emg-svc-test"
+    assert caller.principal.client_id == "emg-svc-identity"
+
+
+def test_validate_rejects_unknown_service_client(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(
+        settings,
+        private_key,
+        client_id="emg-svc-unknown",
+    )
+    with pytest.raises(AuthorizationError, match="Unrecognized"):
+        validator.validate(token)
+
+
+def test_validate_rejects_missing_registered_role(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(
+        settings,
+        private_key,
+        roles=("service-account",),
+    )
+    with pytest.raises(AuthorizationError, match="required registered roles"):
+        validator.validate(token)

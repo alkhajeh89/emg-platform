@@ -32,6 +32,11 @@ from .config import Settings, get_settings, validate_runtime_configuration
 from .federation import FederationConfig, load_federation_config
 from .keycloak_client import KeycloakClient
 from .rate_limit import InMemoryRateLimiter, RateLimiter
+from .refresh_tokens import (
+    InMemoryRefreshTokenStore,
+    PostgresRefreshTokenStore,
+    RefreshTokenStore,
+)
 from .service_principal import ServicePrincipal
 from .service_token_validator import ServiceTokenValidator
 from .session import SessionManager
@@ -57,8 +62,21 @@ def keycloak_client_dependency(settings: SettingsDep) -> KeycloakClient:
     return KeycloakClient(settings)
 
 
+@lru_cache
+def _refresh_token_store_singleton(backend: str, dsn: str) -> RefreshTokenStore:
+    if backend == "postgres":
+        return PostgresRefreshTokenStore(dsn)
+    return InMemoryRefreshTokenStore()
+
+
 def session_manager_dependency(settings: SettingsDep) -> SessionManager:
-    return SessionManager(settings)
+    return SessionManager(
+        settings,
+        _refresh_token_store_singleton(
+            settings.refresh_token_store_backend,
+            settings.refresh_token_postgres_dsn,
+        ),
+    )
 
 
 SessionManagerDep = Annotated[SessionManager, Depends(session_manager_dependency)]

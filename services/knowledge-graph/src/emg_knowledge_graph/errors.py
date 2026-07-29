@@ -74,6 +74,12 @@ class MutationResourceMetadataError(KnowledgeGraphApplicationError):
     error_code = "KNOWLEDGE_GRAPH_MUTATION_RESOURCE_METADATA"
 
 
+class MutationAuthorizationConflictError(KnowledgeGraphApplicationError):
+    """Authorization-relevant metadata changed after preflight."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_AUTHORIZATION_CONFLICT"
+
+
 class SchemaNegotiationError(KnowledgeGraphApplicationError):
     """A preferred semantic-schema version could not be resolved safely."""
 

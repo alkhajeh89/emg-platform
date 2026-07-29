@@ -48,6 +48,19 @@ from .config import Settings, get_settings
 
 SigningKeyResolver = Callable[[str], object]
 
+_RECOGNIZED_CLIENTS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "emg-svc-identity": ("identity", ("service-account", "svc-identity")),
+    "emg-svc-authorization": (
+        "authorization",
+        ("service-account", "svc-authorization"),
+    ),
+    "emg-svc-audit": ("audit", ("service-account", "svc-audit")),
+    "emg-svc-knowledge-graph-writer": (
+        "knowledge-graph-writer",
+        ("service-account", "svc-knowledge-graph-writer"),
+    ),
+}
+
 
 @dataclass(frozen=True)
 class ServicePrincipal:
@@ -63,17 +76,10 @@ class ServicePrincipal:
     Protocol `AuthorizationRequest.principal` is typed against. This type
     was missing it (a pre-existing Sprint 7.4 gap, never caught before
     because nothing in this service called into `emg_auth_client`/
-    `emg_policy_engine` until this ADR). Unlike `audit`/`identity`, this
-    service resolves it to an empty string rather than a real value:
-    neither of them derives `service_name` from the token itself — both
-    resolve it via their own registry-style allow-list of recognized
-    `client_id`s (`identity.SERVICE_REGISTRY`, `audit._RECOGNIZED_CLIENTS`),
-    and this service has no equivalent registry (see ADR-025 §5's evidenced
-    finding: no consumer service is registered anywhere as a Knowledge Graph
-    API client). Adding such a registry is a separate, not-yet-authorized
-    change outside this sprint's scope — this field exists only to make the
-    existing, shared PEP contract type-check, not to assert a resolved
-    service identity that does not yet exist.
+    `emg_policy_engine` until this ADR). SRS-2 applies the same reviewed
+    client allow-list and required-role contract used by Identity and Audit,
+    so `service_name` is resolved from the verified client identifier rather
+    than accepted from token-controlled content.
 
     `attributes` (ADR-026 Revision 2, Amendment 2, Group D3): mirrors
     `emg_auth_client.Principal.attributes` exactly, closing the asymmetry
@@ -180,16 +186,26 @@ class TenantServiceTokenValidator:
             raise AuthorizationError(f"Invalid service token: {exc}") from exc
 
         client_id = payload.get("azp") or payload.get("client_id")
-        if not isinstance(client_id, str) or not client_id:
-            raise AuthorizationError("Service token is missing a client identifier")
+        if not isinstance(client_id, str) or client_id not in _RECOGNIZED_CLIENTS:
+            raise AuthorizationError(f"Unrecognized service client '{client_id}'")
+        service_name, required_roles = _RECOGNIZED_CLIENTS[client_id]
 
         raw_scope = payload.get("scope", "")
         scopes = tuple(str(raw_scope).split()) if raw_scope else ()
-        raw_roles = payload.get("roles", ())
-        roles = tuple(raw_roles) if isinstance(raw_roles, list | tuple) else ()
+        realm_access = payload.get("realm_access")
+        raw_roles = realm_access.get("roles", ()) if isinstance(realm_access, dict) else ()
+        roles = tuple(str(role) for role in raw_roles) if isinstance(raw_roles, list) else ()
+        if not set(required_roles).issubset(roles):
+            raise AuthorizationError(
+                f"Service client '{client_id}' token is missing its required registered roles"
+            )
         attributes = _extract_attributes(payload, self._settings)
         principal = ServicePrincipal(
-            client_id=client_id, roles=roles, scopes=scopes, attributes=attributes
+            client_id=client_id,
+            service_name=service_name,
+            roles=roles,
+            scopes=scopes,
+            attributes=attributes,
         )
 
         tenant_claim_value = payload.get(self._settings.tenant_claim)

@@ -32,3 +32,4 @@ class ServicePrincipal:
     roles: tuple[str, ...] = field(default_factory=tuple)
     scopes: tuple[str, ...] = field(default_factory=tuple)
     attributes: dict[str, str] = field(default_factory=dict)
+    tenant_id: str = ""

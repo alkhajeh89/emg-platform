@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from emg_common_types import Classification
+from emg_memory_graph import MemoryGraph
 from emg_platform_core import TenantId
 
 from .commands import (
@@ -76,7 +77,39 @@ class MutationAuthorizationPreflight:
         self._metadata_reader = metadata_reader
         self._evaluator = evaluator
 
-    def __call__(self, command: MutationCommand) -> None:
+    def __call__(self, command: MutationCommand) -> MutationAuthorizationContext:
+        current, proposed = self._context_for(command)
+        context = MutationAuthorizationContext(
+            current_resources=current,
+            proposed_classifications=proposed,
+        )
+        self._evaluator.authorize(command, context)
+        return context
+
+    def revalidate(
+        self,
+        command: MutationCommand,
+        expected: MutationAuthorizationContext,
+        graph: MemoryGraph,
+    ) -> None:
+        """Authorize the exact immutable graph snapshot about to be mutated."""
+
+        current, proposed = self._context_for_graph(command, graph)
+        actual = MutationAuthorizationContext(
+            current_resources=current,
+            proposed_classifications=proposed,
+        )
+        if actual != expected:
+            from .errors import MutationAuthorizationConflictError
+
+            raise MutationAuthorizationConflictError(
+                "authorization-relevant resource metadata changed during mutation"
+            )
+        self._evaluator.authorize(command, actual)
+
+    def authorize_current(self, command: MutationCommand) -> None:
+        """Authorize a replay against current resource metadata."""
+
         current, proposed = self._context_for(command)
         self._evaluator.authorize(
             command,
@@ -137,6 +170,75 @@ class MutationAuthorizationPreflight:
             identifiers = (command.survivor_id, *command.source_ids)
             return (
                 tuple(self._require_entity(command.tenant, entity_id) for entity_id in identifiers),
+                (),
+            )
+        raise MutationResourceMetadataError(
+            f"unsupported mutation command type: {type(command).__name__}"
+        )
+
+    @staticmethod
+    def _entity_from_graph(graph: MemoryGraph, entity_id: str) -> ResourceMetadata:
+        node = graph.node(entity_id)
+        if node is None:
+            raise MutationResourceMetadataError(
+                f"entity {entity_id!r} is unavailable for transactional authorization"
+            )
+        return ResourceMetadata(
+            resource_type="knowledge-graph.entity",
+            resource_id=node.node_id,
+            classification=node.classification,
+            owner=node.owner or None,
+        )
+
+    @staticmethod
+    def _relationship_from_graph(graph: MemoryGraph, relationship_id: str) -> ResourceMetadata:
+        edge = graph.edge(relationship_id)
+        if edge is None:
+            raise MutationResourceMetadataError(
+                f"relationship {relationship_id!r} is unavailable for transactional authorization"
+            )
+        return ResourceMetadata(
+            resource_type="knowledge-graph.relationship",
+            resource_id=edge.edge_id,
+            classification=edge.classification,
+            owner=None,
+            source_id=edge.source_id,
+            target_id=edge.target_id,
+        )
+
+    def _relationship_context_from_graph(
+        self, graph: MemoryGraph, relationship_id: str
+    ) -> tuple[ResourceMetadata, ...]:
+        relationship = self._relationship_from_graph(graph, relationship_id)
+        assert relationship.source_id is not None
+        assert relationship.target_id is not None
+        return (
+            relationship,
+            self._entity_from_graph(graph, relationship.source_id),
+            self._entity_from_graph(graph, relationship.target_id),
+        )
+
+    def _context_for_graph(
+        self, command: MutationCommand, graph: MemoryGraph
+    ) -> tuple[tuple[ResourceMetadata, ...], tuple[Classification, ...]]:
+        if isinstance(command, CreateEntityCommand):
+            return (), (command.entity.classification,)
+        if isinstance(command, ReplaceEntityCommand):
+            return (
+                (self._entity_from_graph(graph, command.replacement.node_id),),
+                (command.replacement.classification,),
+            )
+        if isinstance(command, ReplaceRelationshipCommand):
+            return (
+                self._relationship_context_from_graph(graph, command.replacement.edge_id),
+                (command.replacement.classification,),
+            )
+        if isinstance(command, CloseRelationshipCommand):
+            return self._relationship_context_from_graph(graph, command.edge_id), ()
+        if isinstance(command, MergeEntitiesCommand):
+            identifiers = (command.survivor_id, *command.source_ids)
+            return (
+                tuple(self._entity_from_graph(graph, entity_id) for entity_id in identifiers),
                 (),
             )
         raise MutationResourceMetadataError(

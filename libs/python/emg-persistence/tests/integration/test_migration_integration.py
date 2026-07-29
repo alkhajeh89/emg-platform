@@ -88,13 +88,35 @@ def neo4j_executor() -> Iterator[object]:  # pragma: no cover - runs only with a
 @requires_postgres
 def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
     applied = run_migrations(pg_executor)
-    assert [a.version for a in applied] == [1, 2, 3, 4]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"
     assert applied[3].name == "mutation_ledger"
     assert run_migrations(pg_executor) == ()
     assert migration_status(pg_executor).is_up_to_date is True
+
+    connection = pg_executor._connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_schema_privilege(" "'emg_knowledge_graph_app', current_schema(), 'CREATE')"
+        )
+        assert cursor.fetchone() == (False,)
+        cursor.execute(
+            "SELECT tableowner FROM pg_tables "
+            "WHERE schemaname = current_schema() AND tablename = 'tenants'"
+        )
+        assert cursor.fetchone() == ("emg_knowledge_graph_migrator",)
+        cursor.execute(
+            "SELECT "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.tenants', 'SELECT'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.tenants', 'DELETE'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.mutation_idempotency', 'DELETE')"
+        )
+        assert cursor.fetchone() == (True, False, True)
 
 
 @requires_postgres

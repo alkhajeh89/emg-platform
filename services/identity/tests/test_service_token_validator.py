@@ -35,8 +35,16 @@ def _issue_service_token(
     issuer=None,
     exp_delta=300,
     classification_clearance=None,
+    tenant_id="tenant-a",
+    token_roles=None,
 ):
     now = int(time.time())
+    registered_role = {
+        "emg-svc-identity": "svc-identity",
+        "emg-svc-authorization": "svc-authorization",
+        "emg-svc-audit": "svc-audit",
+        "emg-svc-knowledge-graph-writer": "svc-knowledge-graph-writer",
+    }.get(client_id, scope)
     payload = {
         "iat": now,
         "exp": now + exp_delta,
@@ -44,6 +52,12 @@ def _issue_service_token(
         "aud": audience if audience is not None else settings.service_token_audience,
         "azp": client_id,
         "scope": scope,
+        "tenant_id": tenant_id,
+        "realm_access": {
+            "roles": (
+                ["service-account", registered_role] if token_roles is None else list(token_roles)
+            )
+        },
     }
     if classification_clearance is not None:
         payload["classification_clearance"] = classification_clearance
@@ -72,6 +86,24 @@ def test_validate_rejects_unregistered_client(settings, rsa_keypair, validator):
     token = _issue_service_token(settings, private_key, client_id="not-a-registered-client")
 
     with pytest.raises(AuthorizationError):
+        validator.validate(token)
+
+
+def test_validate_rejects_missing_tenant_claim(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, tenant_id=None)
+    with pytest.raises(AuthorizationError, match="tenant_id"):
+        validator.validate(token)
+
+
+def test_validate_rejects_missing_registered_roles(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(
+        settings,
+        private_key,
+        token_roles=("service-account",),
+    )
+    with pytest.raises(AuthorizationError, match="required registered roles"):
         validator.validate(token)
 
 

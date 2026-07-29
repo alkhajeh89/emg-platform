@@ -37,6 +37,11 @@ class Settings(BaseSettings):
         "postgresql://emg_knowledge_graph_app:emg_knowledge_graph_local_dev_only_do_not_use_in_prod"
         "@localhost:5432/emg"
     )
+    migration_postgres_dsn: str = (
+        "postgresql://emg_knowledge_graph_migrator:"
+        "emg_knowledge_graph_migrator_local_dev_only_do_not_use_in_prod"
+        "@localhost:5432/emg"
+    )
     postgres_connect_timeout_seconds: float = 10.0
 
     # Inbound service-token validation (same trust path as

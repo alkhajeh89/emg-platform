@@ -1,5 +1,18 @@
 # services/knowledge-graph
 
+Mutation authorization is checked at preflight and revalidated through the
+same PEP against the exact immutable graph snapshot read inside the write
+transaction. Authorization-relevant drift returns a safe conflict. Stored
+idempotent replays are reauthorized against current metadata.
+
+PostgreSQL deployments use separate runtime and migration jobs and DSNs. The
+serving container receives only the DML runtime credential. A one-shot
+migration job receives `EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN`, exits
+successfully before serving instances start, and never shares its owner
+credential with the runtime process. The runtime role has no schema ownership
+or DDL; its only delete permission is the narrowly required deletion of an
+expired idempotency claim during conflict-aware replacement.
+
 Scaffolded in Sprint 1 (FEAT-01-1). Governing architecture: Module 7 — Knowledge
 Graph Platform. No business logic or API implementation exists yet — see
 /services/README.md for target Epic/Sprint.

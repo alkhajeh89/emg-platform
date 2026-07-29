@@ -1,5 +1,11 @@
 # services/identity
 
+Production refresh tokens are single-use and family-scoped. Configure
+`EMG_IDENTITY_REFRESH_TOKEN_STORE_BACKEND=postgres` and
+`EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN` with the restricted
+`emg_identity_app` credential. Reuse revokes the whole family; raw tokens
+are never stored.
+
 Module 4 — Identity & Authentication, plus (Sprint 4) a reference
 integration of Module 5's Policy Enforcement Point.
 

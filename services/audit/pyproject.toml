@@ -22,6 +22,8 @@ dependencies = [
   "emg-api-contracts",
   "emg-audit-client",
   "emg-audit-pipeline",
+  "emg-auth-client",
+  "emg-policy-engine",
 ]
 
 [project.optional-dependencies]

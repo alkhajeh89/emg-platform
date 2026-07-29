@@ -177,7 +177,7 @@ def test_merge_source_ids_are_the_only_set_normalized_collection() -> None:
     assert command_fingerprint(first) == command_fingerprint(second)
 
 
-def test_application_replay_precedes_authorization_and_graph_execution() -> None:
+def test_application_replay_is_reauthorized_without_graph_execution() -> None:
     store = InMemoryGraphStore()
     authorized: list[CreateEntityCommand] = []
     app = KnowledgeGraphApplication(
@@ -194,7 +194,7 @@ def test_application_replay_precedes_authorization_and_graph_execution() -> None
     assert replay.mutation_id == first.mutation_id
     assert replay.audit_reference == first.audit_reference
     assert replay.timestamp == first.timestamp
-    assert authorized == [_command()]
+    assert authorized == [_command(), _command(), _command()]
 
 
 def test_application_execution_projection_is_stable_immutable_and_preserves_result() -> None:

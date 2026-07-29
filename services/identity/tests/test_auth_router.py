@@ -41,7 +41,7 @@ def _kc_access_token(settings, private_key, *, exp_delta=300, **extra_claims) ->
     return jwt.encode(payload, private_key, algorithm="RS256")
 
 
-def _make_client(settings, handler, *, public_key=None) -> TestClient:
+def _make_client(settings, handler, *, public_key=None, session_manager=None) -> TestClient:
     app = create_app()
     transport = httpx.MockTransport(handler)
     resolver = (lambda token: public_key) if public_key is not None else None
@@ -50,7 +50,8 @@ def _make_client(settings, handler, *, public_key=None) -> TestClient:
     app.dependency_overrides[keycloak_client_dependency] = lambda: KeycloakClient(
         settings, transport=transport, signing_key_resolver=resolver
     )
-    app.dependency_overrides[session_manager_dependency] = lambda: SessionManager(settings)
+    manager = session_manager or SessionManager(settings)
+    app.dependency_overrides[session_manager_dependency] = lambda: manager
     return TestClient(app)
 
 
@@ -113,8 +114,8 @@ def test_refresh_success(settings):
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("Keycloak should not be called for /auth/refresh")
 
-    client = _make_client(settings, handler)
     session_manager = SessionManager(settings)
+    client = _make_client(settings, handler, session_manager=session_manager)
     principal = Principal(subject="dev.investigator", roles=("platform-user",), attributes={})
     pair = session_manager.issue(principal)
 
@@ -149,8 +150,8 @@ def test_session_endpoint_returns_principal_for_valid_token(settings):
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("Keycloak should not be called for /auth/session")
 
-    client = _make_client(settings, handler)
     session_manager = SessionManager(settings)
+    client = _make_client(settings, handler, session_manager=session_manager)
     principal = Principal(
         subject="dev.investigator",
         roles=("platform-user", "investigator"),

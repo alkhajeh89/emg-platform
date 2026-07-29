@@ -21,6 +21,7 @@ def _production_settings(**overrides: object) -> Settings:
         "keycloak_client_secret": "production-keycloak-client-secret",
         "service_client_secret": "production-service-client-secret",
         "audit_forwarding_enabled": True,
+        "refresh_token_store_backend": "postgres",
     }
     values.update(overrides)
     return Settings(**values)

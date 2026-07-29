@@ -57,7 +57,7 @@ def run_startup_migrations() -> None:
         return
 
     persistence_settings = PersistenceSettings(
-        postgres_dsn=settings.postgres_dsn,
+        postgres_dsn=settings.migration_postgres_dsn,
         connect_timeout_seconds=settings.postgres_connect_timeout_seconds,
     )
     connection = connect(persistence_settings)

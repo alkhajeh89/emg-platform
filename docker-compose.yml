@@ -126,6 +126,19 @@ services:
     ports:
       - "8002:8000"
 
+  knowledge-graph-migrate:
+    build:
+      context: .
+      dockerfile: services/knowledge-graph/Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "emg_knowledge_graph_api.migrate"]
+    environment:
+      EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND: postgres
+      EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN: postgresql://emg_knowledge_graph_migrator:emg_knowledge_graph_migrator_local_dev_only_do_not_use_in_prod@postgres:5432/emg
+
   knowledge-graph:
     build:
       context: .
@@ -133,8 +146,10 @@ services:
     container_name: emg-knowledge-graph
     restart: unless-stopped
     depends_on:
-      - postgres
-      - keycloak
+      knowledge-graph-migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_started
     environment:
       EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND: postgres
       # Local-dev-only DSN using the application role created by

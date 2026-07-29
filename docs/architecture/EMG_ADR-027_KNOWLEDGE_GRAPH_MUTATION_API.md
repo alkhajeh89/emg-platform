@@ -2,6 +2,22 @@
 
 **This revision supersedes ADR-027 Revision 4 in full.**
 
+### SRS-2 security amendment (2026-07-30)
+
+The preflight decision is retained, but it is no longer the final
+authorization decision. The application captures the immutable
+authorization-relevant metadata returned by preflight and, inside
+`GraphStore.transaction()`, compares it with the exact graph snapshot about
+to be mutated. A mismatch raises the typed
+`MutationAuthorizationConflictError` and commits nothing; an unchanged
+snapshot is evaluated again through the same Policy Enforcement Point.
+
+Every stored replay is also authorized against current metadata before its
+public projection is returned. This amendment supersedes any wording below
+that describes replay as authorization-free or preflight as the only
+authorization check. It does not change command, ledger, fingerprint, or
+transport contracts.
+
 ## 1. Title
 
 Knowledge Graph Mutation API — Fine-Grained Entity/Relationship Write Path,

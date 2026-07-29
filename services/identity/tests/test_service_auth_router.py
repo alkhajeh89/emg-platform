@@ -34,6 +34,8 @@ def _issue_service_token(settings, private_key, *, exp_delta=300, audience=None)
             "aud": audience if audience is not None else settings.service_token_audience,
             "azp": "emg-svc-authorization",
             "scope": "svc-authorization",
+            "tenant_id": "tenant-a",
+            "realm_access": {"roles": ["service-account", "svc-authorization"]},
         },
         private_key,
         algorithm="RS256",

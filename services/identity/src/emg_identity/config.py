@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     session_signing_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 900  # 15 minutes
     refresh_token_ttl_seconds: int = 43200  # 12 hours
+    refresh_token_store_backend: Literal["memory", "postgres"] = "memory"
+    refresh_token_postgres_dsn: str = (
+        "postgresql://emg_identity_app:emg_identity_local_dev_only_do_not_use_in_prod"
+        "@localhost:5432/emg"
+    )
     token_issuer: str = "emg-identity-service"
     token_audience: str = "emg-platform"
 
@@ -75,6 +80,7 @@ class Settings(BaseSettings):
     # tenant_claim — except a missing claim is not an authentication error
     # (see service_token_validator.py's `_extract_attributes`).
     classification_clearance_claim: str = "classification_clearance"
+    tenant_claim: str = "tenant_id"
 
     @property
     def keycloak_issuer(self) -> str:
@@ -163,3 +169,5 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("identity production configuration contains a development credential")
     if not settings.audit_forwarding_enabled:
         raise RuntimeError("identity production configuration requires durable audit forwarding")
+    if settings.refresh_token_store_backend != "postgres":
+        raise RuntimeError("identity production configuration requires durable refresh-token state")

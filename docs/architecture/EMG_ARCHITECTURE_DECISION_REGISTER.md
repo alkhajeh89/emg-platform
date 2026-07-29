@@ -37,6 +37,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 | ADR-030 Revision 4 | **Accepted** | Atomic mutation ledger complete (`2dab646`) |
 | ADR-032 | **Accepted** | Mutation-path schema negotiation implemented; read-path adoption remains separate |
 | ADR-033 Revision 2 | **Accepted** | Infrastructure Foundation complete through Phase 3 (`5288392`); Phase 4 and normalizers not started |
+| ADR-034 | **Accepted** | SRS-2 security state, audit confinement, database-role separation, and service-token trust implemented |
 
 ### D-A-001 — Module Numbering Governance
 

@@ -25,6 +25,8 @@ def issue_service_token(
     client_id: str,
     scope: str,
     exp_delta: int = 300,
+    tenant_id: str = "tenant-a",
+    classification_clearance: str = "SECRET",
 ) -> str:
     now = int(time.time())
     return jwt.encode(
@@ -35,6 +37,9 @@ def issue_service_token(
             "aud": settings.service_token_audience,
             "azp": client_id,
             "scope": scope,
+            "tenant_id": tenant_id,
+            "classification_clearance": classification_clearance,
+            "realm_access": {"roles": ["service-account", scope]},
         },
         private_key,
         algorithm="RS256",
@@ -128,22 +133,16 @@ def test_page_walk_no_dupes_no_skips(client, settings, rsa_keypair):
 
 
 def test_page_cursor_contract(client, settings, rsa_keypair):
-    """Standard keyset contract: a short page (fewer than `limit`) ends the walk
-    (next_cursor=None); a full page returns a cursor whose follow-up page is
-    empty at the true end. Never a duplicate or skipped record either way."""
+    """Lookahead returns a cursor only when an authorized row actually follows."""
     _seed(client, settings, rsa_keypair, 5)
     rh = {"Authorization": f"Bearer {_reader_token(settings, rsa_keypair)}"}
     # limit > remaining -> short page, terminal.
     partial = client.get("/audit/events/page", params={"limit": 10}, headers=rh).json()
     assert partial["count"] == 5
     assert partial["next_cursor"] is None
-    # limit == total -> full page, cursor set; following it yields an empty page.
+    # limit == total -> lookahead proves the page is terminal.
     full = client.get("/audit/events/page", params={"limit": 5}, headers=rh).json()
-    assert full["count"] == 5 and full["next_cursor"] is not None
-    tail = client.get(
-        "/audit/events/page", params={"limit": 5, "cursor": full["next_cursor"]}, headers=rh
-    ).json()
-    assert tail["count"] == 0 and tail["next_cursor"] is None
+    assert full["count"] == 5 and full["next_cursor"] is None
 
 
 def test_invalid_cursor_returns_400(client, settings, rsa_keypair):
@@ -219,8 +218,8 @@ def test_page_requires_svc_audit(client, settings, rsa_keypair):
     assert client.get("/audit/events/page").status_code == 401
     # A non-audit principal (svc-identity) may ingest but must not read reports.
     ih = {"Authorization": f"Bearer {_ingest_token(settings, rsa_keypair)}"}
-    assert client.get("/audit/events/page", headers=ih).status_code == 401
-    assert client.get("/audit/events/export", headers=ih).status_code == 401
+    assert client.get("/audit/events/page", headers=ih).status_code == 403
+    assert client.get("/audit/events/export", headers=ih).status_code == 403
 
 
 # --- custody reporting -----------------------------------------------------
@@ -506,3 +505,91 @@ def test_export_invalid_outcome_returns_422(client, settings, rsa_keypair):
     rh = {"Authorization": f"Bearer {_reader_token(settings, rsa_keypair)}"}
     resp = client.get("/audit/events/export", params={"outcome": "maybe"}, headers=rh)
     assert resp.status_code == 422
+
+
+def test_audit_reads_are_tenant_scoped_before_pagination(client, settings, rsa_keypair):
+    private_key, _ = rsa_keypair
+    for tenant_id, event_id in (("tenant-a", "tenant-a-event"), ("tenant-b", "tenant-b-event")):
+        token = issue_service_token(
+            settings,
+            private_key,
+            client_id="emg-svc-identity",
+            scope="svc-identity",
+            tenant_id=tenant_id,
+        )
+        response = client.post(
+            "/audit/events",
+            json=_event(event_id),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+    reader = issue_service_token(
+        settings,
+        private_key,
+        client_id="emg-svc-audit",
+        scope="svc-audit",
+        tenant_id="tenant-a",
+    )
+    response = client.get(
+        "/audit/events/page",
+        params={"limit": 1},
+        headers={"Authorization": f"Bearer {reader}"},
+    )
+    assert [item["event_id"] for item in response.json()["items"]] == ["tenant-a-event"]
+    assert response.json()["next_cursor"] is None
+
+
+def test_audit_clearance_filters_list_page_lookup_and_export(client, settings, rsa_keypair):
+    private_key, _ = rsa_keypair
+    ingest = issue_service_token(
+        settings,
+        private_key,
+        client_id="emg-svc-identity",
+        scope="svc-identity",
+    )
+    headers = {"Authorization": f"Bearer {ingest}"}
+    assert (
+        client.post(
+            "/audit/events",
+            json=_event("internal-event", classification="INTERNAL"),
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/audit/events",
+            json=_event("secret-event", classification="SECRET"),
+            headers=headers,
+        ).status_code
+        == 200
+    )
+
+    reader = issue_service_token(
+        settings,
+        private_key,
+        client_id="emg-svc-audit",
+        scope="svc-audit",
+        classification_clearance="INTERNAL",
+    )
+    read_headers = {"Authorization": f"Bearer {reader}"}
+    listing = client.get("/audit/events", headers=read_headers).json()
+    assert {item["event_id"] for item in listing} == {"internal-event"}
+    assert (
+        client.get(
+            "/audit/events",
+            params={"event_id": "secret-event"},
+            headers=read_headers,
+        ).json()
+        == []
+    )
+    page = client.get("/audit/events/page", headers=read_headers).json()
+    assert page["count"] == 1
+    assert page["next_cursor"] is None
+    exported = client.get(
+        "/audit/events/export",
+        params={"format": "json"},
+        headers=read_headers,
+    ).json()
+    assert {item["event_id"] for item in exported} == {"internal-event"}

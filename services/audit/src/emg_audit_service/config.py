@@ -7,6 +7,7 @@ centralized secrets store (Engineering Master Plan §5).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,6 +44,8 @@ class Settings(BaseSettings):
     # tenant_claim — except a missing claim is not an authentication error
     # (see authn.py's `_extract_attributes`).
     classification_clearance_claim: str = "classification_clearance"
+    tenant_claim: str = "tenant_id"
+    policy_config_path: Path = Path("services/audit/config/policy.example.yaml")
 
     @property
     def keycloak_issuer(self) -> str:

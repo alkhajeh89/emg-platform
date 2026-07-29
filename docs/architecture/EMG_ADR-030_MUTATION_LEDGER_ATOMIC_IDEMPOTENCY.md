@@ -8,6 +8,16 @@ Mutation Ledger & Atomic Idempotency
 
 **Accepted — Revision 4.**
 
+### SRS-2 security amendment (2026-07-30)
+
+Replay remains read-only and never re-executes a mutation, but returning its
+external projection now requires a fresh authorization decision against
+current resource metadata. Concurrent claim resolution that returns another
+request's completed outcome is subject to the same check. This security
+amendment supersedes the earlier statements that successful replay skips the
+PEP or intentionally returns after policy revocation. Fingerprint,
+idempotency-key, ledger, and atomic-commit semantics are unchanged.
+
 **Architecture Board approval:** 2026-07-28 — **RATIFIED**. Revision 4 updates the public API projection to include operational metadata required for Stage 4 implementation.
 
 **Date:** 2026-07-28

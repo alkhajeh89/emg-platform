@@ -24,6 +24,23 @@ def test_production_rejects_memory_backend(monkeypatch: pytest.MonkeyPatch) -> N
         dependencies.validate_schema_runtime_configuration()
 
 
+def test_production_rejects_shared_runtime_and_migration_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shared_dsn = "postgresql://shared-role:secret@postgres:5432/emg"
+    settings = Settings(
+        deployment_environment="production",
+        store_backend="postgres",
+        postgres_dsn=shared_dsn,
+        migration_postgres_dsn=shared_dsn,
+        schema_catalog_path=Path("services/knowledge-graph/config/schema-catalog.json"),
+    )
+    monkeypatch.setattr(dependencies, "_settings_singleton", lambda: settings)
+
+    with pytest.raises(RuntimeError, match="credentials must be distinct"):
+        dependencies.validate_schema_runtime_configuration()
+
+
 def test_policy_semantic_validation_is_a_startup_gate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

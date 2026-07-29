@@ -67,6 +67,8 @@ def _issue_service_token(
             "aud": settings.service_token_audience,
             "azp": client_id,
             "scope": scope,
+            "tenant_id": "tenant-a",
+            "realm_access": {"roles": ["service-account", scope]},
         },
         private_key,
         algorithm="RS256",
