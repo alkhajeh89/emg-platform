@@ -49,5 +49,5 @@ done
 
 echo "==> Installing ${#names[@]} service package(s) (editable, [dev]):"
 printf '      - %s\n' "${names[@]}"
-"${PIP[@]}" install "${args[@]}"
+"${PIP[@]}" install --no-deps --no-build-isolation "${args[@]}"
 echo "==> Service packages installed (emg_identity / emg_audit_service + fastapi, cryptography, httpx, pytest-asyncio, ...)."

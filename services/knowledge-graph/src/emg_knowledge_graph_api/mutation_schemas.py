@@ -33,6 +33,7 @@ EvidenceSourceValue = Literal[
 ]
 EdgeDirectionValue = Literal["directed", "undirected"]
 EntityReplacementActionValue = Literal["update", "retire", "restore", "reclassify"]
+MAX_TRANSPORT_COLLECTION_ITEMS = 1_000
 
 
 class MutationTransportModel(BaseModel):
@@ -74,7 +75,9 @@ class EvidenceRefInput(MutationTransportModel):
     description: str | None = None
     event_id: str | None = None
     correlation_id: str | None = None
-    metadata: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, str] = Field(
+        default_factory=dict, max_length=MAX_TRANSPORT_COLLECTION_ITEMS
+    )
 
 
 class TemporalValidityInput(MutationTransportModel):
@@ -85,14 +88,18 @@ class TemporalValidityInput(MutationTransportModel):
 class TemporalFactInput(MutationTransportModel):
     value: str
     validity: TemporalValidityInput
-    evidence: tuple[EvidenceRefInput, ...]
+    evidence: tuple[EvidenceRefInput, ...] = Field(max_length=MAX_TRANSPORT_COLLECTION_ITEMS)
     recorded_at: AwareDatetime
-    metadata: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, str] = Field(
+        default_factory=dict, max_length=MAX_TRANSPORT_COLLECTION_ITEMS
+    )
 
 
 class TemporalHistoryInput(MutationTransportModel):
     attribute: str
-    facts: tuple[TemporalFactInput, ...] = ()
+    facts: tuple[TemporalFactInput, ...] = Field(
+        default=(), max_length=MAX_TRANSPORT_COLLECTION_ITEMS
+    )
 
 
 class MemoryNodeInput(MutationTransportModel):
@@ -106,12 +113,16 @@ class MemoryNodeInput(MutationTransportModel):
     classification: ClassificationValue = "INTERNAL"
     owner: str = ""
     lifecycle_status: VersionStateValue = "active"
-    supersedes: tuple[str, ...] = ()
-    evidence: tuple[EvidenceRefInput, ...]
-    aliases: tuple[str, ...] = ()
-    histories: tuple[TemporalHistoryInput, ...] = ()
+    supersedes: tuple[str, ...] = Field(default=(), max_length=MAX_TRANSPORT_COLLECTION_ITEMS)
+    evidence: tuple[EvidenceRefInput, ...] = Field(max_length=MAX_TRANSPORT_COLLECTION_ITEMS)
+    aliases: tuple[str, ...] = Field(default=(), max_length=MAX_TRANSPORT_COLLECTION_ITEMS)
+    histories: tuple[TemporalHistoryInput, ...] = Field(
+        default=(), max_length=MAX_TRANSPORT_COLLECTION_ITEMS
+    )
     ontology_entity_id: str | None = None
-    metadata: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, str] = Field(
+        default_factory=dict, max_length=MAX_TRANSPORT_COLLECTION_ITEMS
+    )
 
 
 class MemoryEdgeInput(MutationTransportModel):
@@ -120,13 +131,15 @@ class MemoryEdgeInput(MutationTransportModel):
     source_id: str
     target_id: str
     direction: EdgeDirectionValue = "directed"
-    evidence: tuple[EvidenceRefInput, ...]
+    evidence: tuple[EvidenceRefInput, ...] = Field(max_length=MAX_TRANSPORT_COLLECTION_ITEMS)
     confidence: float = Field(ge=0.0, le=1.0)
     validity: TemporalValidityInput
     created_at: AwareDatetime
     updated_at: AwareDatetime
     classification: ClassificationValue = "INTERNAL"
-    metadata: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, str] = Field(
+        default_factory=dict, max_length=MAX_TRANSPORT_COLLECTION_ITEMS
+    )
 
 
 class CreateEntityRequest(MutationTransportModel):
@@ -154,7 +167,7 @@ class CloseRelationshipRequest(MutationTransportModel):
 
 class MergeEntitiesRequest(MutationTransportModel):
     survivor_id: str
-    source_ids: tuple[str, ...]
+    source_ids: tuple[str, ...] = Field(min_length=1, max_length=MAX_TRANSPORT_COLLECTION_ITEMS)
     as_of: AwareDatetime
     reason: str
 

@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Explicit local-development and test-only credential markers"
+stopwords = [
+  "local_dev_only",
+  "do_not_use_in_prod",
+  "emg-test-password",
+  "test-secret",
+]

@@ -484,9 +484,9 @@ def test_runtime_registry_objects_are_immutable_after_construction() -> None:
     with pytest.raises(FrozenInstanceError):
         negotiator._entries = {}
     with pytest.raises(FrozenInstanceError):
-        registry.catalog = _catalog()
+        registry._catalog = _catalog()
     with pytest.raises(FrozenInstanceError):
-        registry.registrations = ()
+        registry._registrations = ()
 
 
 def test_registry_is_identity_for_strict_and_backward_versions() -> None:

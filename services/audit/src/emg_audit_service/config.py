@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
+from emg_api_contracts import reject_unknown_environment
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StoreBackend = Literal["memory", "postgres"]
@@ -65,3 +67,10 @@ def validate_runtime_configuration(settings: Settings) -> None:
 
     if settings.deployment_environment == "production" and settings.store_backend == "memory":
         raise RuntimeError("audit cannot start in production with the in-memory store backend")
+    if settings.deployment_environment == "production":
+        reject_unknown_environment("EMG_AUDIT_", set(Settings.model_fields))
+        if urlsplit(settings.keycloak_base_url).scheme != "https":
+            raise RuntimeError("audit production Keycloak transport must use HTTPS")
+        sslmode = parse_qs(urlsplit(settings.postgres_dsn).query).get("sslmode", [])
+        if not sslmode or sslmode[-1] not in {"require", "verify-ca", "verify-full"}:
+            raise RuntimeError("audit production PostgreSQL transport must require TLS")

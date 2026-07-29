@@ -8,6 +8,7 @@ API endpoints exist yet; Sprint 1 explicitly excludes API implementation.
 
 from .envelope import ApiError, ApiResponse
 from .pagination import PaginatedResponse, PaginationParams
+from .security import HttpRequestSecurityMiddleware, reject_unknown_environment
 
 __version__ = "0.1.0"
 
@@ -16,5 +17,7 @@ __all__ = [
     "ApiError",
     "PaginationParams",
     "PaginatedResponse",
+    "HttpRequestSecurityMiddleware",
+    "reject_unknown_environment",
     "__version__",
 ]

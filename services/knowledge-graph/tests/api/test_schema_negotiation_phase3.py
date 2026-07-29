@@ -245,6 +245,18 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
     )
     monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT", "production")
     monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND", "postgres")
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_BASE_URL",
+        "https://keycloak.example.gov",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
+        "postgresql://runtime@postgres.example.gov/emg?sslmode=verify-full",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN",
+        "postgresql://migration@postgres.example.gov/emg?sslmode=verify-full",
+    )
     monkeypatch.delenv(
         "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",
         raising=False,

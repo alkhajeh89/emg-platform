@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from emg_api_contracts import ApiError, ApiResponse
+from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import (
     AuthorizationError,
     EMGError,
@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
         ),
         version="0.3.0",
     )
+    app.add_middleware(HttpRequestSecurityMiddleware)
 
     def validate_startup() -> None:
         validate_runtime_configuration(get_settings())

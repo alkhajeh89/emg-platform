@@ -56,7 +56,7 @@ from emg_policy_engine import LocalPolicyEnforcementPoint, load_validated_policy
 from fastapi import Depends
 
 from .authn import TenantContextDep
-from .config import Settings, get_settings
+from .config import Settings, get_settings, validate_secure_transport
 from .mutation_authorization import PepMutationAuthorizationEvaluator
 from .mutation_preparation import MutationRequestPreparer
 from .store import AtomicMutationExecutionDep, GraphStoreDep
@@ -245,6 +245,7 @@ def validate_schema_runtime_configuration() -> None:
             "knowledge-graph production runtime and migration database credentials "
             "must be distinct"
         )
+    validate_secure_transport(settings)
     _policy_enforcement_point_singleton()
     _schema_components()
 

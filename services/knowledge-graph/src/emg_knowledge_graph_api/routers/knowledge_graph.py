@@ -95,6 +95,7 @@ from emg_knowledge_graph import (
     PagedNeighborResult,
     PageInfo,
     PathQueryResult,
+    QueryLimitExceededError,
     QueryRevisionContext,
     ShortestPathQuery,
 )
@@ -118,6 +119,7 @@ from ..schemas import (
 
 _Item = TypeVar("_Item")
 _Q = TypeVar("_Q")
+MAX_AUTHORIZED_SCAN_PAGES = 10
 
 
 def _authorized_page(
@@ -141,9 +143,15 @@ def _authorized_page(
     revision_context: QueryRevisionContext | None = None
     pinned_revision: int | None = None
     raw_has_more = True
+    scanned_pages = 0
 
     while len(accumulated) <= limit and raw_has_more:
+        if scanned_pages >= MAX_AUTHORIZED_SCAN_PAGES:
+            raise QueryLimitExceededError(
+                "authorization-filtered paging exceeded the raw-page scan limit"
+            )
         raw_items, raw_page_info, revision_context = run_page(query)
+        scanned_pages += 1
         if pinned_revision is None:
             pinned_revision = revision_context.revision_number
         accumulated.extend(authorize(raw_items))
@@ -266,13 +274,18 @@ async def list_entities(
             scope=replace(q.scope, revision_number=pinned_revision),
         )
 
+    decision_cache: dict[Classification, bool] = {}
     items, page_info, revision_context = _authorized_page(
         limit=limit,
         initial_query=query,
         run_page=_run,
         advance=_advance,
         authorize=lambda raw_items: classification_gate.filter_entities(
-            pep, caller.principal, RESOURCE_ENTITY, raw_items
+            pep,
+            caller.principal,
+            RESOURCE_ENTITY,
+            raw_items,
+            decision_cache=decision_cache,
         ),
         id_of=lambda item: item.node_id,
     )
@@ -332,13 +345,18 @@ async def list_edges(
             scope=replace(q.scope, revision_number=pinned_revision),
         )
 
+    decision_cache: dict[Classification, bool] = {}
     items, page_info, revision_context = _authorized_page(
         limit=limit,
         initial_query=query,
         run_page=_run,
         advance=_advance,
         authorize=lambda raw_items: classification_gate.filter_edges(
-            pep, caller.principal, RESOURCE_EDGE, raw_items
+            pep,
+            caller.principal,
+            RESOURCE_EDGE,
+            raw_items,
+            decision_cache=decision_cache,
         ),
         id_of=lambda item: item.edge_id,
     )

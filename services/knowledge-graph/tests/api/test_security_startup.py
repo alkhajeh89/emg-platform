@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from emg_knowledge_graph_api import dependencies
-from emg_knowledge_graph_api.config import Settings
+from emg_knowledge_graph_api.config import Settings, validate_secure_transport
 from emg_policy_engine import PolicyConfigurationError
 from pydantic import ValidationError
 
@@ -10,6 +10,27 @@ from pydantic import ValidationError
 def test_unknown_knowledge_graph_backend_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(store_backend="postgress")
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"keycloak_base_url": "http://keycloak"},
+        {"postgres_dsn": "postgresql://runtime@postgres/emg"},
+        {"migration_postgres_dsn": "postgresql://migration@postgres/emg"},
+    ],
+)
+def test_production_rejects_plaintext_transport(overrides: dict[str, object]) -> None:
+    values: dict[str, object] = {
+        "deployment_environment": "production",
+        "store_backend": "postgres",
+        "keycloak_base_url": "https://keycloak.example.gov",
+        "postgres_dsn": "postgresql://runtime@postgres/emg?sslmode=verify-full",
+        "migration_postgres_dsn": "postgresql://migration@postgres/emg?sslmode=verify-full",
+    }
+    values.update(overrides)
+    with pytest.raises(RuntimeError, match="transport"):
+        validate_secure_transport(Settings(**values))
 
 
 def test_production_rejects_memory_backend(monkeypatch: pytest.MonkeyPatch) -> None:

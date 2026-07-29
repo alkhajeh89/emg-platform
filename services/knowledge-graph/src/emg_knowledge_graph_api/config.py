@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
+from emg_api_contracts import reject_unknown_environment
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StoreBackend = Literal["memory", "postgres"]
@@ -93,3 +95,22 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_secure_transport(settings: Settings) -> None:
+    """Reject plaintext external transports in production."""
+
+    if settings.deployment_environment != "production":
+        return
+    reject_unknown_environment("EMG_KNOWLEDGE_GRAPH_API_", set(Settings.model_fields))
+    if urlsplit(settings.keycloak_base_url).scheme != "https":
+        raise RuntimeError("knowledge-graph production Keycloak transport must use HTTPS")
+    for name, dsn in (
+        ("runtime", settings.postgres_dsn),
+        ("migration", settings.migration_postgres_dsn),
+    ):
+        sslmode = parse_qs(urlsplit(dsn).query).get("sslmode", [])
+        if not sslmode or sslmode[-1] not in {"require", "verify-ca", "verify-full"}:
+            raise RuntimeError(
+                f"knowledge-graph production {name} PostgreSQL transport must require TLS"
+            )

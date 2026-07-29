@@ -70,5 +70,5 @@ fi
 
 echo "==> Installing ${#names[@]} local library packages (editable, [dev]) in one resolver pass:"
 printf '      - %s\n' "${names[@]}"
-"${PIP[@]}" install "${args[@]}"
+"${PIP[@]}" install --no-deps --no-build-isolation "${args[@]}"
 echo "==> Library packages installed."

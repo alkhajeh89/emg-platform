@@ -1,5 +1,20 @@
 # Security Architecture Documentation
 
+## Production hardening baseline
+
+SRS-3 requires encrypted external transport, secret-store supplied credentials,
+durable production backends, digest-pinned containers, hash-locked Python
+dependencies, SBOM/provenance artifacts, and blocking dependency, container,
+and secret scans. See `docs/devops/PRODUCTION_DEPLOYMENT_GUIDE.md`,
+`docs/devops/DOCKER_HARDENING.md`, and
+`docs/infrastructure/OPERATIONS_GUIDE.md`.
+
+All EMG HTTP services reject request bodies above 1 MiB, JSON nesting deeper
+than 32 levels, JSON collections above 1,000 members, and per-worker
+concurrency above 100. Endpoint-specific pagination and export limits remain
+additional controls. These application limits do not replace ingress rate
+limits, connection limits, or workload resource quotas.
+
 This directory contains the security architecture documentation for the EMG Platform.
 
 ## Required Documents

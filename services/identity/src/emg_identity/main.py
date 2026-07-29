@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from emg_api_contracts import ApiError, ApiResponse
+from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import AuthorizationError, EMGError, UpstreamServiceError, ValidationError
 from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
         ),
         version="0.4.0",
     )
+    app.add_middleware(HttpRequestSecurityMiddleware)
     from .dependencies import validate_identity_runtime_configuration
 
     app.router.add_event_handler("startup", validate_identity_runtime_configuration)

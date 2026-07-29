@@ -11,7 +11,10 @@
 #
 # Versioning policy
 # -----------------
-# We use lower-bound floors (>=) rather than exact pins. Rationale:
+# This input file records supported ranges.  CI and bootstrap install the
+# generated, hash-locked requirements-dev.lock for reproducibility.
+#
+# Range policy:
 #   * The floors match the versions already declared in the packages' own
 #     [project.optional-dependencies].dev tables (pytest>=8.0, pytest-asyncio
 #     >=0.24, mypy>=1.10, ruff>=0.6, types-PyYAML>=6.0), so the root toolchain
@@ -20,11 +23,9 @@
 #     libraries' own `requires-python`/dependency ranges and avoid resolver
 #     conflicts as packages evolve, while still guaranteeing the features the
 #     repo relies on (ruff 0.6 rule set E/F/I/UP/B/SIM; pytest 8 import-modes).
-#   * Upper bounds are intentionally omitted so security patches flow in; the
-#     `.python-version` pin + bootstrap interpreter check are what keep the
-#     environment reproducible. Teams needing byte-for-byte reproducibility can
-#     layer a `pip freeze > requirements-dev.lock` on top without changing this
-#     file's intent.
+#   * Security updates are adopted by deliberately regenerating and reviewing
+#     requirements-dev.lock, rather than by resolving a different environment
+#     on each installation.
 
 # --- Test runners -----------------------------------------------------------
 pytest>=8.0
@@ -46,4 +47,6 @@ pre-commit>=3.5             # runs .pre-commit-config.yaml (make pre-commit)
 
 # --- Packaging / supply-chain (used by tools/scripts) -----------------------
 build>=1.2                  # tools/scripts/build-libs.sh (python -m build)
+hatchling>=1.14,<2          # local editable builds run without network isolation
 pip-audit>=2.7              # tools/scripts/dependency-audit.sh
+pip-tools>=7.5,<8           # reproducible requirements-*.lock generation

@@ -30,11 +30,11 @@ from emg_audit_client import AuditEvent, AuditQuery, SubmittedAuditEvent
 from emg_audit_pipeline import encode_cursor
 from emg_common_types import Classification
 from fastapi import APIRouter, Query, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import StreamingResponse
 
 from ..authn import ServicePrincipalDep
 from ..authorization import AuditReadScope, AuditReadScopeDep
-from ..reporting import audit_events_to_csv, collect_all_audit
+from ..reporting import AUDIT_CSV_COLUMNS, iter_audit_views, stream_csv, stream_json
 from ..schemas import AuditEventPage, AuditEventView, IngestResponse
 from ..store import StoreDep
 
@@ -241,11 +241,11 @@ async def export_events(
         scope=scope,
     )
     # Single store query per page (keyset), never per row — not N+1.
-    views = collect_all_audit(store, base, _to_view)
+    views = iter_audit_views(store, base, _to_view)
     if format == "csv":
-        return PlainTextResponse(
-            audit_events_to_csv(views),
+        return StreamingResponse(
+            stream_csv(views, AUDIT_CSV_COLUMNS),
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="audit_events.csv"'},
         )
-    return JSONResponse(content=[view.model_dump(mode="json") for view in views])
+    return StreamingResponse(stream_json(views), media_type="application/json")

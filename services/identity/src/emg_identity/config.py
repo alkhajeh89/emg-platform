@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
+from emg_api_contracts import reject_unknown_environment
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_KEYCLOAK_CLIENT_SECRET = "emg_identity_local_dev_secret_do_not_use_in_prod"
@@ -150,6 +152,7 @@ def validate_runtime_configuration(settings: Settings) -> None:
 
     if settings.deployment_environment != "production":
         return
+    reject_unknown_environment("EMG_IDENTITY_", set(Settings.model_fields))
 
     signing_key = settings.session_signing_key
     if not signing_key.strip():
@@ -171,3 +174,14 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("identity production configuration requires durable audit forwarding")
     if settings.refresh_token_store_backend != "postgres":
         raise RuntimeError("identity production configuration requires durable refresh-token state")
+    if urlsplit(settings.keycloak_base_url).scheme != "https":
+        raise RuntimeError("identity production Keycloak transport must use HTTPS")
+    if urlsplit(settings.audit_service_base_url).scheme != "https":
+        raise RuntimeError("identity production audit transport must use HTTPS")
+    if not _postgres_tls_required(settings.refresh_token_postgres_dsn):
+        raise RuntimeError("identity production PostgreSQL transport must require TLS")
+
+
+def _postgres_tls_required(dsn: str) -> bool:
+    sslmode = parse_qs(urlsplit(dsn).query).get("sslmode", [])
+    return bool(sslmode and sslmode[-1] in {"require", "verify-ca", "verify-full"})

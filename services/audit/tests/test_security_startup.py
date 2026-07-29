@@ -24,5 +24,29 @@ def test_non_production_accepts_memory_storage(environment: str) -> None:
 
 def test_production_accepts_postgres_storage() -> None:
     validate_runtime_configuration(
-        Settings(deployment_environment="production", store_backend="postgres")
+        Settings(
+            deployment_environment="production",
+            store_backend="postgres",
+            keycloak_base_url="https://keycloak.example.gov",
+            postgres_dsn="postgresql://audit@postgres.example.gov/emg?sslmode=verify-full",
+        )
     )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"keycloak_base_url": "http://keycloak"},
+        {"postgres_dsn": "postgresql://audit@postgres/emg"},
+    ],
+)
+def test_production_rejects_plaintext_transport(overrides: dict[str, object]) -> None:
+    values: dict[str, object] = {
+        "deployment_environment": "production",
+        "store_backend": "postgres",
+        "keycloak_base_url": "https://keycloak.example.gov",
+        "postgres_dsn": "postgresql://audit@postgres/emg?sslmode=verify-full",
+    }
+    values.update(overrides)
+    with pytest.raises(RuntimeError, match="transport"):
+        validate_runtime_configuration(Settings(**values))

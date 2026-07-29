@@ -22,6 +22,11 @@ def _production_settings(**overrides: object) -> Settings:
         "service_client_secret": "production-service-client-secret",
         "audit_forwarding_enabled": True,
         "refresh_token_store_backend": "postgres",
+        "keycloak_base_url": "https://keycloak.example.gov",
+        "audit_service_base_url": "https://audit.example.gov",
+        "refresh_token_postgres_dsn": (
+            "postgresql://identity@postgres.example.gov/emg?sslmode=verify-full"
+        ),
     }
     values.update(overrides)
     return Settings(**values)
@@ -60,6 +65,19 @@ def test_non_production_retains_local_defaults(environment: str) -> None:
 
 def test_production_accepts_secure_runtime_configuration() -> None:
     validate_runtime_configuration(_production_settings())
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"keycloak_base_url": "http://keycloak"},
+        {"audit_service_base_url": "http://audit"},
+        {"refresh_token_postgres_dsn": "postgresql://identity@postgres/emg"},
+    ],
+)
+def test_production_rejects_plaintext_transport(overrides: dict[str, object]) -> None:
+    with pytest.raises(RuntimeError, match="transport"):
+        validate_runtime_configuration(_production_settings(**overrides))
 
 
 def test_identity_startup_gate_rejects_semantically_unsafe_policy(

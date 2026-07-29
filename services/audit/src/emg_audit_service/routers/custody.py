@@ -27,10 +27,10 @@ from emg_audit_client import CustodyEvent, CustodyQuery, SubmittedCustodyEvent
 from emg_audit_pipeline import encode_cursor
 from emg_common_types import Classification
 from fastapi import APIRouter, Query, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import StreamingResponse
 
 from ..authn import AuditCustodianDep, AuditReaderDep
-from ..reporting import collect_all_custody, custody_events_to_csv
+from ..reporting import CUSTODY_CSV_COLUMNS, iter_custody_views, stream_csv, stream_json
 from ..schemas import (
     CustodyEventPage,
     CustodyEventView,
@@ -171,14 +171,14 @@ async def export_custody_events(
         cursor=None,
         limit=100,
     )
-    views = collect_all_custody(store, base, _to_view)
+    views = iter_custody_views(store, base, _to_view)
     if format == "csv":
-        return PlainTextResponse(
-            custody_events_to_csv(views),
+        return StreamingResponse(
+            stream_csv(views, CUSTODY_CSV_COLUMNS),
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="custody_events.csv"'},
         )
-    return JSONResponse(content=[view.model_dump(mode="json") for view in views])
+    return StreamingResponse(stream_json(views), media_type="application/json")
 
 
 @router.get("/integrity", response_model=IntegrityResponse)
