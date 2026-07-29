@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 from emg_auth_client import AuthorizationRequest, Principal
-from emg_policy_engine import default_policy_config, load_policy_config, validate_policy_config
+from emg_policy_engine import (
+    PolicyConfigurationError,
+    default_policy_config,
+    load_policy_config,
+    load_validated_policy_config,
+    validate_policy_config,
+)
 from emg_policy_engine.engine import PolicyEngine
 from emg_policy_engine.rules import PolicyConfig, PolicyRule
 from pydantic import ValidationError
@@ -49,6 +55,35 @@ def test_load_policy_config_malformed_file_raises():
 
     with pytest.raises(ValidationError):
         load_policy_config(path)
+
+
+def test_policy_rule_rejects_unknown_fields(tmp_path: Path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+rules:
+  - rule_id: misspelled-role
+    resource_type: identity.diagnostics
+    action: read
+    required_role: [platform-user]
+"""
+    )
+    with pytest.raises(ValidationError, match="required_role"):
+        load_policy_config(policy_path)
+
+
+def test_validated_loader_rejects_conditionless_allow(tmp_path: Path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+rules:
+  - rule_id: unsafe
+    resource_type: identity.diagnostics
+    action: read
+"""
+    )
+    with pytest.raises(PolicyConfigurationError, match="no conditions"):
+        load_validated_policy_config(policy_path)
 
 
 def test_validate_default_config_has_no_problems():

@@ -94,3 +94,16 @@ def error_headers(exc: EMGError) -> dict[str, str]:
     if isinstance(exc, IdempotencyContentionError):
         return {"Retry-After": "1"}
     return {}
+
+
+def public_error_message(exc: EMGError) -> str:
+    """Return a stable client-safe message without exposing internal diagnostics."""
+
+    status = error_status(exc)
+    if isinstance(exc, AuthorizationError):
+        return "Authentication failed"
+    if isinstance(exc, PermissionDeniedError):
+        return "Access denied"
+    if status >= 500:
+        return "Internal server error"
+    return exc.message

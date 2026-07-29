@@ -52,7 +52,7 @@ from emg_knowledge_graph_infrastructure import (
     validate_schema_boot_gate,
 )
 from emg_platform_core import PrincipalRef
-from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
+from emg_policy_engine import LocalPolicyEnforcementPoint, load_validated_policy_config
 from fastapi import Depends
 
 from .authn import TenantContextDep
@@ -97,7 +97,7 @@ def _settings_singleton() -> Settings:
 @lru_cache
 def _policy_enforcement_point_singleton() -> PolicyEnforcementPoint:
     settings = _settings_singleton()
-    config = load_policy_config(settings.policy_config_path)
+    config = load_validated_policy_config(settings.policy_config_path)
     return LocalPolicyEnforcementPoint(config)
 
 
@@ -229,13 +229,14 @@ MutationRequestPreparerDep = Annotated[
 
 
 def validate_schema_runtime_configuration() -> None:
-    """Enforce production safety and load the schema boot gate before traffic."""
+    """Enforce production safety, policy validation, and the schema boot gate."""
 
     settings = _settings_singleton()
     if settings.deployment_environment == "production" and settings.store_backend == "memory":
         raise RuntimeError(
             "knowledge-graph cannot start in production with the in-memory store backend"
         )
+    _policy_enforcement_point_singleton()
     _schema_components()
 
 

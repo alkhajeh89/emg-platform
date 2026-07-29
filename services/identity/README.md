@@ -241,8 +241,22 @@ All are prefixed `EMG_IDENTITY_` (see `config.py`); local-dev defaults below
 match `docker-compose.yml`/`emg-realm.json` and must be overridden per
 environment via the centralized secrets store for anything secret-shaped.
 
+Production startup is fail-closed. Set
+`EMG_IDENTITY_DEPLOYMENT_ENVIRONMENT=production`, supply the session signing
+key and both Keycloak client credentials through the deployment secret
+mechanism, and enable durable audit forwarding. Repository development
+credentials, blank credentials, or a session key shorter than 32 UTF-8 bytes
+prevent startup without logging secret values. Development and test retain
+the documented local defaults.
+
+The policy file is structurally and semantically validated during startup.
+Unknown fields, duplicate rule identifiers, unknown roles, empty attribute
+allow-lists, and conditionless rules prevent traffic from being served. A
+missing policy remains the empty default-deny ruleset.
+
 | Variable | Default (local dev) | Purpose |
 | --- | --- | --- |
+| `EMG_IDENTITY_DEPLOYMENT_ENVIRONMENT` | `development` | `development`, `test`, or `production`; activates production boot gates. |
 | `EMG_IDENTITY_KEYCLOAK_BASE_URL` | `http://localhost:8080` | Keycloak base URL |
 | `EMG_IDENTITY_KEYCLOAK_REALM` | `emg` | Keycloak realm |
 | `EMG_IDENTITY_KEYCLOAK_CLIENT_ID` | `emg-identity-service` | Human-login confidential client (FEAT-02-1) |
@@ -261,6 +275,7 @@ environment via the centralized secrets store for anything secret-shaped.
 | `EMG_IDENTITY_LOGIN_RATE_LIMIT_MAX_ATTEMPTS` (Sprint 3) | `10` | `/auth/login` rate-limit budget |
 | `EMG_IDENTITY_LOGIN_RATE_LIMIT_WINDOW_SECONDS` (Sprint 3) | `60.0` | `/auth/login` rate-limit window |
 | `EMG_IDENTITY_POLICY_CONFIG_PATH` (Sprint 4) | `services/identity/config/policy.example.yaml` | Path to the ABAC policy configuration file (`emg_policy_engine.PolicyConfig`) |
+| `EMG_IDENTITY_AUDIT_FORWARDING_ENABLED` | `false` | Must be `true` in production so governed actions use durable audit delivery. |
 
 `keycloak_issuer` and `jwks_uri` (used for service-token validation) are
 computed from `keycloak_base_url`/`keycloak_realm`, not independently

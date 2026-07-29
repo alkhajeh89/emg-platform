@@ -29,7 +29,7 @@ from emg_platform_core.ports import GraphRevisionReader, GraphStore
 from fastapi import Depends
 
 from .authn import SettingsDep
-from .config import Settings
+from .config import Settings, StoreBackend
 
 
 @runtime_checkable
@@ -93,7 +93,7 @@ def _build_runtime(settings: Settings) -> StoreRuntime:
 
 
 @lru_cache
-def _runtime_singleton_for(backend: str, dsn: str) -> StoreRuntime:
+def _runtime_singleton_for(backend: StoreBackend, dsn: str) -> StoreRuntime:
     # Cache keyed by the config that determines the store, so the app reuses
     # one store/connection-provider per configuration (mirrors
     # emg_audit_service.store._store_singleton_for exactly).

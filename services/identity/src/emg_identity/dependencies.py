@@ -17,7 +17,7 @@ from typing import Annotated
 
 from emg_auth_client import AuthorizedIdentity, PolicyEnforcementPoint, Principal
 from emg_errors import AuthorizationError
-from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
+from emg_policy_engine import LocalPolicyEnforcementPoint, load_validated_policy_config
 from fastapi import Depends, Header
 
 from .audit import AuditEventSink, StructuredLogAuditSink
@@ -28,7 +28,7 @@ from .audit_pipeline import (
     PipelineAuditSink,
 )
 from .auth_client import SessionAuthClient
-from .config import Settings, get_settings
+from .config import Settings, get_settings, validate_runtime_configuration
 from .federation import FederationConfig, load_federation_config
 from .keycloak_client import KeycloakClient
 from .rate_limit import InMemoryRateLimiter, RateLimiter
@@ -253,7 +253,7 @@ CurrentIdentityDep = Annotated[AuthorizedIdentity, Depends(get_current_identity)
 @lru_cache
 def _policy_enforcement_point_singleton() -> PolicyEnforcementPoint:
     settings = _settings_singleton()
-    config = load_policy_config(settings.policy_config_path)
+    config = load_validated_policy_config(settings.policy_config_path)
     return LocalPolicyEnforcementPoint(config)
 
 
@@ -264,3 +264,10 @@ def policy_enforcement_point_dependency() -> PolicyEnforcementPoint:
 PolicyEnforcementPointDep = Annotated[
     PolicyEnforcementPoint, Depends(policy_enforcement_point_dependency)
 ]
+
+
+def validate_identity_runtime_configuration() -> None:
+    """Run production-safety and policy boot gates before serving traffic."""
+
+    validate_runtime_configuration(_settings_singleton())
+    _policy_enforcement_point_singleton()

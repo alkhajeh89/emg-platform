@@ -14,7 +14,13 @@ and the authorization testing harness (`testing`). See
 """
 
 from .engine import PolicyEngine
-from .loader import default_policy_config, load_policy_config, validate_policy_config
+from .loader import (
+    PolicyConfigurationError,
+    default_policy_config,
+    load_policy_config,
+    load_validated_policy_config,
+    validate_policy_config,
+)
 from .pep import LocalPolicyEnforcementPoint
 from .roles import ROLE_CATALOG, RoleCategory, RoleDefinition, is_known_role, role_ids
 from .rules import PolicyConfig, PolicyRule
@@ -28,6 +34,8 @@ __all__ = [
     "PolicyRule",
     "default_policy_config",
     "load_policy_config",
+    "load_validated_policy_config",
+    "PolicyConfigurationError",
     "validate_policy_config",
     "LocalPolicyEnforcementPoint",
     # Sprint 5 — FEAT-03-3 RBAC baseline role catalog

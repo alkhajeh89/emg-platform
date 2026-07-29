@@ -7,14 +7,19 @@ centralized secrets store (Engineering Master Plan §5).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+StoreBackend = Literal["memory", "postgres"]
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EMG_AUDIT_", env_file=".env", extra="ignore")
 
     # Storage backend: "memory" (tests / local without a DB) or "postgres".
-    store_backend: str = "memory"
+    store_backend: StoreBackend = "memory"
+    deployment_environment: Literal["development", "test", "production"] = "development"
 
     # PostgreSQL connection (used only when store_backend == "postgres").
     # Local-dev default matches docker-compose.yml's emg_audit_app role created
@@ -50,3 +55,10 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_runtime_configuration(settings: Settings) -> None:
+    """Prevent volatile audit storage in production."""
+
+    if settings.deployment_environment == "production" and settings.store_backend == "memory":
+        raise RuntimeError("audit cannot start in production with the in-memory store backend")

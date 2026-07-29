@@ -129,6 +129,8 @@ def test_ingest_rejects_tampered_signature(client, settings, rsa_keypair):
         "/audit/events", json=_valid_event(), headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 401
+    assert response.json()["error"]["message"] == "Authentication failed"
+    assert "Signature verification failed" not in response.text
 
 
 def test_query_denied_for_svc_authorization(client, settings, rsa_keypair):

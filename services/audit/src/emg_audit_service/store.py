@@ -28,7 +28,7 @@ from emg_audit_pipeline import (
 from fastapi import Depends
 
 from .authn import SettingsDep
-from .config import Settings
+from .config import Settings, StoreBackend
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ def _build_store(settings: Settings) -> AuditEventStore:
 
 
 @lru_cache
-def _store_singleton_for(backend: str, dsn: str) -> AuditEventStore:
+def _store_singleton_for(backend: StoreBackend, dsn: str) -> AuditEventStore:
     # Cache keyed by the config that determines the store, so the app reuses
     # one store/connection per configuration.
     from .config import Settings as _Settings
@@ -88,7 +88,7 @@ def _build_custody_store(settings: Settings) -> CustodyEventStore:
 
 
 @lru_cache
-def _custody_store_singleton_for(backend: str, dsn: str) -> CustodyEventStore:
+def _custody_store_singleton_for(backend: StoreBackend, dsn: str) -> CustodyEventStore:
     from .config import Settings as _Settings
 
     return _build_custody_store(_Settings(store_backend=backend, postgres_dsn=dsn))

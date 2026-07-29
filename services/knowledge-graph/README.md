@@ -57,8 +57,10 @@ unconditionally default-deny:
 - A **missing** policy file is not a startup error — it is treated as an
   **empty ruleset**, which denies every request.
 - A **malformed** (present but invalid) policy file *is* a startup error
-  (raises `pydantic.ValidationError` when the policy dependency is first
-  resolved).
+  (raises during the mandatory startup gate).
+- A structurally valid but semantically unsafe policy—such as an unknown
+  field, duplicate rule identifier, unknown role, empty allow-list, or
+  conditionless rule—is also a startup error.
 - **No request is ever silently allowed** due to a configuration problem.
 
 This means a deployment that forgets to supply (or mounts the wrong path
@@ -72,6 +74,9 @@ needed."
 
 **Deployment requirements:**
 
+- `EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND` accepts only `memory` and
+  `postgres`. Unknown values fail validation, and production rejects
+  `memory`; local compose values remain development-only.
 - The container image must have `config/policy.example.yaml` (or the
   deployment's own policy file) present at the path
   `EMG_KNOWLEDGE_GRAPH_API_POLICY_CONFIG_PATH` resolves to inside the

@@ -11,6 +11,7 @@ call into a router function.
 from __future__ import annotations
 
 import pytest
+from emg_errors import AuthorizationError, PermissionDeniedError
 from emg_knowledge_graph import (
     EdgeNotFoundError,
     EntityNotFoundError,
@@ -213,6 +214,39 @@ def test_mutation_error_mapped_to_stable_http_response(
     assert response.json()["error"]["error_code"] == expected_code
     assert response.json()["data"] is None
     assert response.headers.get("retry-after") == retry_after
+
+
+@pytest.mark.parametrize(
+    ("error", "public_message", "sensitive_detail"),
+    [
+        (
+            AuthorizationError("Invalid service token: Signature verification failed"),
+            "Authentication failed",
+            "Signature verification failed",
+        ),
+        (
+            PermissionDeniedError("denied by secret-policy-rule-42"),
+            "Access denied",
+            "secret-policy-rule-42",
+        ),
+        (
+            MutationReplayIntegrityError("ledger row 17 contains corrupt internal data"),
+            "Internal server error",
+            "ledger row 17",
+        ),
+    ],
+)
+def test_sensitive_error_details_are_not_exposed(
+    error: Exception,
+    public_message: str,
+    sensitive_detail: str,
+    caller_context_a: CallerContext,
+) -> None:
+    client = _client_raising(error, caller_context=caller_context_a)
+    response = client.get("/v1/knowledge-graph/entities/whatever")
+
+    assert response.json()["error"]["message"] == public_message
+    assert sensitive_detail not in response.text
 
 
 def test_missing_authorization_header_is_401(client_no_auth_override: TestClient) -> None:

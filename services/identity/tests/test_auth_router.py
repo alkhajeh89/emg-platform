@@ -104,6 +104,8 @@ def test_login_failure_returns_401_and_logs_denial(settings, caplog):
     assert response.status_code == 401
     body = response.json()
     assert body["error"]["error_code"] == "AUTHORIZATION_ERROR"
+    assert body["error"]["message"] == "Authentication failed"
+    assert "invalid_grant" not in response.text
     assert any("login failed" in record.message for record in caplog.records)
 
 

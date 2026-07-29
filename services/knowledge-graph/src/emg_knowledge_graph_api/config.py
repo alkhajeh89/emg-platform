@@ -18,6 +18,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+StoreBackend = Literal["memory", "postgres"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     # "postgres" (PostgresNeo4jGraphStore, PostgreSQL-authoritative, Neo4j
     # projection left unwired here — ADR-024 §19 does not require it, and
     # this sprint's STRICT RULES forbid touching Neo4j).
-    store_backend: str = "memory"
+    store_backend: StoreBackend = "memory"
 
     # PostgreSQL connection (used only when store_backend == "postgres").
     postgres_dsn: str = (
