@@ -11,7 +11,7 @@ Authorization/Classification Pipeline
 ## 2. Status
 
 **Accepted — Revision 5 (HTTP Transport Contract), Stage 4 Phase 4A
-authorized (2026-07-29).**
+implemented (2026-07-29, commit `08949e0`).**
 Architecture-only design, produced under
 `docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`. Revision 5 incorporates the HTTP transport contract for Stage 4 implementation without reopening the previously accepted ADR-027 decisions. **Stage 0 status:** the `svc-knowledge-graph-writer`
 role-catalog entry (§5) and the `mutation_idempotency` table migration
@@ -20,8 +20,9 @@ role-catalog entry (§5) and the `mutation_idempotency` table migration
 (Deferred Architecture Decision) for the reasoning and the separate analysis
 document that governs it. ADR-029 and ADR-027 Stages 1–3 are implemented.
 Stage 4 Phases 2, 3, and 3.5 are implemented at baseline commit `2b497f9`
-(`stage4-phase35-complete`). This revision authorizes Phase 4A against the
-transport contract in §5A.
+(`stage4-phase35-complete`), and Phase 4A is implemented at commit
+`08949e0` (`stage4-phase4a-complete`). Phase 4B remains the next delivery
+phase; no later stage is represented as complete.
 
 **Date:** 2026-07-29
 **Deciders:** Principal Software Architect / Architecture Board (EMG

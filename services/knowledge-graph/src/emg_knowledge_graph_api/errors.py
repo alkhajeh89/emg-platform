@@ -1,15 +1,9 @@
-"""Centralized application-error -> HTTP-response translation (Sprint 7.4).
+"""Centralized application-error -> HTTP-response translation.
 
-Mirrors `emg_audit_service.main`'s `_ERROR_STATUS_MAP` + single
-`EMGError` exception-handler pattern exactly: one dict from exception type to
-status code, one handler registered against the shared `EMGError` base so
-every current and future `emg_knowledge_graph` error is covered without a
-per-error handler, and the same `emg_api_contracts.ApiResponse`/`ApiError`
-JSON envelope every other service's error responses already use. No stack
-trace or persistence detail is ever included — only `error_code` (stable,
-machine-readable) and `message` (the exception's own human-readable text,
-which every `emg_knowledge_graph` error constructs without embedding
-persistence/adapter internals — see ADR-024 §17).
+The shared ``EMGError`` handler uses this module's type map plus the
+``SchemaNegotiationError`` failure discriminator required by ADR-033. The
+response keeps the repository-standard ``ApiResponse``/``ApiError`` envelope.
+No stack trace or persistence detail is included.
 """
 
 from __future__ import annotations
@@ -18,16 +12,26 @@ from emg_errors import AuthorizationError, EMGError, PermissionDeniedError
 from emg_knowledge_graph import (
     EdgeNotFoundError,
     EntityNotFoundError,
+    IdempotencyContentionError,
+    IdempotencyMismatchError,
+    InvalidMutationCommandError,
     InvalidQueryError,
     InvalidTemporalFilterError,
+    LegacyIdempotencyConflictError,
+    MutationBuildError,
+    MutationReplayIntegrityError,
+    MutationResourceMetadataError,
     PathDepthExceededError,
     QueryLimitExceededError,
     RevisionNotFoundError,
+    SchemaNegotiationError,
+    UnsupportedFingerprintVersionError,
     UnsupportedHistoryCapabilityError,
 )
+from emg_persistence import PersistenceConflictError
 
-# Order matters only for readability; lookup is by exact exception type via
-# `type(exc)`, mirroring emg_audit_service.main's `_ERROR_STATUS_MAP`.
+# Order matters only for readability; non-schema lookup is by exact exception
+# type via ``type(exc)``.
 ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     # Authentication/tenant-context failures (authn.py).
     AuthorizationError: 401,
@@ -37,6 +41,16 @@ ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     # not permitted to do this" (ADR-025 §8.6). No other existing error
     # mapping in this map changes.
     PermissionDeniedError: 403,
+    # ADR-027/030 mutation failures.
+    InvalidMutationCommandError: 400,
+    MutationResourceMetadataError: 404,
+    IdempotencyMismatchError: 409,
+    LegacyIdempotencyConflictError: 409,
+    PersistenceConflictError: 409,
+    MutationBuildError: 422,
+    IdempotencyContentionError: 503,
+    UnsupportedFingerprintVersionError: 503,
+    MutationReplayIntegrityError: 500,
     # Knowledge Graph Query Engine application errors (ADR-024 §17).
     EntityNotFoundError: 404,
     EdgeNotFoundError: 404,
@@ -56,3 +70,27 @@ ERROR_STATUS_MAP: dict[type[EMGError], int] = {
 }
 
 DEFAULT_ERROR_STATUS = 500
+_SCHEMA_CLIENT_FAILURES = frozenset(
+    {
+        "MALFORMED_SCHEMA",
+        "UNKNOWN_SCHEMA",
+        "RETIRED_SCHEMA",
+        "INCOMPATIBLE_SCHEMA",
+    }
+)
+
+
+def error_status(exc: EMGError) -> int:
+    """Map one application/persistence error without changing its semantics."""
+
+    if isinstance(exc, SchemaNegotiationError):
+        return 422 if exc.failure_code in _SCHEMA_CLIENT_FAILURES else 500
+    return ERROR_STATUS_MAP.get(type(exc), DEFAULT_ERROR_STATUS)
+
+
+def error_headers(exc: EMGError) -> dict[str, str]:
+    """Return transport-only retry metadata required by ADR-030."""
+
+    if isinstance(exc, IdempotencyContentionError):
+        return {"Retry-After": "1"}
+    return {}

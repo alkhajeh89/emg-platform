@@ -1,8 +1,8 @@
 # ADR-029 — Canonical Entity and Relationship Identity, Lifecycle, and Supersession Model
 
-**This ADR is a prerequisite for ADR-027 (Revision 3).** It does not modify
-ADR-027, does not modify any implementation code, and does not begin any
-Mutation API implementation stage. Produced under
+**This ADR was approved as a prerequisite for ADR-027 Revision 3 and remains
+the domain authority consumed by ADR-027 Revision 5.** It does not modify
+ADR-027. Produced under
 `docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`.
 
 ## 1. Title
@@ -13,8 +13,9 @@ Update, Merge, and relationship-validity closure) will consume.
 
 ## 2. Status
 
-**Proposed — Revision 2 (independent adversarial review applied).**
-Architecture-only design document, produced following a four-stage
+**Accepted — Revision 2 (Architecture Board approval: 2026-07-28).**
+Implemented at commit `97b211d` and tagged
+`adr-029-approved-implementation`. The architecture was produced following a four-stage
 investigation: (1) discovery that ADR-027 §9/§5.1 assumed a mechanism that
 does not exist (`EMG_ADR-027_STAGE_0_1_GRAPHSTORE_UNIFICATION_ANALYSIS.md`
 established the pattern of stopping before coding an unreviewed mechanism);

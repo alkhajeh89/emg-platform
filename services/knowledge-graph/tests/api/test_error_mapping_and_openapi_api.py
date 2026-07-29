@@ -14,11 +14,20 @@ import pytest
 from emg_knowledge_graph import (
     EdgeNotFoundError,
     EntityNotFoundError,
+    IdempotencyContentionError,
+    IdempotencyMismatchError,
+    InvalidMutationCommandError,
     InvalidQueryError,
     InvalidTemporalFilterError,
+    LegacyIdempotencyConflictError,
+    MutationBuildError,
+    MutationReplayIntegrityError,
+    MutationResourceMetadataError,
     PathDepthExceededError,
     QueryLimitExceededError,
     RevisionNotFoundError,
+    SchemaNegotiationError,
+    UnsupportedFingerprintVersionError,
     UnsupportedHistoryCapabilityError,
 )
 from emg_knowledge_graph_api.authn import CallerContext, require_tenant_context
@@ -27,6 +36,7 @@ from emg_knowledge_graph_api.dependencies import (
     policy_enforcement_point_dependency,
 )
 from emg_knowledge_graph_api.main import create_app
+from emg_persistence import PersistenceConflictError
 from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi.testclient import TestClient
 
@@ -115,6 +125,94 @@ def test_application_error_mapped_to_stable_http_response(
     # No stack trace or persistence detail leaks into the response.
     assert "Traceback" not in response.text
     assert "psycopg" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_code", "retry_after"),
+    [
+        (
+            InvalidMutationCommandError("invalid mutation"),
+            400,
+            "KNOWLEDGE_GRAPH_INVALID_MUTATION_COMMAND",
+            None,
+        ),
+        (
+            MutationResourceMetadataError("resource unavailable"),
+            404,
+            "KNOWLEDGE_GRAPH_MUTATION_RESOURCE_METADATA",
+            None,
+        ),
+        (
+            IdempotencyMismatchError("key mismatch"),
+            409,
+            "KNOWLEDGE_GRAPH_IDEMPOTENCY_MISMATCH",
+            None,
+        ),
+        (
+            LegacyIdempotencyConflictError("legacy key conflict"),
+            409,
+            "KNOWLEDGE_GRAPH_LEGACY_IDEMPOTENCY_CONFLICT",
+            None,
+        ),
+        (
+            PersistenceConflictError("head advanced"),
+            409,
+            "EMG_ERROR",
+            None,
+        ),
+        (
+            MutationBuildError("semantic mutation failure"),
+            422,
+            "KNOWLEDGE_GRAPH_MUTATION_BUILD_FAILED",
+            None,
+        ),
+        (
+            IdempotencyContentionError("claim timeout"),
+            503,
+            "KNOWLEDGE_GRAPH_IDEMPOTENCY_CONTENTION",
+            "1",
+        ),
+        (
+            UnsupportedFingerprintVersionError("reader unavailable"),
+            503,
+            "KNOWLEDGE_GRAPH_UNSUPPORTED_FINGERPRINT_VERSION",
+            None,
+        ),
+        (
+            MutationReplayIntegrityError("corrupt replay"),
+            500,
+            "KNOWLEDGE_GRAPH_MUTATION_REPLAY_INTEGRITY",
+            None,
+        ),
+        (
+            SchemaNegotiationError("unknown schema", failure_code="UNKNOWN_SCHEMA"),
+            422,
+            "KNOWLEDGE_GRAPH_SCHEMA_NEGOTIATION_FAILED",
+            None,
+        ),
+        (
+            SchemaNegotiationError("adapter failed", failure_code="ADAPTER_FAILURE"),
+            500,
+            "KNOWLEDGE_GRAPH_SCHEMA_NEGOTIATION_FAILED",
+            None,
+        ),
+    ],
+)
+def test_mutation_error_mapped_to_stable_http_response(
+    error: Exception,
+    expected_status: int,
+    expected_code: str,
+    retry_after: str | None,
+    caller_context_a: CallerContext,
+) -> None:
+    client = _client_raising(error, caller_context=caller_context_a)
+
+    response = client.get("/v1/knowledge-graph/entities/whatever")
+
+    assert response.status_code == expected_status
+    assert response.json()["error"]["error_code"] == expected_code
+    assert response.json()["data"] is None
+    assert response.headers.get("retry-after") == retry_after
 
 
 def test_missing_authorization_header_is_401(client_no_auth_override: TestClient) -> None:

@@ -473,3 +473,41 @@ def test_placeholder_health_is_visible_and_remains_fail_closed(
     assert response.json()["schema_placeholder_active"] is True
     assert response.json()["canonical_schema_version"] is None
     assert response.json()["schema_catalog_generation"] is None
+
+
+def test_production_rejects_in_memory_store_before_serving_traffic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog_path = tmp_path / "production-schema-catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "generation": "production-safety",
+                "canonical_version": "2.1.0",
+                "versions": [
+                    {
+                        "version": "2.1.0",
+                        "state": "published",
+                        "compatibility": "strict",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT", "production")
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND", "memory")
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH", str(catalog_path))
+    dependencies._settings_singleton.cache_clear()
+    dependencies._schema_components_singleton.cache_clear()
+
+    try:
+        with (
+            pytest.raises(RuntimeError, match="cannot start in production"),
+            TestClient(create_app()),
+        ):
+            pass
+    finally:
+        dependencies._settings_singleton.cache_clear()
+        dependencies._schema_components_singleton.cache_clear()

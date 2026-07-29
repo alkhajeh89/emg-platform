@@ -16,7 +16,7 @@ Mutation Ledger & Atomic Idempotency
 Platform)
 
 **Depends on:** ADR-022 (Revision Build Workflow), ADR-023 (Revision History
-and Navigation), ADR-027 Revision 4 (Knowledge Graph Mutation API), ADR-029
+and Navigation), ADR-027 Revision 5 (Knowledge Graph Mutation API), ADR-029
 (Canonical Entity and Relationship Identity, Lifecycle, and Supersession
 Model)
 
@@ -1389,7 +1389,7 @@ Minimum acceptance evidence for a future implementation includes:
 | ADR-023 | Revision numbers, hashes, no-op behavior, and optimistic history semantics | Ledger copies receipt values, preserves old revision time separately for no-op, and distinguishes `succeeded` from `no_op`; it never rewrites history. |
 | ADR-025 | Authentication, tenant resolution, PEP enforcement, default deny | Replay starts only after authentication/tenant resolution; first execution still uses the PEP. |
 | ADR-026 | Policy Engine is the sole classification decision engine | Classification is stored as committed audit data; ledger never compares or ranks it. |
-| ADR-027 Revision 3 | Commands, batch semantics, orchestration, idempotency scope/TTL, replay-before-authorization, failure retry | ADR-030 supplies atomic persistence, multi-resource ledger rows, and internal/full versus external/safe replay contracts Stage 3 lacked. |
+| ADR-027 Revision 5 | Commands, batch semantics, orchestration, idempotency scope/TTL, replay-before-authorization, failure retry, and HTTP transport | ADR-030 supplies atomic persistence, multi-resource ledger rows, and internal/full versus external/safe replay contracts Stage 3 lacked. |
 | ADR-029 | Identity, lifecycle, supersession, merge, temporal closure, immutable replacement | Ledger records outcomes only and neither duplicates nor interprets ADR-029 rules. |
 
 ## 20. Change Log

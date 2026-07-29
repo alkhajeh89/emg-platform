@@ -21,7 +21,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from .dependencies import validate_schema_runtime_configuration
-from .errors import DEFAULT_ERROR_STATUS, ERROR_STATUS_MAP
+from .errors import error_headers, error_status
 from .routers.health import router as health_router
 from .routers.knowledge_graph import router as knowledge_graph_router
 from .routers.mutations import router as mutation_router
@@ -54,10 +54,13 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(EMGError)
     async def emg_error_handler(request: Request, exc: EMGError) -> JSONResponse:
-        status_code = ERROR_STATUS_MAP.get(type(exc), DEFAULT_ERROR_STATUS)
         error = ApiError(error_code=exc.error_code, message=exc.message)
         envelope: ApiResponse[None] = ApiResponse(data=None, error=error)
-        return JSONResponse(status_code=status_code, content=_envelope_dict(envelope))
+        return JSONResponse(
+            status_code=error_status(exc),
+            content=_envelope_dict(envelope),
+            headers=error_headers(exc),
+        )
 
     app.include_router(health_router)
     app.include_router(knowledge_graph_router)

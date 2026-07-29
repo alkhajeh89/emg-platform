@@ -222,3 +222,7 @@ jobs:
       - name: Persistence integration tests (real PostgreSQL + Neo4j)
         run: |
           .venv/bin/pytest libs/python/emg-persistence/tests/integration -v
+
+      - name: Knowledge Graph atomic mutation integration tests (real PostgreSQL)
+        run: |
+          .venv/bin/pytest services/knowledge-graph/tests/integration/test_atomic_mutation_integration.py -v

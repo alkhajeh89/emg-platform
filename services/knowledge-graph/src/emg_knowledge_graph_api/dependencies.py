@@ -229,8 +229,13 @@ MutationRequestPreparerDep = Annotated[
 
 
 def validate_schema_runtime_configuration() -> None:
-    """Load the catalog and enforce its boot gate before serving traffic."""
+    """Enforce production safety and load the schema boot gate before traffic."""
 
+    settings = _settings_singleton()
+    if settings.deployment_environment == "production" and settings.store_backend == "memory":
+        raise RuntimeError(
+            "knowledge-graph cannot start in production with the in-memory store backend"
+        )
     _schema_components()
 
 

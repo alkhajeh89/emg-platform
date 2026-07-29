@@ -27,6 +27,7 @@ from emg_knowledge_graph_api.mutation_schemas import (
     ReplaceEntityRequest,
     ReplaceRelationshipRequest,
 )
+from emg_knowledge_graph_api.store import graph_store_dependency
 from emg_knowledge_graph_infrastructure import (
     RegistryBackedCompatibilityAdapterRegistry,
     SchemaCompatibility,
@@ -34,7 +35,7 @@ from emg_knowledge_graph_infrastructure import (
     load_schema_catalog,
     schema_registry,
 )
-from emg_platform_core import PrincipalRef, TenantId
+from emg_platform_core import InMemoryGraphStore, PrincipalRef, TenantId
 from fastapi.testclient import TestClient
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "config" / "schema-catalog.json"
@@ -243,6 +244,7 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
         "services/knowledge-graph/config/schema-catalog.json",
     )
     monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT", "production")
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND", "postgres")
     monkeypatch.delenv(
         "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",
         raising=False,
@@ -251,7 +253,9 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
     dependencies._schema_components_singleton.cache_clear()
 
     try:
-        with TestClient(create_app()) as client:
+        app = create_app()
+        app.dependency_overrides[graph_store_dependency] = InMemoryGraphStore
+        with TestClient(app) as client:
             negotiated = dependencies.schema_negotiator_dependency().negotiate(
                 SchemaNegotiationRequest(preferred_version=CANONICAL_VERSION)
             )

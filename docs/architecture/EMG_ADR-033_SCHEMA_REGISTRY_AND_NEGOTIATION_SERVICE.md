@@ -1,19 +1,7 @@
-I re-verified the disputed claims against the actual implementation before revising. Three of the review findings are confirmed by direct evidence, and two of my Revision 1 claims were factually wrong.
-
-**Evidence gathered:**
-
-- `V004__mutation_ledger.sql` (lines 64–96): `mutation_ledger` has **no** `effective_schema_version` column. It carries `command_schema_version smallint`, which ADR-030 Rev 4 §5.1 line 197 defines as *"the semantic command-envelope schema stored by this mutation. Initial value: 1"* — the internal command envelope, not the negotiated ontology version.
-- `effective_schema_version` appears in exactly three non-test locations: the `PreparedMutation` field, the response-header assignment in `routers/mutations.py:72`, and one test asserting `"1.0.0"`. **It never reaches persistence.**
-- `MutationReplayIntegrityError` in `atomic_mutation.py` (lines 143, 270) guards persisted *result/receipt document* schema versions; replay comparison at line 217 uses `fingerprint` + `command_schema_version`. Negotiated semantic versions are not involved.
-- `SchemaNegotiator` has **no** consumer outside the mutation path (8 files, all mutation-related). No second production consumer exists.
-
-**No files were created or modified. No code or pseudocode appears below.**
-
----
-
 # ADR-033 Revision 2 — Schema Registry and Negotiation Service
 
-**Status:** Accepted — Revision 2
+**Status:** Accepted — Revision 2. Implementation complete through Phase 3
+at commit `5288392`; Phase 4 has not started.
 **Extends:** ADR-032 · **Consumes without modifying:** ADR-027 Rev 5, ADR-029, ADR-030 Rev 4
 **Date:** 2026-07-28
 
@@ -34,7 +22,7 @@ One decision is **reversed**: D1 now selects service-local infrastructure rather
 
 ## 1. Context and Scope
 
-ADR-032 is Accepted and defines negotiation as policy. The contract is implemented (`SchemaNegotiator`, `MutationRequestPreparer`, `Preferred-Schema-Version` / `Effective-Schema-Version` headers). The composition root injects `_UnconfiguredSchemaNegotiator`, which fails closed unconditionally, so every mutation fails before command construction. ADR-033 supplies the missing authoritative component.
+ADR-032 is Accepted and defines negotiation as policy. The contract is implemented (`SchemaNegotiator`, `MutationRequestPreparer`, `Preferred-Schema-Version` / `Effective-Schema-Version` headers). The composition root now loads the packaged production catalog into the registry-backed implementation and applies the boot gate before serving traffic. ADR-033 defines that production component.
 
 ADR-027 Rev 5 §16 (line 432) requires that "Schema negotiation follows ADR-032 before command construction," and §591 requires that handlers contain no schema-negotiation algorithm. Revision 2 satisfies both.
 
