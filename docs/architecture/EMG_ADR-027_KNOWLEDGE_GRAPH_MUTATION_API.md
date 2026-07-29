@@ -10,18 +10,20 @@ Authorization/Classification Pipeline
 
 ## 2. Status
 
-**Accepted — Revision 5 (HTTP Transport Contract), Stage 0 complete
-(2026-07-28).**
+**Accepted — Revision 5 (HTTP Transport Contract), Stage 4 Phase 4A
+authorized (2026-07-29).**
 Architecture-only design, produced under
 `docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`. Revision 5 incorporates the HTTP transport contract for Stage 4 implementation without reopening the previously accepted ADR-027 decisions. **Stage 0 status:** the `svc-knowledge-graph-writer`
 role-catalog entry (§5) and the `mutation_idempotency` table migration
 (§8.2) are **complete**. GraphStore Protocol unification (§4.5) remains
 **deferred out of this ADR's mandatory implementation gate** — see §4.7
 (Deferred Architecture Decision) for the reasoning and the separate analysis
-document that governs it. Stage 1 has not begun and is gated on implementation
-of approved ADR-029's memory-graph contract.
+document that governs it. ADR-029 and ADR-027 Stages 1–3 are implemented.
+Stage 4 Phases 2, 3, and 3.5 are implemented at baseline commit `2b497f9`
+(`stage4-phase35-complete`). This revision authorizes Phase 4A against the
+transport contract in §5A.
 
-**Date:** 2026-07-28
+**Date:** 2026-07-29
 **Deciders:** Principal Software Architect / Architecture Board (EMG
 Platform); Chief Data Officer (Accountable Owner, Module 7 — ADR-016 §1)
 **Baseline:** `adr-026-complete` (commit `5028aa5`)
@@ -460,7 +462,6 @@ classification value the rule names, using the same enumerated
 | Restore Entity | `restore` | `knowledge-steward` **only** | Dominate the classification of the content being restored | `knowledge-steward` only — `required_roles=["knowledge-steward"]` alone already excludes every service principal, since service tokens never carry a human role (§5.3) | **Never authorized** — no service principal, regardless of role, may restore |
 | Merge Entity | `merge` | `knowledge-steward` **only** | Dominate the **maximum** classification across every input entity being merged; ADR-029 §12 owns the resulting survivor classification and field-combination semantics | `knowledge-steward` only | **Never authorized** |
 | Update Classification (reclassify) | `reclassify` | `knowledge-steward` **only** | Dominate **both** the current and the target classification | `knowledge-steward` only; a narrower "classification authority" concept beyond role-gating is reserved and requires its own future ADR per Appendix ADR-026A principle 3 — not designed here | **Never authorized** |
-| Create Relationship | `create` | `knowledge-steward` or `svc-knowledge-graph-writer` | Dominate the relationship's own classification **and** both endpoint entities' classifications | Same as Create Entity | Same as Create Entity |
 | Update Relationship | `update` | `knowledge-steward` or `svc-knowledge-graph-writer` | Dominate current and new relationship classification, and both endpoints' classifications | Same as Update Entity | Same as Update Entity |
 | Delete Relationship | `retire` | `knowledge-steward` or `svc-knowledge-graph-writer` | Dominate the relationship's current classification and both endpoints' classifications | Same as Delete Entity | Same as Delete Entity |
 | Bulk Operations | `bulk` | `knowledge-steward` or `svc-knowledge-graph-writer` | Dominate the **maximum** classification across every object in the entire batch (a single worst-case check; §11) | `knowledge-steward` only for a human-submitted batch | `svc-knowledge-graph-writer` — the intended primary caller for bulk (future ADR-020 ingestion) |
@@ -500,24 +501,123 @@ construction, to exclude every service caller — no additional
 
 ## 5A. HTTP Transport Contract
 
-Mutation operations are exposed via `POST`/`PUT` routes, mapping command DTOs to the response projection defined in ADR-030 Revision 4.
+Revision 5 defines transport bindings only. It does not add, split, rename,
+or reinterpret an application command. The five routes below are the complete
+HTTP mutation surface authorized by this revision.
 
-| Operation | Method | Route | Request DTO | Response |
-| :--- | :--- | :--- | :--- | :--- |
-| Create Entity | POST | `/api/v1/entities` | `CreateEntityCommand` | ADR-030 Projection (201) |
-| Update Entity | PUT | `/api/v1/entities/{id}` | `UpdateEntityCommand` | ADR-030 Projection (200) |
-| Retire Entity | POST | `/api/v1/entities/{id}/retire` | `RetireEntityCommand` | ADR-030 Projection (200) |
-| Create Rel | POST | `/api/v1/relationships` | `CreateRelationshipCommand` | ADR-030 Projection (201) |
-| Update Rel | PUT | `/api/v1/relationships/{id}` | `UpdateRelationshipCommand` | ADR-030 Projection (200) |
+### 5A.1 Normative route contract
 
-Required Headers:
-- `X-Idempotency-Key` (required for all POST/PUT mutations)
-- `Preferred-Schema-Version` (optional, ADR-032 negotiation)
+| Operation | Method | Route | Path parameter | Request DTO | Application command and method | Response | Success |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Create Entity | `POST` | `/api/v1/entities` | None | `CreateEntityRequest` | `CreateEntityCommand` → `KnowledgeGraphApplication.create_entity()` | `MutationResponse` | `201 Created` |
+| Replace Entity | `PUT` | `/api/v1/entities/{entity_id}` | `entity_id` must equal `request.replacement.node_id` | `ReplaceEntityRequest` | `ReplaceEntityCommand` → `KnowledgeGraphApplication.replace_entity()` | `MutationResponse` | `200 OK` |
+| Replace Relationship | `PUT` | `/api/v1/relationships/{edge_id}` | `edge_id` must equal `request.replacement.edge_id` | `ReplaceRelationshipRequest` | `ReplaceRelationshipCommand` → `KnowledgeGraphApplication.replace_relationship()` | `MutationResponse` | `200 OK` |
+| Close Relationship | `POST` | `/api/v1/relationships/{edge_id}/close` | `edge_id` must equal `request.edge_id` | `CloseRelationshipRequest` | `CloseRelationshipCommand` → `KnowledgeGraphApplication.close_relationship()` | `MutationResponse` | `200 OK` |
+| Merge Entities | `POST` | `/api/v1/entities/{survivor_id}/merge` | `survivor_id` must equal `request.survivor_id` | `MergeEntitiesRequest` | `MergeEntitiesCommand` → `KnowledgeGraphApplication.merge_entities()` | `MutationResponse` | `200 OK` |
+
+### 5A.2 Replace Entity actions
+
+`ReplaceEntityRequest.action` is the existing closed transport vocabulary:
+
+- `update`;
+- `retire`;
+- `restore`; and
+- `reclassify`.
+
+All four values map to the single existing `ReplaceEntityCommand` and
+`KnowledgeGraphApplication.replace_entity()` use case. They are not
+independent transport commands or endpoints.
+
+### 5A.3 Request headers and context
+
+The following request headers are normative:
+
+- `Authorization: Bearer <token>` — required; the existing authentication
+  dependency resolves both principal and tenant from the verified token.
+- `X-Idempotency-Key` — required for every mutation and supplied unchanged to
+  the Phase 3 preparation pipeline.
+- `Preferred-Schema-Version` — required and supplied to the ADR-032 schema
+  negotiator before command construction.
+- `Content-Type: application/json` — required.
+
+`X-Correlation-ID` is optional. Existing middleware accepts a caller value or
+creates one and returns it as the `X-Correlation-ID` response header. Tenant,
+principal, ownership, mutation identity, audit reference, replay state, and
+completion timestamp are never accepted as transport-controlled fields.
+
+### 5A.4 Response contract
+
+Every successful route maps the application-owned
+`MutationExecutionResult` to the existing immutable `MutationResponse`.
+The response body contains exactly the fourteen ADR-030 Revision 4 fields:
+
+- `tenant_id`;
+- `revision_number`;
+- `content_hash`;
+- `node_count`;
+- `edge_count`;
+- `revision_created`;
+- `nodes_created`;
+- `edges_created`;
+- `node_inputs_merged`;
+- `edge_inputs_merged`;
+- `mutation_id`;
+- `audit_reference`;
+- `replayed`; and
+- `timestamp`.
+
+The selected schema version is returned as the
+`Effective-Schema-Version` response header, preserving the exact fourteen-field
+body while satisfying ADR-032. The route performs a pure projection and must
+not generate or infer any of the four operational fields.
+
+The response excludes `MutationAuditIntent`, principal provenance, reasons,
+classification, resource identities, ledger status, fingerprints, dispatch
+state, transaction details, and repository records.
+
+### 5A.5 Handler boundary
+
+Each handler may only:
+
+1. accept its validated request DTO, path values, and headers;
+2. resolve the existing authenticated caller, preparation pipeline, and
+   mutation application through dependency injection;
+3. require path/body identity equality where §5A.1 specifies it;
+4. call `MutationRequestPreparer.prepare()` exactly once;
+5. dispatch the resulting command to its corresponding
+   `KnowledgeGraphApplication` method; and
+6. map the returned `MutationExecutionResult` to `MutationResponse`.
+
+Handlers contain no authorization decision, schema-negotiation algorithm,
+command construction, lifecycle rule, supersession rule, Merge rule,
+transaction logic, idempotency logic, mutation-ledger access, persistence
+access, or infrastructure adapter.
+
+### 5A.6 Repository implementation notes
+
+These notes describe the repository baseline and are not new normative
+architecture:
+
+- Phase 2 defines the five request DTOs and `MutationResponse` in
+  `emg_knowledge_graph_api.mutation_schemas`.
+- Phase 3 defines DTO-to-command mapping, schema-first preparation,
+  authorization preflight, and dependency composition.
+- Phase 3.5 defines `MutationExecutionResult`; both atomic mutation adapters
+  supply the authoritative mutation identity, ledger completion timestamp,
+  and replay state through `AtomicMutationOutcome`.
+- `KnowledgeGraphApplication` remains the sole mutation orchestrator, and
+  `AtomicMutationExecutionPort` remains the sole mutation executor.
+- Concrete persistence implementations remain confined to the existing
+  composition root.
+
+Stages 4 Phase 2, Phase 3, and Phase 3.5 remain valid without modification.
+With §5A now aligned to those contracts, **Phase 4A may proceed without
+inventing transport semantics.**
 
 ## 6. Goals
 
 1. Define a fine-grained mutation surface — entity creation, entity update,
-   relationship creation, relationship update, soft delete, restore, merge,
+   relationship replacement and closure, soft delete, restore, merge,
    reclassification, and bulk operations — that a properly authorized human
    or service caller can invoke over HTTP, with every operation's
    authorization fully specified (§5), not deferred.
@@ -691,7 +791,7 @@ surface through §15's existing validation/failure categories.
 | Delete Entity (`retire`) | Lifecycle transition and incident-relationship closure: ADR-029 §§10, 14 |
 | Restore Entity | Restore transition and eligibility: ADR-029 §10.2 |
 | Merge Entity | Complete graph-level Merge contract: ADR-029 §12 |
-| Create/Update Relationship | Relationship identity and endpoint rules: ADR-029 §9.2 |
+| Replace Relationship | Relationship identity and endpoint rules: ADR-029 §9.2 |
 | Delete Relationship (`retire`) | Relationship validity closure: ADR-029 §14 |
 
 No operation uses `EntityResolver` as a graph-mutation executor, writes
@@ -875,7 +975,7 @@ already establish in `emg_knowledge_graph/commands.py`).
 | --- | --- | --- |
 | Maximum single-mutation size | Exactly one entity or one relationship | Matches §5/§7's single-object design; existing `MemoryNode`/`MemoryEdge`/ontology field bounds (`MAX_ALIASES`, `MAX_EVIDENCE_REFS`, `MAX_LABEL_LENGTH`, etc.) apply unchanged. |
 | Maximum batch size | 500 combined entities + relationships per batch | A fixed ceiling in the same order of magnitude as the existing `MAX_QUERY_PAGE_SIZE = 200` read-side bound, sized upward to accommodate a batch legitimately mixing entities and relationships in one logical unit. |
-| Maximum relationships per non-batch request | 1 | A single Create/Update/Delete Relationship mutation is exactly one edge (§5); bulk relationship creation is the Bulk Operations path, bounded by the batch-size ceiling above. |
+| Maximum relationships per non-batch request | 1 | A single Replace/Close Relationship mutation is exactly one edge (§5); any separately approved bulk path remains bounded by the batch-size ceiling above. |
 | Transaction timeout | Bounded by one server-side request-handling cycle — a transaction must never remain open pending additional caller input or a network round-trip | Architectural requirement (fail-closed, no held-open state); the concrete numeric timeout is an `emg-persistence` connection-configuration/deployment parameter, not fixed by this ADR. |
 | Retry limits | Zero automatic server-side retries (§10.4); client retry count is not mandated by this ADR | Retry is a client decision; the architectural fix is that the server never silently retries on the caller's behalf. |
 | Idempotency window | 24 hours, `Settings`-configurable (§8.3) | Consistent with this platform's existing configurable-TTL convention. |
@@ -979,12 +1079,13 @@ logic.
    validate ADR-029's approved additive `emg-memory-graph` contract before
    Stage 1 begins. ADR-027 does not absorb that implementation into Stage 1
    and does not provide a fallback when the prerequisite is unavailable.
-3. **Stage 1 — Fine-grained commands in the application layer.** Add the
-   new commands (`CreateEntityCommand`, `UpdateEntityCommand`,
-   `RetireEntityCommand`, `RestoreEntityCommand`, `MergeEntityCommand`,
-   `ReclassifyEntityCommand`, and the relationship/batch equivalents) to
-   `emg_knowledge_graph/commands.py`, and the corresponding
-   `KnowledgeGraphApplication` methods. All writes use
+3. **Stage 1 — Fine-grained commands in the application layer: COMPLETE.**
+   The implemented commands are `CreateEntityCommand`,
+   `ReplaceEntityCommand`, `ReplaceRelationshipCommand`,
+   `CloseRelationshipCommand`, and `MergeEntitiesCommand`.
+   `ReplaceEntityCommand.action` owns the `update`, `retire`, `restore`, and
+   `reclassify` variants. The corresponding `KnowledgeGraphApplication`
+   methods consume these commands directly. All writes use
    `GraphStore.transaction()` exactly as `build_revision` does; graph
    construction uses the applicable ADR-029 builder operation rather than
    application-owned replacement or merge logic. Verifiable
@@ -993,14 +1094,14 @@ logic.
    safety limits"). The same stage adds the narrowly scoped current-view
    lifecycle eligibility mapping required by §9.6, using ADR-029's
    `LIVE_STATES` without altering ADR-024's query algorithms.
-4. **Stage 2 — Authorization/classification policy data.** Author the new
+4. **Stage 2 — Authorization/classification policy data: COMPLETE.** Author the new
    `resource_type`/`action` `PolicyRule` entries (§5) and the
    classification-propagation/ownership-override rules in
    `services/knowledge-graph/config/policy.example.yaml`, validated as
    policy data only, mirroring ADR-026's own Phase 1/Phase 2 split. (The
    `svc-knowledge-graph-writer` catalog entry itself is already done —
    Stage 0.2 — so this stage's remaining work is the policy rules only.)
-5. **Stage 3 — Concurrency infrastructure wiring.** Wire the
+5. **Stage 3 — Concurrency infrastructure wiring: COMPLETE.** Wire the
    idempotency-lookup step (§13, step 4) against the already-migrated
    `mutation_idempotency` table (Stage 0.3, complete) — proven in isolation
    before any HTTP surface exists.
@@ -1296,19 +1397,13 @@ unification, tracked separately per §4.7), pre-existing, already-tracked
 platform risks this ADR does not worsen (items 2, 5), or ordinary
 implementation follow-through (items 3, 4).
 
-**Implementation Recommendation:** Proceed in the exact stage order §14
-defines. Stage 0 is complete; implement and validate ADR-029 next; only then
-begin Stage 1 as its own independently-reviewed change. GraphStore unification
-(§4.5), when it is eventually undertaken, should likewise be its own
-standalone, independently-reviewed change — not bundled into Stage 1 or any
-other stage's review — so it receives attention proportionate to its blast
-radius (§4.4, "wider than a Knowledge-Graph-local change") whenever it is
-taken up.
+**Implementation Recommendation:** Proceed with Stage 4 Phase 4A against
+§5A. Stages 1–3 and Stage 4 Phases 2, 3, and 3.5 are complete. GraphStore
+unification remains outside this implementation sequence under §4.7.
 
 ### Final Decision
 
-**REVISION 3 READY FOR BOARD REVIEW. Stage 0 complete; Stage 1 gated by
-ADR-029 implementation (2026-07-28).**
+**REVISION 5 ACCEPTED. Stage 4 Phase 4A authorized (2026-07-29).**
 
 The Mutation API architecture is internally consistent. Its prerequisite
 status is:
@@ -1322,11 +1417,13 @@ status is:
    dependency of Stage 1 or any later stage; tracked as separate,
    independently-reviewable future work via
    `docs/architecture/EMG_ADR-027_STAGE_0_1_GRAPHSTORE_UNIFICATION_ANALYSIS.md`.
-4. ADR-029 — **APPROVED, IMPLEMENTATION REQUIRED BEFORE STAGE 1.** ADR-029
-   is the exclusive domain-model authority consumed by §9.
+4. ADR-029 — **APPROVED AND IMPLEMENTED.** ADR-029 remains the exclusive
+   domain-model authority consumed by §9.
+5. ADR-027 Stages 1–3 and Stage 4 Phases 2, 3, and 3.5 —
+   **COMPLETE.**
 
-Stage 0 is complete. Stage 1 may proceed only after item 4 is implemented
-and independently validated.
+The normative transport bindings in §5A now match the completed application
+surface. Phase 4A may proceed without inventing transport semantics.
 
 ---
 
@@ -1382,6 +1479,34 @@ and independently validated.
 ---
 
 ## 24. Changelog
+
+### Revision 5 — 2026-07-29
+
+- Replaced the inconsistent HTTP table with exactly five transport bindings:
+  Create Entity, Replace Entity, Replace Relationship, Close Relationship,
+  and Merge Entities.
+- Replaced nonexistent command names with the implemented
+  `CreateEntityCommand`, `ReplaceEntityCommand`,
+  `ReplaceRelationshipCommand`, `CloseRelationshipCommand`, and
+  `MergeEntitiesCommand`.
+- Bound every route to its existing Phase 2 request DTO and corresponding
+  `KnowledgeGraphApplication` method.
+- Documented `update`, `retire`, `restore`, and `reclassify` as action values
+  of `ReplaceEntityRequest` and `ReplaceEntityCommand`, not independent
+  commands or endpoints.
+- Removed the unsupported relationship-creation operation from the transport
+  and authorization operation lists.
+- Defined path/body identity equality, required request headers, success
+  status codes, the exact fourteen-field `MutationResponse`, and the
+  effective-schema-version response header.
+- Distinguished normative transport requirements from repository
+  implementation notes.
+- Confirmed that Stage 4 Phases 2, 3, and 3.5 remain valid without
+  modification.
+- Authorized Phase 4A to proceed without inventing transport semantics.
+- Preserved every ADR-027 Revision 4 decision governing application
+  semantics, orchestration, authorization, idempotency, atomic mutation
+  execution, and ledger behavior.
 
 ### Revision 3 — 2026-07-28
 
