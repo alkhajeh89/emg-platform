@@ -20,6 +20,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Annotated, Protocol, runtime_checkable
 
+from emg_knowledge_graph import (
+    AtomicMutationExecutionPort,
+    InMemoryAtomicMutationExecution,
+)
 from emg_platform_core import InMemoryGraphStore
 from emg_platform_core.ports import GraphRevisionReader, GraphStore
 from fastapi import Depends
@@ -43,19 +47,33 @@ class StoreHealth:
     detail: str
 
 
+@dataclass(frozen=True)
+class StoreRuntime:
+    """One store plus the atomic port sharing its transaction substrate."""
+
+    store: GraphStoreAndRevisionReader
+    atomic_mutations: AtomicMutationExecutionPort
+
+
 @lru_cache
 def _memory_store_singleton() -> InMemoryGraphStore:
     return InMemoryGraphStore()
 
 
-def _build_store(settings: Settings) -> GraphStoreAndRevisionReader:
+@lru_cache
+def _memory_atomic_mutations_singleton() -> InMemoryAtomicMutationExecution:
+    return InMemoryAtomicMutationExecution()
+
+
+def _build_runtime(settings: Settings) -> StoreRuntime:
     if settings.store_backend == "postgres":
         # Imported lazily so `psycopg`/`emg_persistence` are only required
         # when the postgres backend is actually selected (mirrors
         # emg_audit_service.store's lazy `import psycopg`).
+        from emg_knowledge_graph_infrastructure import PostgresAtomicMutationExecution
         from emg_persistence.config import PersistenceSettings
         from emg_persistence.postgres.pool import DirectConnectionProvider
-        from emg_persistence.postgres.transactions import PostgresTransactionProvider
+        from emg_persistence.postgres.transactions import ContextBoundTransactionProvider
         from emg_persistence.store import PostgresNeo4jGraphStore
 
         persistence_settings = PersistenceSettings(
@@ -63,17 +81,27 @@ def _build_store(settings: Settings) -> GraphStoreAndRevisionReader:
             connect_timeout_seconds=settings.postgres_connect_timeout_seconds,
         )
         connections = DirectConnectionProvider(persistence_settings)
-        transactions = PostgresTransactionProvider(connections)
-        return PostgresNeo4jGraphStore(transactions)
-    return _memory_store_singleton()
+        transactions = ContextBoundTransactionProvider(connections)
+        return StoreRuntime(
+            store=PostgresNeo4jGraphStore(transactions),
+            atomic_mutations=PostgresAtomicMutationExecution(transactions),
+        )
+    return StoreRuntime(
+        store=_memory_store_singleton(),
+        atomic_mutations=_memory_atomic_mutations_singleton(),
+    )
 
 
 @lru_cache
-def _store_singleton_for(backend: str, dsn: str) -> GraphStoreAndRevisionReader:
+def _runtime_singleton_for(backend: str, dsn: str) -> StoreRuntime:
     # Cache keyed by the config that determines the store, so the app reuses
     # one store/connection-provider per configuration (mirrors
     # emg_audit_service.store._store_singleton_for exactly).
-    return _build_store(Settings(store_backend=backend, postgres_dsn=dsn))
+    return _build_runtime(Settings(store_backend=backend, postgres_dsn=dsn))
+
+
+def _store_singleton_for(backend: str, dsn: str) -> GraphStoreAndRevisionReader:
+    return _runtime_singleton_for(backend, dsn).store
 
 
 def graph_store_dependency(settings: SettingsDep) -> GraphStoreAndRevisionReader:
@@ -81,6 +109,15 @@ def graph_store_dependency(settings: SettingsDep) -> GraphStoreAndRevisionReader
 
 
 GraphStoreDep = Annotated[GraphStoreAndRevisionReader, Depends(graph_store_dependency)]
+
+
+def atomic_mutation_execution_dependency(settings: SettingsDep) -> AtomicMutationExecutionPort:
+    return _runtime_singleton_for(settings.store_backend, settings.postgres_dsn).atomic_mutations
+
+
+AtomicMutationExecutionDep = Annotated[
+    AtomicMutationExecutionPort, Depends(atomic_mutation_execution_dependency)
+]
 
 
 def store_health(store: GraphStoreAndRevisionReader, settings: Settings) -> StoreHealth:

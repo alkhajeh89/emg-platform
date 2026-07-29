@@ -29,12 +29,24 @@ from functools import lru_cache
 from typing import Annotated
 
 from emg_auth_client import PolicyEnforcementPoint
-from emg_knowledge_graph import KnowledgeGraphApplication
+from emg_knowledge_graph import (
+    IResourceMetadataReader,
+    KnowledgeGraphApplication,
+    MutationAuthorizationPreflight,
+    SchemaNegotiationError,
+    SchemaNegotiationRequest,
+    SchemaNegotiationResult,
+    SchemaNegotiator,
+)
+from emg_knowledge_graph_infrastructure import GraphResourceMetadataReader
 from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi import Depends
 
+from .authn import TenantContextDep
 from .config import Settings, get_settings
-from .store import GraphStoreDep
+from .mutation_authorization import PepMutationAuthorizationEvaluator
+from .mutation_preparation import MutationRequestPreparer
+from .store import AtomicMutationExecutionDep, GraphStoreDep
 
 
 def knowledge_graph_application_dependency(
@@ -66,4 +78,83 @@ def policy_enforcement_point_dependency() -> PolicyEnforcementPoint:
 
 PolicyEnforcementPointDep = Annotated[
     PolicyEnforcementPoint, Depends(policy_enforcement_point_dependency)
+]
+
+
+class _UnconfiguredSchemaNegotiator:
+    """Fail closed until the authoritative ADR-032 registry adapter is injected."""
+
+    def negotiate(self, request: SchemaNegotiationRequest) -> SchemaNegotiationResult:
+        raise SchemaNegotiationError(
+            f"no authoritative schema registry is configured for " f"{request.preferred_version!r}"
+        )
+
+
+@lru_cache
+def _schema_negotiator_singleton() -> SchemaNegotiator:
+    return _UnconfiguredSchemaNegotiator()
+
+
+def schema_negotiator_dependency() -> SchemaNegotiator:
+    return _schema_negotiator_singleton()
+
+
+SchemaNegotiatorDep = Annotated[SchemaNegotiator, Depends(schema_negotiator_dependency)]
+
+
+def mutation_request_preparer_dependency(
+    schema_negotiator: SchemaNegotiatorDep,
+) -> MutationRequestPreparer:
+    return MutationRequestPreparer(schema_negotiator)
+
+
+MutationRequestPreparerDep = Annotated[
+    MutationRequestPreparer, Depends(mutation_request_preparer_dependency)
+]
+
+
+def resource_metadata_reader_dependency(
+    graph_store: GraphStoreDep,
+) -> IResourceMetadataReader:
+    return GraphResourceMetadataReader(graph_store)
+
+
+ResourceMetadataReaderDep = Annotated[
+    IResourceMetadataReader, Depends(resource_metadata_reader_dependency)
+]
+
+
+def mutation_authorization_preflight_dependency(
+    metadata_reader: ResourceMetadataReaderDep,
+    pep: PolicyEnforcementPointDep,
+    caller: TenantContextDep,
+) -> MutationAuthorizationPreflight:
+    return MutationAuthorizationPreflight(
+        metadata_reader,
+        PepMutationAuthorizationEvaluator(pep, caller.principal),
+    )
+
+
+MutationAuthorizationPreflightDep = Annotated[
+    MutationAuthorizationPreflight,
+    Depends(mutation_authorization_preflight_dependency),
+]
+
+
+def mutation_knowledge_graph_application_dependency(
+    graph_store: GraphStoreDep,
+    atomic_mutations: AtomicMutationExecutionDep,
+    preflight: MutationAuthorizationPreflightDep,
+) -> KnowledgeGraphApplication:
+    return KnowledgeGraphApplication(
+        graph_store=graph_store,
+        revision_reader=graph_store,
+        mutation_authorization_hook=preflight,
+        atomic_mutation_execution=atomic_mutations,
+    )
+
+
+MutationKnowledgeGraphApplicationDep = Annotated[
+    KnowledgeGraphApplication,
+    Depends(mutation_knowledge_graph_application_dependency),
 ]

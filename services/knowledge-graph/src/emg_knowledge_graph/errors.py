@@ -57,6 +57,18 @@ class MutationReplayIntegrityError(KnowledgeGraphApplicationError):
     error_code = "KNOWLEDGE_GRAPH_MUTATION_REPLAY_INTEGRITY"
 
 
+class MutationResourceMetadataError(KnowledgeGraphApplicationError):
+    """Required read-only authorization metadata was unavailable or incomplete."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_RESOURCE_METADATA"
+
+
+class SchemaNegotiationError(KnowledgeGraphApplicationError):
+    """A preferred semantic-schema version could not be resolved safely."""
+
+    error_code = "KNOWLEDGE_GRAPH_SCHEMA_NEGOTIATION_FAILED"
+
+
 class UnsupportedFingerprintVersionError(KnowledgeGraphApplicationError):
     """An active replay uses a fingerprint reader not deployed here."""
 

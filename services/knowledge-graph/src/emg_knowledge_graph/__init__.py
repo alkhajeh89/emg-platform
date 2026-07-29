@@ -48,13 +48,22 @@ from .errors import (
     LegacyIdempotencyConflictError,
     MutationBuildError,
     MutationReplayIntegrityError,
+    MutationResourceMetadataError,
     PathDepthExceededError,
     QueryLimitExceededError,
     RevisionBuildError,
     RevisionNotFoundError,
     RevisionRestoreError,
+    SchemaNegotiationError,
     UnsupportedFingerprintVersionError,
     UnsupportedHistoryCapabilityError,
+)
+from .resource_metadata import (
+    IResourceMetadataReader,
+    MutationAuthorizationContext,
+    MutationAuthorizationEvaluator,
+    MutationAuthorizationPreflight,
+    ResourceMetadata,
 )
 from .results import (
     BuildRevisionResult,
@@ -80,6 +89,11 @@ from .results import (
     RevisionDiff,
     RevisionSummary,
     project_mutation_replay,
+)
+from .schema_negotiation import (
+    SchemaNegotiationRequest,
+    SchemaNegotiationResult,
+    SchemaNegotiator,
 )
 from .service import KnowledgeGraphApplication, MutationAuthorizationHook
 
@@ -129,6 +143,7 @@ __all__ = [
     "MutationAuditIntent",
     "MutationAuthorizationHook",
     "MutationBuildError",
+    "MutationResourceMetadataError",
     "MutationExecutionRequest",
     "MutationReplayIntegrityError",
     "MutationReplayProjection",
@@ -147,6 +162,7 @@ __all__ = [
     "QueryRevisionContext",
     "RestoreRevisionCommand",
     "RestoreRevisionResult",
+    "ResourceMetadata",
     "ReplaceEntityCommand",
     "ReplaceRelationshipCommand",
     "RevisionBuildError",
@@ -154,9 +170,17 @@ __all__ = [
     "RevisionDiff",
     "RevisionNotFoundError",
     "RevisionRestoreError",
+    "SchemaNegotiationError",
+    "SchemaNegotiationRequest",
+    "SchemaNegotiationResult",
+    "SchemaNegotiator",
     "RevisionSummary",
     "ShortestPathQuery",
     "UnsupportedHistoryCapabilityError",
     "UnsupportedFingerprintVersionError",
+    "IResourceMetadataReader",
+    "MutationAuthorizationContext",
+    "MutationAuthorizationEvaluator",
+    "MutationAuthorizationPreflight",
     "project_mutation_replay",
 ]
