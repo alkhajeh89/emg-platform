@@ -1,0 +1,13 @@
+{
+  "generation": "catalog-v2.1.0-gen1",
+  "canonical_version": "2.1.0",
+  "versions": [
+    {
+      "version": "2.1.0",
+      "state": "published",
+      "compatibility": "strict",
+      "normalization_required": false,
+      "normalizer_ids": []
+    }
+  ]
+}

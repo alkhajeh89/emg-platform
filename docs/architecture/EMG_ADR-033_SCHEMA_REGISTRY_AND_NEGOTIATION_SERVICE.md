@@ -13,7 +13,7 @@ I re-verified the disputed claims against the actual implementation before revis
 
 # ADR-033 Revision 2 — Schema Registry and Negotiation Service
 
-**Status:** Proposed — Revision 2, responding to REQUEST CHANGES
+**Status:** Accepted — Revision 2
 **Extends:** ADR-032 · **Consumes without modifying:** ADR-027 Rev 5, ADR-029, ADR-030 Rev 4
 **Date:** 2026-07-28
 
@@ -630,5 +630,3 @@ Five phases. At every boundary the system is either fail-closed or correct; no p
 **Where Revision 2 is most likely to be wrong:** D3's exact-pinning requirement. Its four justifications are architecturally sound but none is *forcing* — a Board that weighs client friction more heavily could reasonably reach a different conclusion. Everything else in the document survives that change; D3 is the only decision whose reversal would not cascade.
 
 ---
-
-No repository files were created or modified. `docs/architecture/EMG_ADR-033_SCHEMA_REGISTRY_AND_NEGOTIATION_SERVICE.md` does not exist and was not authored — pending Board direction on whether to commit Revision 2 and register it as D-A-004 in `EMG_ARCHITECTURE_DECISION_REGISTER.md`.

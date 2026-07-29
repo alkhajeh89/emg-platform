@@ -100,3 +100,29 @@ granting a role (e.g. `service-account`) therefore grant that access to
 *any* service holding that realm role, not to a specifically reviewed
 Knowledge Graph consumer. Introducing a registry-based allow-list, mirroring
 `identity`/`audit`, is a follow-up task outside this ADR's authorized scope.
+
+## Schema negotiation (ADR-033)
+
+The production schema catalog is the reviewed, immutable artifact at
+`services/knowledge-graph/config/schema-catalog.json`. ADR-033 Phase 3 ships
+canonical version `2.1.0` under catalog generation `catalog-v2.1.0-gen1`.
+It contains only that Published, Strict version and therefore uses identity
+canonicalization; the production normalizer registration set is empty.
+
+The production image packages the catalog and sets
+`EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH` to its in-container location.
+Startup loads and validates the catalog, runs the normalizer boot gate, and
+fails before serving traffic if the artifact is missing, malformed, or
+inconsistent. Production never falls back to the unconfigured placeholder.
+The placeholder remains available only through explicit opt-in in an
+explicitly identified development or test environment and rejects every
+negotiation.
+
+Deployments replacing the packaged catalog must point
+`EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH` at a version-controlled,
+read-only artifact and redeploy the service; catalogs are never reloaded or
+mutated at runtime. `Preferred-Schema-Version` remains mandatory on mutation
+requests, and successful responses return the same accepted contract in
+`Effective-Schema-Version`. Readiness, structured telemetry, and schema
+metrics expose the canonical version and catalog generation without exposing
+the catalog filesystem path.

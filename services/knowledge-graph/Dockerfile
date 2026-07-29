@@ -81,6 +81,11 @@ COPY --from=base /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY --from=base /build/services/knowledge-graph/config /app/services/knowledge-graph/config
 
+# ADR-033 Phase 3: the reviewed, immutable production catalog is packaged
+# with the deployment and loaded before the process can serve traffic.
+ENV EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH=services/knowledge-graph/config/schema-catalog.json \
+    EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT=production
+
 USER emg
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
