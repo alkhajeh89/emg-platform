@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
 from typing import Any
@@ -23,6 +24,14 @@ _SEMVER = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 _AUTHORITY_FIELD_PARTS = frozenset({"classification", "owner", "tenant", "principal"})
+
+
+class SchemaCatalogValidationError(ValueError):
+    """The immutable schema catalog is incomplete or internally inconsistent."""
+
+
+class SchemaBootGateError(ValueError):
+    """Catalog and normalizer registrations cannot safely serve traffic."""
 
 
 class SchemaLifecycleState(str, Enum):
@@ -63,7 +72,7 @@ class SchemaCatalog(_CatalogModel):
     versions: tuple[SchemaCatalogEntry, ...]
 
     def entry(self, version: str) -> SchemaCatalogEntry | None:
-        """Return one exact catalog entry without interpreting its identifier."""
+        """Support startup validation; runtime adapters use immutable lookup indexes."""
 
         return next((entry for entry in self.versions if entry.version == version), None)
 
@@ -93,48 +102,56 @@ def validate_schema_catalog(catalog: SchemaCatalog) -> None:
     """Reject a catalog that cannot produce deterministic ADR-033 outcomes."""
 
     if not catalog.generation.strip():
-        raise ValueError("schema catalog generation must be non-blank")
+        raise SchemaCatalogValidationError("schema catalog generation must be non-blank")
     if not catalog.versions:
-        raise ValueError("schema catalog must contain at least one version")
+        raise SchemaCatalogValidationError("schema catalog must contain at least one version")
     if not is_well_formed_schema_version(catalog.canonical_version):
-        raise ValueError("canonical schema version must be fully qualified SemVer")
+        raise SchemaCatalogValidationError(
+            "canonical schema version must be fully qualified SemVer"
+        )
 
     identifiers = tuple(entry.version for entry in catalog.versions)
     if len(identifiers) != len(set(identifiers)):
-        raise ValueError("schema catalog version identifiers must be unique")
+        raise SchemaCatalogValidationError("schema catalog version identifiers must be unique")
     for entry in catalog.versions:
         _validate_entry(entry)
 
     canonical = catalog.entry(catalog.canonical_version)
     if canonical is None:
-        raise ValueError("canonical schema version is absent from the catalog")
+        raise SchemaCatalogValidationError("canonical schema version is absent from the catalog")
     if (
         canonical.state is not SchemaLifecycleState.PUBLISHED
         or canonical.compatibility is not SchemaCompatibility.STRICT
         or canonical.normalization_required
         or canonical.normalizer_ids
     ):
-        raise ValueError("canonical schema version must be published, strict, and unnormalized")
+        raise SchemaCatalogValidationError(
+            "canonical schema version must be published, strict, and unnormalized"
+        )
 
 
 def _validate_entry(entry: SchemaCatalogEntry) -> None:
     if not is_well_formed_schema_version(entry.version):
-        raise ValueError(f"schema version {entry.version!r} must be fully qualified SemVer")
+        raise SchemaCatalogValidationError(
+            f"schema version {entry.version!r} must be fully qualified SemVer"
+        )
     if any(not identifier.strip() for identifier in entry.normalizer_ids):
-        raise ValueError(f"schema version {entry.version!r} has a blank normalizer identifier")
+        raise SchemaCatalogValidationError(
+            f"schema version {entry.version!r} has a blank normalizer identifier"
+        )
 
     requires_normalization = entry.compatibility is SchemaCompatibility.NORMALIZATION_REQUIRED
     if entry.normalization_required != requires_normalization:
-        raise ValueError(
+        raise SchemaCatalogValidationError(
             f"schema version {entry.version!r} has inconsistent normalization classification"
         )
     if not entry.normalization_required and entry.normalizer_ids:
-        raise ValueError(
+        raise SchemaCatalogValidationError(
             f"schema version {entry.version!r} declares normalizers without requiring them"
         )
     if entry.state is SchemaLifecycleState.PUBLISHED:
         if entry.deprecated_at is not None or entry.retirement_at is not None:
-            raise ValueError(
+            raise SchemaCatalogValidationError(
                 f"published schema version {entry.version!r} cannot have lifecycle instants"
             )
     elif entry.state is SchemaLifecycleState.DEPRECATED:
@@ -142,20 +159,20 @@ def _validate_entry(entry: SchemaCatalogEntry) -> None:
         assert entry.deprecated_at is not None
         assert entry.retirement_at is not None
         if entry.deprecated_at >= entry.retirement_at:
-            raise ValueError(
+            raise SchemaCatalogValidationError(
                 f"deprecated schema version {entry.version!r} must retire after deprecation"
             )
     else:
         _require_lifecycle_instants(entry)
         if entry.normalization_required or entry.normalizer_ids:
-            raise ValueError(
+            raise SchemaCatalogValidationError(
                 f"retired schema version {entry.version!r} cannot require normalization"
             )
 
 
 def _require_lifecycle_instants(entry: SchemaCatalogEntry) -> None:
     if entry.deprecated_at is None or entry.retirement_at is None:
-        raise ValueError(
+        raise SchemaCatalogValidationError(
             f"{entry.state.value} schema version {entry.version!r} "
             "requires deprecation and retirement instants"
         )
@@ -167,17 +184,24 @@ def load_schema_catalog(document: object) -> SchemaCatalog:
     try:
         catalog = SchemaCatalog.model_validate(document)
     except ValidationError as exc:
-        raise ValueError(f"invalid schema catalog: {exc}") from exc
+        raise SchemaCatalogValidationError(f"invalid schema catalog: {exc}") from exc
     validate_schema_catalog(catalog)
     return catalog
 
 
+@dataclass(frozen=True, slots=True, init=False)
 class RegistryBackedSchemaNegotiator:
     """Perform constant-time, exact-version negotiation against one catalog."""
 
+    _entries: Mapping[str, SchemaCatalogEntry]
+
     def __init__(self, catalog: SchemaCatalog) -> None:
         validate_schema_catalog(catalog)
-        self._entries = MappingProxyType({entry.version: entry for entry in catalog.versions})
+        object.__setattr__(
+            self,
+            "_entries",
+            MappingProxyType({entry.version: entry for entry in catalog.versions}),
+        )
 
     def negotiate(self, request: SchemaNegotiationRequest) -> SchemaNegotiationResult:
         requested = request.preferred_version
@@ -211,8 +235,16 @@ class RegistryBackedSchemaNegotiator:
         )
 
 
+@dataclass(frozen=True, slots=True, init=False)
 class RegistryBackedCompatibilityAdapterRegistry:
     """Resolve one exact-pair normalizer from an immutable registration set."""
+
+    _catalog: SchemaCatalog
+    _registrations: tuple[CompatibilityNormalizerRegistration, ...]
+    _entries: Mapping[str, SchemaCatalogEntry]
+    _registrations_by_pair: Mapping[
+        tuple[str, str], tuple[CompatibilityNormalizerRegistration, ...]
+    ]
 
     def __init__(
         self,
@@ -220,8 +252,6 @@ class RegistryBackedCompatibilityAdapterRegistry:
         registrations: tuple[CompatibilityNormalizerRegistration, ...],
     ) -> None:
         validate_schema_catalog(catalog)
-        self.catalog = catalog
-        self.registrations = registrations
         registrations_by_pair: dict[
             tuple[str, str], tuple[CompatibilityNormalizerRegistration, ...]
         ] = {}
@@ -231,7 +261,26 @@ class RegistryBackedCompatibilityAdapterRegistry:
                 *registrations_by_pair.get(pair, ()),
                 registration,
             )
-        self._registrations_by_pair = MappingProxyType(registrations_by_pair)
+        object.__setattr__(self, "_catalog", catalog)
+        object.__setattr__(self, "_registrations", registrations)
+        object.__setattr__(
+            self,
+            "_entries",
+            MappingProxyType({entry.version: entry for entry in catalog.versions}),
+        )
+        object.__setattr__(
+            self,
+            "_registrations_by_pair",
+            MappingProxyType(registrations_by_pair),
+        )
+
+    @property
+    def catalog(self) -> SchemaCatalog:
+        return self._catalog
+
+    @property
+    def registrations(self) -> tuple[CompatibilityNormalizerRegistration, ...]:
+        return self._registrations
 
     def registrations_for(
         self, source_version: str, target_version: str
@@ -245,7 +294,7 @@ class RegistryBackedCompatibilityAdapterRegistry:
         source_version: str,
         target_version: str,
     ) -> Any:
-        entry = self.catalog.entry(source_version)
+        entry = self._entries.get(source_version)
         if entry is None or not entry.normalization_required:
             return request
         matches = self.registrations_for(source_version, target_version)
@@ -279,15 +328,15 @@ def validate_schema_boot_gate(
         matches = registry.registrations_for(entry.version, catalog.canonical_version)
         if entry.normalization_required:
             if len(matches) != 1:
-                raise ValueError(
+                raise SchemaBootGateError(
                     f"schema version {entry.version!r} requires exactly one normalizer"
                 )
             if entry.normalizer_ids != (matches[0].normalizer_id,):
-                raise ValueError(
+                raise SchemaBootGateError(
                     f"schema version {entry.version!r} normalizer declaration does not match"
                 )
         elif matches:
-            raise ValueError(
+            raise SchemaBootGateError(
                 f"schema version {entry.version!r} has an undeclared normalizer registration"
             )
 
@@ -298,14 +347,14 @@ def validate_schema_boot_gate(
             or registration.target_version != catalog.canonical_version
             or not source_entry.normalization_required
         ):
-            raise ValueError(
+            raise SchemaBootGateError(
                 f"normalizer {registration.normalizer_id!r} is not declared by the catalog"
             )
         prohibited = tuple(
             field for field in registration.written_fields if _is_authority_field(field)
         )
         if prohibited:
-            raise ValueError(
+            raise SchemaBootGateError(
                 f"normalizer {registration.normalizer_id!r} declares prohibited writes: "
                 f"{', '.join(prohibited)}"
             )

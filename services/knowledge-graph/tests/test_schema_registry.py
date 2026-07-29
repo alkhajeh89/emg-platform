@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
 
 import pytest
@@ -18,8 +19,10 @@ from emg_knowledge_graph_infrastructure import (
     CompatibilityNormalizerRegistration,
     RegistryBackedCompatibilityAdapterRegistry,
     RegistryBackedSchemaNegotiator,
+    SchemaBootGateError,
     SchemaCatalog,
     SchemaCatalogEntry,
+    SchemaCatalogValidationError,
     SchemaCompatibility,
     SchemaLifecycleState,
     load_schema_catalog,
@@ -259,7 +262,7 @@ def test_catalog_loader_returns_a_closed_immutable_validated_catalog() -> None:
 def test_catalog_loader_rejects_missing_empty_extra_and_malformed_data(
     document: object,
 ) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(SchemaCatalogValidationError):
         load_schema_catalog(document)
 
 
@@ -302,7 +305,7 @@ def test_catalog_loader_rejects_missing_empty_extra_and_malformed_data(
 def test_catalog_validator_rejects_ambiguous_or_canonical_less_catalogs(
     catalog: SchemaCatalog, message: str
 ) -> None:
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(SchemaCatalogValidationError, match=message):
         validate_schema_catalog(catalog)
 
 
@@ -320,9 +323,9 @@ def test_catalog_validator_requires_consistent_normalization_and_lifecycle() -> 
         ),
     )
 
-    with pytest.raises(ValueError, match="inconsistent normalization"):
+    with pytest.raises(SchemaCatalogValidationError, match="inconsistent normalization"):
         validate_schema_catalog(inconsistent)
-    with pytest.raises(ValueError, match="requires deprecation and retirement"):
+    with pytest.raises(SchemaCatalogValidationError, match="requires deprecation and retirement"):
         validate_schema_catalog(invalid_lifecycle)
 
 
@@ -361,7 +364,7 @@ def test_boot_gate_rejects_missing_ambiguous_mismatched_and_authority_writing_no
     catalog = _normalizing_catalog()
     registry = RegistryBackedCompatibilityAdapterRegistry(catalog, registrations)
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(SchemaBootGateError, match=message):
         validate_schema_boot_gate(catalog, registry)
 
 
@@ -375,8 +378,21 @@ def test_boot_gate_rejects_undeclared_normalizer_pair() -> None:
         (_registration(source_version="2.0.0"),),
     )
 
-    with pytest.raises(ValueError, match="undeclared normalizer"):
+    with pytest.raises(SchemaBootGateError, match="undeclared normalizer"):
         validate_schema_boot_gate(catalog, registry)
+
+
+def test_runtime_registry_objects_are_immutable_after_construction() -> None:
+    catalog = _normalizing_catalog()
+    negotiator = RegistryBackedSchemaNegotiator(catalog)
+    registry = RegistryBackedCompatibilityAdapterRegistry(catalog, (_registration(),))
+
+    with pytest.raises(FrozenInstanceError):
+        negotiator._entries = {}
+    with pytest.raises(FrozenInstanceError):
+        registry.catalog = _catalog()
+    with pytest.raises(FrozenInstanceError):
+        registry.registrations = ()
 
 
 def test_registry_is_identity_for_strict_and_backward_versions() -> None:
