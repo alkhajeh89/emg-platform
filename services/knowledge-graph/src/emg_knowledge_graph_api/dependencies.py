@@ -87,7 +87,8 @@ class _UnconfiguredSchemaNegotiator:
 
     def negotiate(self, request: SchemaNegotiationRequest) -> SchemaNegotiationResult:
         raise SchemaNegotiationError(
-            f"no authoritative schema registry is configured for " f"{request.preferred_version!r}"
+            f"no authoritative schema registry is configured for {request.preferred_version!r}",
+            failure_code="NEGOTIATION_UNCONFIGURED",
         )
 
 

@@ -93,6 +93,7 @@ from .results import (
     project_mutation_replay,
 )
 from .schema_negotiation import (
+    CompatibilityAdapterRegistry,
     SchemaNegotiationRequest,
     SchemaNegotiationResult,
     SchemaNegotiator,
@@ -112,6 +113,7 @@ __all__ = [
     "CompareRevisionsQuery",
     "CreateEntityCommand",
     "CommittedMutation",
+    "CompatibilityAdapterRegistry",
     "EdgeDetails",
     "EdgeNotFoundError",
     "EdgeQueryResult",

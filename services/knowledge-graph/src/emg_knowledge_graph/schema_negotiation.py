@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
+
+_RequestT = TypeVar("_RequestT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,4 +29,19 @@ class SchemaNegotiator(Protocol):
 
     def negotiate(self, request: SchemaNegotiationRequest) -> SchemaNegotiationResult:
         """Select an effective supported version or raise a schema error."""
+        ...
+
+
+@runtime_checkable
+class CompatibilityAdapterRegistry(Protocol):
+    """Normalize one accepted request DTO into canonical-schema semantics."""
+
+    def normalize(
+        self,
+        request: _RequestT,
+        *,
+        source_version: str,
+        target_version: str,
+    ) -> _RequestT:
+        """Return the same DTO family with canonical, non-authority-bearing values."""
         ...

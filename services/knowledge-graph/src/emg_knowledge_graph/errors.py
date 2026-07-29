@@ -1,6 +1,17 @@
 """Application-level errors for knowledge-graph orchestration."""
 
+from typing import Literal
+
 from emg_errors import EMGError
+
+SchemaNegotiationFailureCode = Literal[
+    "MALFORMED_SCHEMA",
+    "UNKNOWN_SCHEMA",
+    "RETIRED_SCHEMA",
+    "INCOMPATIBLE_SCHEMA",
+    "ADAPTER_FAILURE",
+    "NEGOTIATION_UNCONFIGURED",
+]
 
 
 class KnowledgeGraphApplicationError(EMGError):
@@ -67,6 +78,15 @@ class SchemaNegotiationError(KnowledgeGraphApplicationError):
     """A preferred semantic-schema version could not be resolved safely."""
 
     error_code = "KNOWLEDGE_GRAPH_SCHEMA_NEGOTIATION_FAILED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: SchemaNegotiationFailureCode,
+    ) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
 
 
 class UnsupportedFingerprintVersionError(KnowledgeGraphApplicationError):
