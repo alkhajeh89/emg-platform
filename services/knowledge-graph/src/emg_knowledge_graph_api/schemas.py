@@ -167,3 +167,7 @@ class ReadinessResponse(BaseModel):
     store_backend: str
     store_available: bool
     detail: str
+    schema_runtime_configured: bool
+    schema_placeholder_active: bool
+    canonical_schema_version: str | None
+    schema_catalog_generation: str | None

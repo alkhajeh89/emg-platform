@@ -70,7 +70,9 @@ class Settings(BaseSettings):
     # is loaded once during startup. Phase 2 deliberately supplies no default
     # artifact; Phase 3 owns shipping the first catalog.
     schema_catalog_path: Path | None = None
-    deployment_environment: Literal["development", "test", "production"] = "development"
+    # No default is deliberate: explicitly enabling the fail-closed placeholder
+    # also requires an explicit, recognized non-production environment.
+    deployment_environment: Literal["development", "test", "production"] | None = None
     allow_unconfigured_schema_negotiation: bool = False
 
     @property

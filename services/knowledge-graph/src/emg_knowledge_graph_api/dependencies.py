@@ -26,6 +26,7 @@ enforce the resulting `Decision` rather than only introspect it (see
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, TypeVar
@@ -42,6 +43,7 @@ from emg_knowledge_graph import (
     SchemaNegotiator,
 )
 from emg_knowledge_graph_infrastructure import (
+    CompatibilityNormalizerRegistration,
     GraphResourceMetadataReader,
     RegistryBackedCompatibilityAdapterRegistry,
     RegistryBackedSchemaNegotiator,
@@ -60,6 +62,20 @@ from .mutation_preparation import MutationRequestPreparer
 from .store import AtomicMutationExecutionDep, GraphStoreDep
 
 _RequestT = TypeVar("_RequestT")
+_NON_PRODUCTION_ENVIRONMENTS = frozenset({"development", "test"})
+
+# ADR-033 registrations are a static, reviewable composition artifact. Phase 2
+# ships no production normalizer. A future reviewed source change adds concrete
+# registrations here; runtime discovery and environment-selected code are absent.
+_SCHEMA_NORMALIZER_REGISTRATIONS: tuple[CompatibilityNormalizerRegistration, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaRuntimeHealth:
+    configured: bool
+    placeholder_active: bool
+    canonical_version: str | None
+    catalog_generation: str | None
 
 
 def knowledge_graph_application_dependency(
@@ -120,11 +136,13 @@ class _UnconfiguredSchemaNegotiator:
 def _schema_components_singleton(
     catalog_path: str | None,
     allow_unconfigured: bool,
-    deployment_environment: str,
+    deployment_environment: str | None,
 ) -> tuple[SchemaNegotiator, CompatibilityAdapterRegistry]:
-    if deployment_environment == "production" and allow_unconfigured:
+    if allow_unconfigured and deployment_environment not in _NON_PRODUCTION_ENVIRONMENTS:
+        environment = deployment_environment or "missing"
         raise SchemaCatalogValidationError(
-            "unconfigured schema negotiation is prohibited in production"
+            "unconfigured schema negotiation requires an explicit recognized "
+            f"non-production environment; received {environment!r}"
         )
     if catalog_path is None:
         if allow_unconfigured:
@@ -133,7 +151,10 @@ def _schema_components_singleton(
         raise SchemaCatalogValidationError("schema catalog path is not configured")
 
     catalog = load_schema_catalog(_read_schema_catalog(Path(catalog_path)))
-    adapters = RegistryBackedCompatibilityAdapterRegistry(catalog, ())
+    adapters = RegistryBackedCompatibilityAdapterRegistry(
+        catalog,
+        _SCHEMA_NORMALIZER_REGISTRATIONS,
+    )
     validate_schema_boot_gate(catalog, adapters)
     return RegistryBackedSchemaNegotiator(catalog), adapters
 
@@ -168,6 +189,30 @@ def compatibility_adapter_registry_dependency() -> CompatibilityAdapterRegistry:
 CompatibilityAdapterRegistryDep = Annotated[
     CompatibilityAdapterRegistry,
     Depends(compatibility_adapter_registry_dependency),
+]
+
+
+def schema_runtime_health_dependency() -> SchemaRuntimeHealth:
+    negotiator, adapters = _schema_components()
+    if isinstance(adapters, RegistryBackedCompatibilityAdapterRegistry):
+        return SchemaRuntimeHealth(
+            configured=True,
+            placeholder_active=False,
+            canonical_version=adapters.catalog.canonical_version,
+            catalog_generation=adapters.catalog.generation,
+        )
+    assert isinstance(negotiator, _UnconfiguredSchemaNegotiator)
+    return SchemaRuntimeHealth(
+        configured=False,
+        placeholder_active=True,
+        canonical_version=None,
+        catalog_generation=None,
+    )
+
+
+SchemaRuntimeHealthDep = Annotated[
+    SchemaRuntimeHealth,
+    Depends(schema_runtime_health_dependency),
 ]
 
 

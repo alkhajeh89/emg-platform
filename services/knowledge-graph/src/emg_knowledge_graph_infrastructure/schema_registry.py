@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from time import perf_counter
 from types import MappingProxyType
-from typing import Any
+from typing import Any, TypeGuard
 
 from emg_knowledge_graph import (
     SchemaNegotiationError,
     SchemaNegotiationRequest,
     SchemaNegotiationResult,
 )
+from emg_telemetry import get_logger
 from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
 
 _MAX_VERSION_LENGTH = 128
@@ -24,6 +27,7 @@ _SEMVER = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 _AUTHORITY_FIELD_PARTS = frozenset({"classification", "owner", "tenant", "principal"})
+_log = get_logger("knowledge-graph-schema")
 
 
 class SchemaCatalogValidationError(ValueError):
@@ -193,45 +197,135 @@ def load_schema_catalog(document: object) -> SchemaCatalog:
 class RegistryBackedSchemaNegotiator:
     """Perform constant-time, exact-version negotiation against one catalog."""
 
+    _catalog: SchemaCatalog
     _entries: Mapping[str, SchemaCatalogEntry]
 
     def __init__(self, catalog: SchemaCatalog) -> None:
         validate_schema_catalog(catalog)
+        object.__setattr__(self, "_catalog", catalog)
         object.__setattr__(
             self,
             "_entries",
             MappingProxyType({entry.version: entry for entry in catalog.versions}),
         )
+        _record_metric(
+            "schema_catalog_generation_info",
+            metric_type="gauge",
+            value=1,
+            canonical_version=catalog.canonical_version,
+            catalog_generation=catalog.generation,
+        )
 
     def negotiate(self, request: SchemaNegotiationRequest) -> SchemaNegotiationResult:
         requested = request.preferred_version
         if not is_well_formed_schema_version(requested):
-            raise SchemaNegotiationError(
+            error = SchemaNegotiationError(
                 f"schema version {requested!r} is not a fully qualified version identifier",
                 failure_code="MALFORMED_SCHEMA",
             )
+            self._record_rejection(requested, None, error.failure_code)
+            raise error
         entry = self._entries.get(requested)
         if entry is None:
-            raise SchemaNegotiationError(
+            error = SchemaNegotiationError(
                 f"schema version {requested!r} is not present in the catalog",
                 failure_code="UNKNOWN_SCHEMA",
             )
+            self._record_rejection(requested, None, error.failure_code)
+            raise error
         if entry.state is SchemaLifecycleState.RETIRED:
-            raise SchemaNegotiationError(
+            error = SchemaNegotiationError(
                 f"schema version {requested!r} is retired",
                 failure_code="RETIRED_SCHEMA",
             )
+            self._record_rejection(requested, entry, error.failure_code)
+            raise error
         if entry.compatibility in {
             SchemaCompatibility.MIGRATION_REQUIRED,
             SchemaCompatibility.INCOMPATIBLE,
         }:
-            raise SchemaNegotiationError(
+            error = SchemaNegotiationError(
                 f"schema version {requested!r} is incompatible with canonical execution",
                 failure_code="INCOMPATIBLE_SCHEMA",
+            )
+            self._record_rejection(requested, entry, error.failure_code)
+            raise error
+        _record_negotiation(
+            requested_version=requested,
+            effective_version=requested,
+            canonical_version=self._catalog.canonical_version,
+            lifecycle=entry.state.value,
+            compatibility=entry.compatibility.value,
+            normalization_required=entry.normalization_required,
+            outcome="accepted",
+            failure_code=None,
+            catalog_generation=self._catalog.generation,
+        )
+        _record_metric(
+            "schema_negotiation_attempt_total",
+            metric_type="counter",
+            value=1,
+            requested_version=requested,
+            outcome="accepted",
+            failure_code=None,
+            catalog_generation=self._catalog.generation,
+        )
+        if entry.state is SchemaLifecycleState.DEPRECATED:
+            _record_metric(
+                "schema_deprecated_usage_total",
+                metric_type="counter",
+                value=1,
+                requested_version=requested,
+                catalog_generation=self._catalog.generation,
+            )
+            _emit_schema_event(
+                "schema_deprecated_version_accepted",
+                outcome="accepted",
+                requested_version=requested,
+                effective_version=requested,
+                lifecycle=entry.state.value,
+                compatibility=entry.compatibility.value,
+                normalization_required=entry.normalization_required,
+                failure_code=None,
+                catalog_generation=self._catalog.generation,
             )
         return SchemaNegotiationResult(
             effective_version=requested,
             adapter_required=entry.normalization_required,
+        )
+
+    def _record_rejection(
+        self,
+        requested: str,
+        entry: SchemaCatalogEntry | None,
+        failure_code: str,
+    ) -> None:
+        _record_negotiation(
+            requested_version=requested,
+            effective_version=None,
+            canonical_version=self._catalog.canonical_version,
+            lifecycle=None if entry is None else entry.state.value,
+            compatibility=None if entry is None else entry.compatibility.value,
+            normalization_required=(False if entry is None else entry.normalization_required),
+            outcome="rejected",
+            failure_code=failure_code,
+            catalog_generation=self._catalog.generation,
+        )
+        _record_metric(
+            "schema_negotiation_attempt_total",
+            metric_type="counter",
+            value=1,
+            requested_version=requested,
+            outcome="rejected",
+            failure_code=failure_code,
+            catalog_generation=self._catalog.generation,
+        )
+        _record_metric(
+            "schema_negotiation_failure_total",
+            metric_type="counter",
+            value=1,
+            failure_code=failure_code,
+            catalog_generation=self._catalog.generation,
         )
 
 
@@ -296,25 +390,57 @@ class RegistryBackedCompatibilityAdapterRegistry:
     ) -> Any:
         entry = self._entries.get(source_version)
         if entry is None or not entry.normalization_required:
+            # Canonicalization is logically present for every accepted request.
+            # Strict and Backward compatibility use the identity operation; only
+            # Normalization Required invokes a registered adapter.
             return request
         target_version = target_version or self.catalog.canonical_version
-        matches = self.registrations_for(source_version, target_version)
-        if len(matches) != 1:
-            raise _adapter_failure(
-                f"normalizer resolution for {source_version!r} to {target_version!r} is invalid"
-            )
+        started = perf_counter()
+        _record_metric(
+            "schema_normalization_attempt_total",
+            metric_type="counter",
+            value=1,
+            source_version=source_version,
+            target_version=target_version,
+            catalog_generation=self.catalog.generation,
+        )
         try:
-            normalized = matches[0].normalizer(request)
-        except Exception as exc:
-            raise _adapter_failure(f"normalizer {matches[0].normalizer_id!r} failed") from exc
-        if type(normalized) is not type(request):
-            raise _adapter_failure("normalizer changed the request DTO family")
-        before = _model_document(request)
-        after = _model_document(normalized)
-        if set(before) != set(after):
-            raise _adapter_failure("normalizer changed the request field domain")
-        if _authority_values(before) != _authority_values(after):
-            raise _adapter_failure("normalizer changed an authority-bearing value")
+            matches = self.registrations_for(source_version, target_version)
+            if len(matches) != 1:
+                raise _adapter_failure(
+                    f"normalizer resolution for {source_version!r} "
+                    f"to {target_version!r} is invalid"
+                )
+            registration = matches[0]
+            try:
+                normalized = registration.normalizer(request)
+            except Exception as exc:
+                raise _adapter_failure(f"normalizer {registration.normalizer_id!r} failed") from exc
+            _validate_closed_field_domain(request, normalized)
+            before = _model_document(request)
+            after = _model_document(normalized)
+            if _authority_values(before) != _authority_values(after):
+                raise _adapter_failure("normalizer changed an authority-bearing value")
+        except SchemaNegotiationError as exc:
+            elapsed = perf_counter() - started
+            _record_normalization(
+                source_version=source_version,
+                target_version=target_version,
+                outcome="failed",
+                failure_code=exc.failure_code,
+                elapsed_seconds=elapsed,
+                catalog_generation=self.catalog.generation,
+            )
+            raise
+        elapsed = perf_counter() - started
+        _record_normalization(
+            source_version=source_version,
+            target_version=target_version,
+            outcome="accepted",
+            failure_code=None,
+            elapsed_seconds=elapsed,
+            catalog_generation=self.catalog.generation,
+        )
         return normalized
 
 
@@ -371,6 +497,65 @@ def _model_document(value: object) -> Mapping[str, object]:
     return document
 
 
+def _validate_closed_field_domain(
+    before: object,
+    after: object,
+    path: tuple[str, ...] = (),
+) -> None:
+    """Reject structural expansion or contraction at any DTO nesting depth."""
+
+    location = ".".join(path) or "<request>"
+    if isinstance(before, BaseModel):
+        if type(after) is not type(before):
+            raise _adapter_failure(f"normalizer changed model type at {location}")
+        assert isinstance(after, BaseModel)
+        fields = type(before).model_fields
+        if fields.keys() != type(after).model_fields.keys():
+            raise _adapter_failure(f"normalizer changed model fields at {location}")
+        for field in fields:
+            _validate_closed_field_domain(
+                getattr(before, field),
+                getattr(after, field),
+                (*path, field),
+            )
+        return
+
+    if isinstance(before, Mapping):
+        if type(after) is not type(before):
+            raise _adapter_failure(f"normalizer changed mapping type at {location}")
+        assert isinstance(after, Mapping)
+        if before.keys() != after.keys():
+            raise _adapter_failure(f"normalizer changed mapping keys at {location}")
+        for key in before:
+            _validate_closed_field_domain(
+                before[key],
+                after[key],
+                (*path, str(key)),
+            )
+        return
+
+    if _is_sequence(before):
+        if type(after) is not type(before):
+            raise _adapter_failure(f"normalizer changed sequence type at {location}")
+        assert isinstance(after, Sequence)
+        if len(before) != len(after):
+            raise _adapter_failure(f"normalizer changed sequence length at {location}")
+        for index, (before_item, after_item) in enumerate(zip(before, after, strict=True)):
+            _validate_closed_field_domain(
+                before_item,
+                after_item,
+                (*path, str(index)),
+            )
+        return
+
+    if type(after) is not type(before):
+        raise _adapter_failure(f"normalizer changed value domain at {location}")
+
+
+def _is_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    return isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray)
+
+
 def _authority_values(value: object, path: tuple[str, ...] = ()) -> dict[tuple[str, ...], object]:
     found: dict[tuple[str, ...], object] = {}
     if isinstance(value, Mapping):
@@ -393,3 +578,108 @@ def _is_authority_field(field: str) -> bool:
 
 def _adapter_failure(message: str) -> SchemaNegotiationError:
     return SchemaNegotiationError(message, failure_code="ADAPTER_FAILURE")
+
+
+def _record_negotiation(
+    *,
+    requested_version: str,
+    effective_version: str | None,
+    canonical_version: str,
+    lifecycle: str | None,
+    compatibility: str | None,
+    normalization_required: bool,
+    outcome: str,
+    failure_code: str | None,
+    catalog_generation: str,
+) -> None:
+    _emit_schema_event(
+        "schema_negotiation",
+        outcome=outcome,
+        requested_version=requested_version,
+        effective_version=effective_version,
+        canonical_version=canonical_version,
+        lifecycle=lifecycle,
+        compatibility=compatibility,
+        normalization_required=normalization_required,
+        failure_code=failure_code,
+        catalog_generation=catalog_generation,
+    )
+
+
+def _record_normalization(
+    *,
+    source_version: str,
+    target_version: str,
+    outcome: str,
+    failure_code: str | None,
+    elapsed_seconds: float,
+    catalog_generation: str,
+) -> None:
+    _emit_schema_event(
+        "schema_normalization",
+        outcome=outcome,
+        source_version=source_version,
+        target_version=target_version,
+        failure_code=failure_code,
+        catalog_generation=catalog_generation,
+    )
+    if failure_code is not None:
+        _record_metric(
+            "schema_normalization_failure_total",
+            metric_type="counter",
+            value=1,
+            source_version=source_version,
+            target_version=target_version,
+            failure_code=failure_code,
+            catalog_generation=catalog_generation,
+        )
+    _record_metric(
+        "schema_normalization_latency_seconds",
+        metric_type="histogram_observation",
+        value=elapsed_seconds,
+        source_version=source_version,
+        target_version=target_version,
+        outcome=outcome,
+        catalog_generation=catalog_generation,
+    )
+
+
+def _record_metric(
+    metric_name: str,
+    *,
+    metric_type: str,
+    value: int | float,
+    **dimensions: object,
+) -> None:
+    """Emit collector-ready metric observations through structured telemetry.
+
+    ``emg_telemetry`` currently provides the repository's log emitter but no
+    separate metrics client. Encoding counter/gauge/histogram observations as
+    named structured events keeps collection compatible with that mechanism
+    without introducing a second metrics framework in this service.
+    """
+
+    outcome = str(dimensions.pop("outcome", "observed"))
+    _emit_schema_event(
+        "schema_metric",
+        outcome=outcome,
+        metric_name=metric_name,
+        metric_type=metric_type,
+        metric_value=value,
+        **dimensions,
+    )
+
+
+def _emit_schema_event(event: str, *, outcome: str, **metadata: object) -> None:
+    """Emit only schema-control metadata; request content is never accepted."""
+
+    document = {"event": event, "outcome": outcome, **metadata}
+    _log.info(
+        json.dumps(document, sort_keys=True, separators=(",", ":")),
+        extra={
+            "actor": "schema-runtime",
+            "module": "knowledge-graph",
+            "action": event,
+            "outcome": outcome,
+        },
+    )

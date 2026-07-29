@@ -1,4 +1,4 @@
-"""Phase 3 schema negotiation followed by pure command construction."""
+"""ADR-033 Phase 2 schema negotiation followed by pure command construction."""
 
 from __future__ import annotations
 

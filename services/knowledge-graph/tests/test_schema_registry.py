@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 from emg_knowledge_graph import (
@@ -26,6 +28,7 @@ from emg_knowledge_graph_infrastructure import (
     SchemaCompatibility,
     SchemaLifecycleState,
     load_schema_catalog,
+    schema_registry,
     validate_schema_boot_gate,
     validate_schema_catalog,
 )
@@ -42,6 +45,36 @@ class _RequestDTO(BaseModel):
     classification: str = "INTERNAL"
     owner: str = "writer"
     source_principal: str = "writer"
+
+
+class _NestedValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: str
+    classification: str = "INTERNAL"
+
+
+class _OtherNestedValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: str
+    classification: str = "INTERNAL"
+
+
+class _NestedRequestDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    nested: _NestedValue
+    metadata: dict[str, str]
+    items: tuple[_NestedValue, ...]
+
+
+class _LogSpy:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def info(self, message: str, *, extra: dict[str, str]) -> None:
+        self.messages.append(message)
 
 
 def _catalog(*entries: SchemaCatalogEntry) -> SchemaCatalog:
@@ -187,6 +220,67 @@ def test_exact_catalog_versions_negotiate_to_the_requested_contract(
         effective_version=version,
         adapter_required=expected_adapter,
     )
+
+
+def test_deprecated_negotiation_emits_safe_event_and_required_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = _LogSpy()
+    monkeypatch.setattr(schema_registry, "_log", log)
+    catalog = _catalog(
+        _entry("2.1.0", SchemaCompatibility.STRICT),
+        _entry(
+            "1.4.0",
+            SchemaCompatibility.BACKWARD,
+            state=SchemaLifecycleState.DEPRECATED,
+        ),
+    )
+
+    RegistryBackedSchemaNegotiator(catalog).negotiate(
+        SchemaNegotiationRequest(preferred_version="1.4.0")
+    )
+
+    events = [json.loads(message) for message in log.messages]
+    negotiation = next(event for event in events if event["event"] == "schema_negotiation")
+    assert negotiation == {
+        "canonical_version": "2.1.0",
+        "catalog_generation": "generation-1",
+        "compatibility": "backward",
+        "effective_version": "1.4.0",
+        "event": "schema_negotiation",
+        "failure_code": None,
+        "lifecycle": "deprecated",
+        "normalization_required": False,
+        "outcome": "accepted",
+        "requested_version": "1.4.0",
+    }
+    assert any(event["event"] == "schema_deprecated_version_accepted" for event in events)
+    metric_names = {event["metric_name"] for event in events if event["event"] == "schema_metric"}
+    assert {
+        "schema_negotiation_attempt_total",
+        "schema_deprecated_usage_total",
+    }.issubset(metric_names)
+    serialized = "\n".join(log.messages)
+    assert "schema-phase2" not in serialized
+    assert "Legacy Label" not in serialized
+
+
+def test_negotiation_failure_emits_failure_code_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = _LogSpy()
+    monkeypatch.setattr(schema_registry, "_log", log)
+
+    with pytest.raises(SchemaNegotiationError):
+        RegistryBackedSchemaNegotiator(_catalog()).negotiate(
+            SchemaNegotiationRequest(preferred_version="latest")
+        )
+
+    events = [json.loads(message) for message in log.messages]
+    failure = next(
+        event for event in events if event.get("metric_name") == "schema_negotiation_failure_total"
+    )
+    assert failure["failure_code"] == "MALFORMED_SCHEMA"
 
 
 @pytest.mark.parametrize(
@@ -432,6 +526,142 @@ def test_registry_applies_one_safe_dto_to_dto_normalizer() -> None:
     assert result == _RequestDTO(label="CANONICAL")
 
 
+def test_normalization_emits_attempt_and_latency_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = _LogSpy()
+    monkeypatch.setattr(schema_registry, "_log", log)
+    catalog = _normalizing_catalog()
+    registry = RegistryBackedCompatibilityAdapterRegistry(
+        catalog,
+        (_registration(lambda value: value),),
+    )
+
+    registry.normalize(
+        _RequestDTO(label="value"),
+        source_version="1.2.0",
+        target_version="2.1.0",
+    )
+
+    events = [json.loads(message) for message in log.messages]
+    metric_names = {event["metric_name"] for event in events if event["event"] == "schema_metric"}
+    assert "schema_normalization_attempt_total" in metric_names
+    assert "schema_normalization_latency_seconds" in metric_names
+
+
+def test_normalization_failure_emits_failure_and_latency_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = _LogSpy()
+    monkeypatch.setattr(schema_registry, "_log", log)
+    registry = RegistryBackedCompatibilityAdapterRegistry(
+        _normalizing_catalog(),
+        (_registration(lambda value: {"not": "a dto"}),),
+    )
+
+    with pytest.raises(SchemaNegotiationError):
+        registry.normalize(
+            _RequestDTO(label="value"),
+            source_version="1.2.0",
+            target_version="2.1.0",
+        )
+
+    events = [json.loads(message) for message in log.messages]
+    metric_names = {event["metric_name"] for event in events if event["event"] == "schema_metric"}
+    assert "schema_normalization_failure_total" in metric_names
+    assert "schema_normalization_latency_seconds" in metric_names
+
+
+def _nested_registry(
+    normalizer: Callable[[object], object],
+) -> RegistryBackedCompatibilityAdapterRegistry:
+    return RegistryBackedCompatibilityAdapterRegistry(
+        _normalizing_catalog(),
+        (_registration(normalizer, written_fields=("nested.label", "metadata", "items")),),
+    )
+
+
+def _nested_request() -> _NestedRequestDTO:
+    return _NestedRequestDTO(
+        nested=_NestedValue(label="legacy"),
+        metadata={"format": "legacy"},
+        items=(_NestedValue(label="item"),),
+    )
+
+
+@pytest.mark.parametrize(
+    "normalizer",
+    [
+        lambda value: value.model_copy(
+            update={"nested": {"label": "canonical", "classification": "INTERNAL"}}
+        ),
+        lambda value: value.model_copy(
+            update={"metadata": {**value.metadata, "added": "not-allowed"}}
+        ),
+        lambda value: value.model_copy(update={"metadata": {}}),
+        lambda value: value.model_copy(
+            update={
+                "nested": _OtherNestedValue(
+                    label=value.nested.label,
+                    classification=value.nested.classification,
+                )
+            }
+        ),
+    ],
+)
+def test_recursive_closed_domain_rejects_nested_structural_changes(
+    normalizer: Callable[[Any], Any],
+) -> None:
+    registry = _nested_registry(normalizer)
+
+    with pytest.raises(SchemaNegotiationError) as caught:
+        registry.normalize(
+            _nested_request(),
+            source_version="1.2.0",
+            target_version="2.1.0",
+        )
+
+    assert caught.value.failure_code == "ADAPTER_FAILURE"
+
+
+def test_recursive_closed_domain_accepts_nested_value_normalization() -> None:
+    def normalize(value: object) -> object:
+        assert isinstance(value, _NestedRequestDTO)
+        return value.model_copy(
+            update={
+                "nested": value.nested.model_copy(update={"label": "canonical"}),
+                "items": (value.items[0].model_copy(update={"label": "canonical item"}),),
+            }
+        )
+
+    result = _nested_registry(normalize).normalize(
+        _nested_request(),
+        source_version="1.2.0",
+        target_version="2.1.0",
+    )
+
+    assert isinstance(result, _NestedRequestDTO)
+    assert result.nested.label == "canonical"
+    assert result.items[0].label == "canonical item"
+
+
+def test_recursive_closed_domain_rejects_nested_authority_change() -> None:
+    def normalize(value: object) -> object:
+        assert isinstance(value, _NestedRequestDTO)
+        return value.model_copy(
+            update={"nested": value.nested.model_copy(update={"classification": "SECRET"})}
+        )
+
+    with pytest.raises(SchemaNegotiationError) as caught:
+        _nested_registry(normalize).normalize(
+            _nested_request(),
+            source_version="1.2.0",
+            target_version="2.1.0",
+        )
+
+    assert caught.value.failure_code == "ADAPTER_FAILURE"
+
+
 @pytest.mark.parametrize(
     "normalizer",
     [
@@ -462,8 +692,11 @@ def test_registry_converts_authority_shape_and_execution_defects_to_adapter_fail
     assert caught.value.failure_code == "ADAPTER_FAILURE"
 
 
-def test_explicit_non_production_placeholder_remains_fail_closed() -> None:
-    negotiator, _ = _schema_components_singleton(None, True, "test")
+@pytest.mark.parametrize("environment", ["development", "test"])
+def test_explicit_non_production_placeholder_remains_fail_closed(
+    environment: str,
+) -> None:
+    negotiator, _ = _schema_components_singleton(None, True, environment)
 
     with pytest.raises(SchemaNegotiationError) as caught:
         negotiator.negotiate(SchemaNegotiationRequest(preferred_version="2.1.0"))
@@ -471,6 +704,12 @@ def test_explicit_non_production_placeholder_remains_fail_closed() -> None:
     assert caught.value.failure_code == "NEGOTIATION_UNCONFIGURED"
 
 
-def test_placeholder_is_prohibited_in_production() -> None:
-    with pytest.raises(SchemaCatalogValidationError, match="prohibited in production"):
-        _schema_components_singleton(None, True, "production")
+@pytest.mark.parametrize("environment", [None, "", "staging", "production"])
+def test_placeholder_rejects_missing_unknown_invalid_and_production_environment(
+    environment: str | None,
+) -> None:
+    with pytest.raises(
+        SchemaCatalogValidationError,
+        match="explicit recognized non-production environment",
+    ):
+        _schema_components_singleton(None, True, environment)

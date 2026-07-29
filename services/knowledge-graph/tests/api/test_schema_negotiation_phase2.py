@@ -17,6 +17,7 @@ from emg_knowledge_graph_infrastructure import (
     CompatibilityNormalizerRegistration,
     RegistryBackedCompatibilityAdapterRegistry,
     RegistryBackedSchemaNegotiator,
+    SchemaBootGateError,
     SchemaCatalog,
     SchemaCatalogEntry,
     SchemaCompatibility,
@@ -303,13 +304,172 @@ def test_runtime_composition_loads_external_catalog_and_passes_boot_gate(
     dependencies._schema_components_singleton.cache_clear()
 
     try:
-        with TestClient(create_app()):
+        with TestClient(create_app()) as client:
             negotiated = dependencies.schema_negotiator_dependency().negotiate(
                 SchemaNegotiationRequest(preferred_version="2.1.0")
             )
+            readiness = client.get("/readyz")
     finally:
         dependencies._settings_singleton.cache_clear()
         dependencies._schema_components_singleton.cache_clear()
 
     assert negotiated.effective_version == "2.1.0"
     assert negotiated.adapter_required is False
+    assert readiness.status_code == 200
+    assert readiness.json() == {
+        "status": "ready",
+        "store_backend": "memory",
+        "store_available": True,
+        "detail": "store reachable",
+        "schema_runtime_configured": True,
+        "schema_placeholder_active": False,
+        "canonical_schema_version": "2.1.0",
+        "schema_catalog_generation": "phase2-composition",
+    }
+
+
+def test_normalization_required_catalog_uses_static_real_composition_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog_path = tmp_path / "normalizing-schema-catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "generation": "phase2-normalizing-composition",
+                "canonical_version": "2.1.0",
+                "versions": [
+                    {
+                        "version": "2.1.0",
+                        "state": "published",
+                        "compatibility": "strict",
+                    },
+                    {
+                        "version": "1.2.0",
+                        "state": "published",
+                        "compatibility": "normalization_required",
+                        "normalization_required": True,
+                        "normalizer_ids": ["normalize-1.2-to-2.1"],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    calls = 0
+
+    def normalize(value: object) -> object:
+        nonlocal calls
+        calls += 1
+        assert isinstance(value, ReplaceEntityRequest)
+        return value.model_copy(
+            update={
+                "replacement": value.replacement.model_copy(
+                    update={"label": "Composition Canonical"}
+                )
+            }
+        )
+
+    monkeypatch.setattr(
+        dependencies,
+        "_SCHEMA_NORMALIZER_REGISTRATIONS",
+        (
+            CompatibilityNormalizerRegistration(
+                normalizer_id="normalize-1.2-to-2.1",
+                source_version="1.2.0",
+                target_version="2.1.0",
+                written_fields=("replacement.label",),
+                normalizer=normalize,
+            ),
+        ),
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH",
+        str(catalog_path),
+    )
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT", "test")
+    dependencies._settings_singleton.cache_clear()
+    dependencies._schema_components_singleton.cache_clear()
+
+    try:
+        preparer = dependencies.mutation_request_preparer_dependency(
+            dependencies.schema_negotiator_dependency(),
+            dependencies.compatibility_adapter_registry_dependency(),
+        )
+        prepared = preparer.prepare(
+            _request(),
+            tenant=TENANT,
+            principal=PRINCIPAL,
+            idempotency_key="phase2-real-composition-normalization",
+            preferred_schema_version="1.2.0",
+        )
+    finally:
+        dependencies._settings_singleton.cache_clear()
+        dependencies._schema_components_singleton.cache_clear()
+
+    assert calls == 1
+    assert prepared.command.replacement.label == "Composition Canonical"
+
+
+def test_missing_composition_normalizer_fails_boot_gate(
+    tmp_path: Path,
+) -> None:
+    catalog_path = tmp_path / "missing-normalizer-catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "generation": "phase2-missing-normalizer",
+                "canonical_version": "2.1.0",
+                "versions": [
+                    {
+                        "version": "2.1.0",
+                        "state": "published",
+                        "compatibility": "strict",
+                    },
+                    {
+                        "version": "1.2.0",
+                        "state": "published",
+                        "compatibility": "normalization_required",
+                        "normalization_required": True,
+                        "normalizer_ids": ["missing"],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    dependencies._schema_components_singleton.cache_clear()
+
+    with pytest.raises(SchemaBootGateError, match="exactly one"):
+        dependencies._schema_components_singleton(
+            str(catalog_path),
+            False,
+            "test",
+        )
+
+
+def test_placeholder_health_is_visible_and_remains_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH", raising=False)
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",
+        "true",
+    )
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT", "test")
+    dependencies._settings_singleton.cache_clear()
+    dependencies._schema_components_singleton.cache_clear()
+
+    try:
+        with TestClient(create_app()) as client:
+            response = client.get("/readyz")
+    finally:
+        dependencies._settings_singleton.cache_clear()
+        dependencies._schema_components_singleton.cache_clear()
+
+    assert response.status_code == 200
+    assert response.json()["schema_runtime_configured"] is False
+    assert response.json()["schema_placeholder_active"] is True
+    assert response.json()["canonical_schema_version"] is None
+    assert response.json()["schema_catalog_generation"] is None
