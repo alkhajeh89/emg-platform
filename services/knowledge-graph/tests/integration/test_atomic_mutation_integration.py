@@ -130,7 +130,12 @@ def test_first_execution_and_replay_commit_one_complete_unit(
     first = app.create_entity(_command())
     replay = app.create_entity(_command())
 
-    assert replay == first
+    assert first.replayed is False
+    assert replay.replayed is True
+    assert replay.mutation_result == first.mutation_result
+    assert replay.mutation_id == first.mutation_id
+    assert replay.audit_reference == first.audit_reference
+    assert replay.timestamp == first.timestamp
     with (
         _SchemaConnections(settings).acquire() as connection,
         connection.cursor() as cursor,
@@ -168,7 +173,11 @@ def test_duplicate_request_race_has_one_graph_and_ledger_write(
 
     assert failures == []
     assert len(results) == 2
-    assert results[0] == results[1]
+    assert results[0].mutation_result == results[1].mutation_result
+    assert results[0].mutation_id == results[1].mutation_id
+    assert results[0].audit_reference == results[1].audit_reference
+    assert results[0].timestamp == results[1].timestamp
+    assert sorted(result.replayed for result in results) == [False, True]
     with (
         _SchemaConnections(settings).acquire() as connection,
         connection.cursor() as cursor,

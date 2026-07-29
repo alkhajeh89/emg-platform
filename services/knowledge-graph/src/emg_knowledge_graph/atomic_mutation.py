@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Condition
 from time import monotonic
 from typing import Protocol
+from uuid import UUID, uuid4
 
 from emg_platform_core import PrincipalRef, TenantId, WriteReceipt
 
@@ -80,6 +81,8 @@ class AtomicMutationOutcome:
     """Result of first execution or deterministic replay."""
 
     result: MutationResult
+    mutation_id: UUID
+    ledger_completed_at: datetime
     replayed: bool
 
 
@@ -109,6 +112,8 @@ class _MemoryEntry:
     command_schema_version: int
     pending: bool
     result: MutationResult | None = None
+    mutation_id: UUID | None = None
+    ledger_completed_at: datetime | None = None
     expires_at: datetime | None = None
 
 
@@ -121,10 +126,12 @@ class InMemoryAtomicMutationExecution:
         replay_retention: timedelta = DEFAULT_REPLAY_RETENTION,
         claim_wait_seconds: float = DEFAULT_CLAIM_WAIT_SECONDS,
         clock: Callable[[], datetime] | None = None,
+        mutation_id_factory: Callable[[], UUID] | None = None,
     ) -> None:
         self._replay_retention = replay_retention
         self._claim_wait_seconds = claim_wait_seconds
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._mutation_id_factory = mutation_id_factory or uuid4
         self._condition = Condition()
         self._entries: dict[tuple[str, str, str, str], _MemoryEntry] = {}
 
@@ -162,7 +169,14 @@ class InMemoryAtomicMutationExecution:
         if entry.pending:
             return None
         assert entry.result is not None
-        return AtomicMutationOutcome(result=entry.result, replayed=True)
+        assert entry.mutation_id is not None
+        assert entry.ledger_completed_at is not None
+        return AtomicMutationOutcome(
+            result=entry.result,
+            mutation_id=entry.mutation_id,
+            ledger_completed_at=entry.ledger_completed_at,
+            replayed=True,
+        )
 
     def lookup(self, command: MutationCommand) -> AtomicMutationOutcome | None:
         key = (
@@ -236,13 +250,22 @@ class InMemoryAtomicMutationExecution:
             raise
 
         with self._condition:
+            mutation_id = self._mutation_id_factory()
+            ledger_completed_at = self._clock()
             self._entries[key] = _MemoryEntry(
                 fingerprint=request.command_fingerprint,
                 fingerprint_version=request.fingerprint_version,
                 command_schema_version=request.command_schema_version,
                 pending=False,
                 result=committed.result,
-                expires_at=self._clock() + self._replay_retention,
+                mutation_id=mutation_id,
+                ledger_completed_at=ledger_completed_at,
+                expires_at=ledger_completed_at + self._replay_retention,
             )
             self._condition.notify_all()
-        return AtomicMutationOutcome(result=committed.result, replayed=False)
+        return AtomicMutationOutcome(
+            result=committed.result,
+            mutation_id=mutation_id,
+            ledger_completed_at=ledger_completed_at,
+            replayed=False,
+        )

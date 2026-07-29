@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 from emg_common_types import Classification
 from emg_memory_graph import (
@@ -70,6 +71,88 @@ class MutationResult:
     node_inputs_merged: int
     edge_inputs_merged: int
     audit_intents: tuple[MutationAuditIntent, ...]
+
+
+def mutation_audit_reference(mutation_id: UUID) -> str:
+    """Return the stable public audit reference for one committed mutation."""
+
+    return f"audit:{mutation_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class MutationExecutionResult:
+    """Transport-neutral result of an original or replayed mutation execution."""
+
+    mutation_result: MutationResult
+    mutation_id: UUID
+    audit_reference: str
+    replayed: bool
+    timestamp: datetime
+
+    @classmethod
+    def from_mutation(
+        cls,
+        mutation_result: MutationResult,
+        *,
+        mutation_id: UUID,
+        ledger_completed_at: datetime,
+        replayed: bool,
+    ) -> MutationExecutionResult:
+        return cls(
+            mutation_result=mutation_result,
+            mutation_id=mutation_id,
+            audit_reference=mutation_audit_reference(mutation_id),
+            replayed=replayed,
+            timestamp=ledger_completed_at,
+        )
+
+    @property
+    def tenant(self) -> TenantId:
+        return self.mutation_result.tenant
+
+    @property
+    def principal(self) -> PrincipalRef:
+        return self.mutation_result.principal
+
+    @property
+    def revision_number(self) -> int:
+        return self.mutation_result.revision_number
+
+    @property
+    def content_hash(self) -> str:
+        return self.mutation_result.content_hash
+
+    @property
+    def node_count(self) -> int:
+        return self.mutation_result.node_count
+
+    @property
+    def edge_count(self) -> int:
+        return self.mutation_result.edge_count
+
+    @property
+    def revision_created(self) -> bool:
+        return self.mutation_result.revision_created
+
+    @property
+    def nodes_created(self) -> int:
+        return self.mutation_result.nodes_created
+
+    @property
+    def edges_created(self) -> int:
+        return self.mutation_result.edges_created
+
+    @property
+    def node_inputs_merged(self) -> int:
+        return self.mutation_result.node_inputs_merged
+
+    @property
+    def edge_inputs_merged(self) -> int:
+        return self.mutation_result.edge_inputs_merged
+
+    @property
+    def audit_intents(self) -> tuple[MutationAuditIntent, ...]:
+        return self.mutation_result.audit_intents
 
 
 @dataclass(frozen=True, slots=True)

@@ -74,6 +74,7 @@ from .results import (
     EntityQueryResult,
     EntitySummary,
     MutationAuditIntent,
+    MutationExecutionResult,
     MutationReplayProjection,
     MutationResult,
     NeighborResult,
@@ -88,6 +89,7 @@ from .results import (
     RevisionDetails,
     RevisionDiff,
     RevisionSummary,
+    mutation_audit_reference,
     project_mutation_replay,
 )
 from .schema_negotiation import (
@@ -145,6 +147,7 @@ __all__ = [
     "MutationBuildError",
     "MutationResourceMetadataError",
     "MutationExecutionRequest",
+    "MutationExecutionResult",
     "MutationReplayIntegrityError",
     "MutationReplayProjection",
     "MutationResult",
@@ -182,5 +185,6 @@ __all__ = [
     "MutationAuthorizationContext",
     "MutationAuthorizationEvaluator",
     "MutationAuthorizationPreflight",
+    "mutation_audit_reference",
     "project_mutation_replay",
 ]

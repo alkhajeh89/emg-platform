@@ -238,7 +238,12 @@ class PostgresAtomicMutationExecution:
             raise MutationReplayIntegrityError("completed claim has no mutation ledger row")
         result = _deserialize_result(ledger.mutation_result)
         PostgresAtomicMutationExecution._validate_integrity(ledger, result, request)
-        return AtomicMutationOutcome(result=result, replayed=True)
+        return AtomicMutationOutcome(
+            result=result,
+            mutation_id=ledger.mutation_id,
+            ledger_completed_at=ledger.ledger_completed_at,
+            replayed=True,
+        )
 
     @staticmethod
     def _validate_integrity(
@@ -342,13 +347,18 @@ class PostgresAtomicMutationExecution:
                 committed = operation()
                 self._inject("after_graph_write")
                 ledger = self._ledger(request, committed)
-                repository.append_success(
+                persisted = repository.append_success(
                     claim=claim,
                     ledger=ledger,
                     replay_retention=self._replay_retention,
                 )
                 self._inject("after_ledger_write")
-            return AtomicMutationOutcome(result=committed.result, replayed=False)
+            return AtomicMutationOutcome(
+                result=committed.result,
+                mutation_id=persisted.mutation_id,
+                ledger_completed_at=persisted.ledger_completed_at,
+                replayed=False,
+            )
         except IdempotencyContentionError:
             raise
 

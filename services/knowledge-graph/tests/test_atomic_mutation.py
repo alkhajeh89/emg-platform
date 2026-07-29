@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 import pytest
 from emg_common_types import Classification
@@ -16,7 +17,9 @@ from emg_knowledge_graph import (
     MergeEntitiesCommand,
     MutationAuditIntent,
     MutationExecutionRequest,
+    MutationExecutionResult,
     MutationResult,
+    mutation_audit_reference,
     project_mutation_replay,
 )
 from emg_knowledge_graph.fingerprint import (
@@ -185,8 +188,59 @@ def test_application_replay_precedes_authorization_and_graph_execution() -> None
     first = app.create_entity(_command())
     replay = app.create_entity(_command())
 
-    assert replay == first
+    assert first.replayed is False
+    assert replay.replayed is True
+    assert replay.mutation_result == first.mutation_result
+    assert replay.mutation_id == first.mutation_id
+    assert replay.audit_reference == first.audit_reference
+    assert replay.timestamp == first.timestamp
     assert authorized == [_command()]
+
+
+def test_application_execution_projection_is_stable_immutable_and_preserves_result() -> None:
+    mutation_id = UUID("11111111-1111-4111-8111-111111111111")
+    atomic = InMemoryAtomicMutationExecution(
+        clock=lambda: T1,
+        mutation_id_factory=lambda: mutation_id,
+    )
+    app = KnowledgeGraphApplication(
+        InMemoryGraphStore(),
+        atomic_mutation_execution=atomic,
+    )
+
+    first = app.create_entity(_command())
+    replay = app.create_entity(_command())
+
+    assert isinstance(first, MutationExecutionResult)
+    assert first.mutation_id == mutation_id
+    assert first.audit_reference == mutation_audit_reference(mutation_id)
+    assert first.audit_reference == "audit:11111111-1111-4111-8111-111111111111"
+    assert first.timestamp == T1
+    assert first.replayed is False
+    assert replay.mutation_id == mutation_id
+    assert replay.audit_reference == first.audit_reference
+    assert replay.timestamp == T1
+    assert replay.replayed is True
+    assert replay.mutation_result == first.mutation_result
+    with pytest.raises(FrozenInstanceError):
+        first.replayed = True  # type: ignore[misc]
+
+
+def test_mutation_result_contract_is_unchanged() -> None:
+    assert [field.name for field in fields(MutationResult)] == [
+        "tenant",
+        "principal",
+        "revision_number",
+        "content_hash",
+        "node_count",
+        "edge_count",
+        "revision_created",
+        "nodes_created",
+        "edges_created",
+        "node_inputs_merged",
+        "edge_inputs_merged",
+        "audit_intents",
+    ]
 
 
 def test_same_key_with_different_command_is_rejected() -> None:

@@ -73,6 +73,7 @@ from .results import (
     EntityQueryResult,
     EntitySummary,
     MutationAuditIntent,
+    MutationExecutionResult,
     MutationResult,
     NeighborResult,
     PagedEdgeResult,
@@ -317,7 +318,7 @@ class KnowledgeGraphApplication:
 
     # --- mutations (ADR-027 Revision 3, Stage 1) ----------------------------
 
-    def create_entity(self, command: CreateEntityCommand) -> MutationResult:
+    def create_entity(self, command: CreateEntityCommand) -> MutationExecutionResult:
         """Create one entity and commit one immutable revision."""
         if not isinstance(command, CreateEntityCommand):
             raise InvalidMutationCommandError("command must be a CreateEntityCommand")
@@ -345,7 +346,7 @@ class KnowledgeGraphApplication:
             ),
         )
 
-    def replace_entity(self, command: ReplaceEntityCommand) -> MutationResult:
+    def replace_entity(self, command: ReplaceEntityCommand) -> MutationExecutionResult:
         """Replace one node through ADR-029 without duplicating lifecycle rules."""
         if not isinstance(command, ReplaceEntityCommand):
             raise InvalidMutationCommandError("command must be a ReplaceEntityCommand")
@@ -364,7 +365,7 @@ class KnowledgeGraphApplication:
             classification_of=lambda graph: self._node_classification(graph, node_id),
         )
 
-    def replace_relationship(self, command: ReplaceRelationshipCommand) -> MutationResult:
+    def replace_relationship(self, command: ReplaceRelationshipCommand) -> MutationExecutionResult:
         """Replace one edge through ADR-029's endpoint-preserving path."""
         if not isinstance(command, ReplaceRelationshipCommand):
             raise InvalidMutationCommandError("command must be a ReplaceRelationshipCommand")
@@ -386,7 +387,7 @@ class KnowledgeGraphApplication:
             classification_of=lambda graph: self._edge_classification(graph, edge_id),
         )
 
-    def close_relationship(self, command: CloseRelationshipCommand) -> MutationResult:
+    def close_relationship(self, command: CloseRelationshipCommand) -> MutationExecutionResult:
         """Close one stored validity interval through ADR-029."""
         if not isinstance(command, CloseRelationshipCommand):
             raise InvalidMutationCommandError("command must be a CloseRelationshipCommand")
@@ -412,7 +413,7 @@ class KnowledgeGraphApplication:
             classification_of=lambda graph: self._edge_classification(graph, edge_id),
         )
 
-    def merge_entities(self, command: MergeEntitiesCommand) -> MutationResult:
+    def merge_entities(self, command: MergeEntitiesCommand) -> MutationExecutionResult:
         """Merge entities exclusively through ADR-029's graph-level operation."""
         if not isinstance(command, MergeEntitiesCommand):
             raise InvalidMutationCommandError("command must be a MergeEntitiesCommand")
@@ -448,10 +449,15 @@ class KnowledgeGraphApplication:
         classification_of: Callable[[MemoryGraph], Classification],
         related_resource_ids: tuple[str, ...] = (),
         related_resource_ids_of: Callable[[MemoryGraph], tuple[str, ...]] | None = None,
-    ) -> MutationResult:
+    ) -> MutationExecutionResult:
         replay = self._atomic_mutation_execution.lookup(command)
         if replay is not None:
-            return replay.result
+            return MutationExecutionResult.from_mutation(
+                replay.result,
+                mutation_id=replay.mutation_id,
+                ledger_completed_at=replay.ledger_completed_at,
+                replayed=replay.replayed,
+            )
         request = MutationExecutionRequest.from_command(command)
         if self._mutation_authorization_hook is not None:
             self._mutation_authorization_hook(command)
@@ -500,7 +506,13 @@ class KnowledgeGraphApplication:
             )
             return CommittedMutation(result=mutation_result, receipt=receipt)
 
-        return self._atomic_mutation_execution.execute(request, commit).result
+        outcome = self._atomic_mutation_execution.execute(request, commit)
+        return MutationExecutionResult.from_mutation(
+            outcome.result,
+            mutation_id=outcome.mutation_id,
+            ledger_completed_at=outcome.ledger_completed_at,
+            replayed=outcome.replayed,
+        )
 
     @staticmethod
     def _node_classification(graph: MemoryGraph, node_id: str) -> Classification:

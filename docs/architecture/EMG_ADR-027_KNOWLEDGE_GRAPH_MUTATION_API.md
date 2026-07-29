@@ -1,6 +1,6 @@
-# ADR-027 (Revision 4) — Knowledge Graph Mutation API
+# ADR-027 (Revision 5) — Knowledge Graph Mutation API
 
-**This revision supersedes ADR-027 Revision 3 in full.**
+**This revision supersedes ADR-027 Revision 4 in full.**
 
 ## 1. Title
 
@@ -10,10 +10,10 @@ Authorization/Classification Pipeline
 
 ## 2. Status
 
-**Accepted — Revision 4 (ADR-029 integration, Stage 4 Preflight), Stage 0 complete
+**Accepted — Revision 5 (HTTP Transport Contract), Stage 0 complete
 (2026-07-28).**
 Architecture-only design, produced under
-`docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`. Revision 4 incorporates the Architecture Board’s ratified Stage 4 requirements without reopening the previously accepted ADR-027 decisions. **Stage 0 status:** the `svc-knowledge-graph-writer`
+`docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`. Revision 5 incorporates the HTTP transport contract for Stage 4 implementation without reopening the previously accepted ADR-027 decisions. **Stage 0 status:** the `svc-knowledge-graph-writer`
 role-catalog entry (§5) and the `mutation_idempotency` table migration
 (§8.2) are **complete**. GraphStore Protocol unification (§4.5) remains
 **deferred out of this ADR's mandatory implementation gate** — see §4.7
@@ -497,6 +497,22 @@ construction, to exclude every service caller — no additional
 "human-only" mechanism is introduced.
 
 ---
+
+## 5A. HTTP Transport Contract
+
+Mutation operations are exposed via `POST`/`PUT` routes, mapping command DTOs to the response projection defined in ADR-030 Revision 4.
+
+| Operation | Method | Route | Request DTO | Response |
+| :--- | :--- | :--- | :--- | :--- |
+| Create Entity | POST | `/api/v1/entities` | `CreateEntityCommand` | ADR-030 Projection (201) |
+| Update Entity | PUT | `/api/v1/entities/{id}` | `UpdateEntityCommand` | ADR-030 Projection (200) |
+| Retire Entity | POST | `/api/v1/entities/{id}/retire` | `RetireEntityCommand` | ADR-030 Projection (200) |
+| Create Rel | POST | `/api/v1/relationships` | `CreateRelationshipCommand` | ADR-030 Projection (201) |
+| Update Rel | PUT | `/api/v1/relationships/{id}` | `UpdateRelationshipCommand` | ADR-030 Projection (200) |
+
+Required Headers:
+- `X-Idempotency-Key` (required for all POST/PUT mutations)
+- `Preferred-Schema-Version` (optional, ADR-032 negotiation)
 
 ## 6. Goals
 

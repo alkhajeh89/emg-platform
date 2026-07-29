@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 import pytest
 from emg_auth_client import AuthorizationRequest, Decision
@@ -294,7 +295,12 @@ class _AtomicPortSpy:
     ) -> AtomicMutationOutcome:
         self.execute_count += 1
         committed: CommittedMutation = operation()
-        return AtomicMutationOutcome(result=committed.result, replayed=False)
+        return AtomicMutationOutcome(
+            result=committed.result,
+            mutation_id=UUID("11111111-1111-4111-8111-111111111111"),
+            ledger_completed_at=NOW,
+            replayed=False,
+        )
 
 
 def test_dependency_wiring_uses_preflight_and_atomic_mutation_port() -> None:
