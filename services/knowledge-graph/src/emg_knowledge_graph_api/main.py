@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from .errors import DEFAULT_ERROR_STATUS, ERROR_STATUS_MAP
 from .routers.health import router as health_router
 from .routers.knowledge_graph import router as knowledge_graph_router
+from .routers.mutations import router as mutation_router
 
 
 def create_app() -> FastAPI:
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(knowledge_graph_router)
+    app.include_router(mutation_router)
     return app
 
 

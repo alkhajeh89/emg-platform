@@ -39,6 +39,7 @@ from emg_knowledge_graph import (
     SchemaNegotiator,
 )
 from emg_knowledge_graph_infrastructure import GraphResourceMetadataReader
+from emg_platform_core import PrincipalRef
 from emg_policy_engine import LocalPolicyEnforcementPoint, load_policy_config
 from fastapi import Depends
 
@@ -111,6 +112,15 @@ def mutation_request_preparer_dependency(
 MutationRequestPreparerDep = Annotated[
     MutationRequestPreparer, Depends(mutation_request_preparer_dependency)
 ]
+
+
+def mutation_principal_ref_dependency(caller: TenantContextDep) -> PrincipalRef:
+    """Adapt the authenticated transport identity to the application contract."""
+
+    return PrincipalRef.service(caller.principal.client_id)
+
+
+MutationPrincipalRefDep = Annotated[PrincipalRef, Depends(mutation_principal_ref_dependency)]
 
 
 def resource_metadata_reader_dependency(
