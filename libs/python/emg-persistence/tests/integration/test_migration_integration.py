@@ -43,6 +43,12 @@ _TEST_SCHEMA = "migration_test"
 _RESET_SCHEMA_SQL = f"DROP SCHEMA IF EXISTS {_TEST_SCHEMA} CASCADE"
 _CREATE_SCHEMA_SQL = f"CREATE SCHEMA {_TEST_SCHEMA}"
 _SET_SEARCH_PATH_SQL = f"SET search_path TO {_TEST_SCHEMA}"
+_APP_ROLE = "emg_knowledge_graph_app"
+_MIGRATOR_ROLE = "emg_knowledge_graph_migrator"
+_CREATE_APP_ROLE_SQL = f"CREATE ROLE {_APP_ROLE} NOLOGIN"
+_CREATE_MIGRATOR_ROLE_SQL = f"CREATE ROLE {_MIGRATOR_ROLE} NOLOGIN"
+_DROP_APP_ROLE_SQL = f"DROP ROLE IF EXISTS {_APP_ROLE}"
+_DROP_MIGRATOR_ROLE_SQL = f"DROP ROLE IF EXISTS {_MIGRATOR_ROLE}"
 
 
 @pytest.fixture
@@ -51,16 +57,33 @@ def pg_executor() -> Iterator[object]:  # pragma: no cover - runs only with a li
 
     settings = PersistenceSettings(postgres_dsn=_PG_DSN)
     conn = connect(settings)
-    with conn.cursor() as cur:
-        cur.execute(_RESET_SCHEMA_SQL)
-        cur.execute(_CREATE_SCHEMA_SQL)
-        cur.execute(_SET_SEARCH_PATH_SQL)
-    conn.commit()
+    created_roles: set[str] = set()
     try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT rolname FROM pg_roles WHERE rolname IN (%s, %s)",
+                (_APP_ROLE, _MIGRATOR_ROLE),
+            )
+            existing_roles = {row[0] for row in cur.fetchall()}
+            if _APP_ROLE not in existing_roles:
+                cur.execute(_CREATE_APP_ROLE_SQL)
+                created_roles.add(_APP_ROLE)
+            if _MIGRATOR_ROLE not in existing_roles:
+                cur.execute(_CREATE_MIGRATOR_ROLE_SQL)
+                created_roles.add(_MIGRATOR_ROLE)
+            cur.execute(_RESET_SCHEMA_SQL)
+            cur.execute(_CREATE_SCHEMA_SQL)
+            cur.execute(_SET_SEARCH_PATH_SQL)
+        conn.commit()
         yield PostgresMigrationExecutor(conn)
     finally:
+        conn.rollback()
         with conn.cursor() as cur:
             cur.execute(_RESET_SCHEMA_SQL)
+            if _APP_ROLE in created_roles:
+                cur.execute(_DROP_APP_ROLE_SQL)
+            if _MIGRATOR_ROLE in created_roles:
+                cur.execute(_DROP_MIGRATOR_ROLE_SQL)
         conn.commit()
         conn.close()
 
