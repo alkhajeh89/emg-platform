@@ -38,8 +38,10 @@ jobs:
       - name: Create virtual environment
         run: python -m venv .venv
 
-      - name: Install hash-locked developer toolchain
-        run: .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Install hash-locked toolchain
+        run: |
+          .venv/bin/python -m pip install --require-hashes -r requirements-production.lock
+          .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
 
       - name: Editable-install all local packages (libs, then services)
         run: |
@@ -73,8 +75,10 @@ jobs:
       - name: Create virtual environment
         run: python -m venv .venv
 
-      - name: Install hash-locked developer toolchain
-        run: .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Install hash-locked toolchain
+        run: |
+          .venv/bin/python -m pip install --require-hashes -r requirements-production.lock
+          .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
 
       - name: Editable-install all local packages (libs, then services)
         run: |
@@ -166,8 +170,10 @@ jobs:
       - name: Create virtual environment
         run: python -m venv .venv
 
-      - name: Install hash-locked developer toolchain
-        run: .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Install hash-locked toolchain
+        run: |
+          .venv/bin/python -m pip install --require-hashes -r requirements-production.lock
+          .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
 
       - name: Editable-install all local packages (libs, then services)
         run: |
