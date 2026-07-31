@@ -5,6 +5,7 @@
 |---|---|
 | Document | Enterprise UX Architecture & Design System v1.0 |
 | Derives from | EA v2.0 · SAD v1.0 · EDA v1.0 · API Architecture v1.0 (all approved) |
+| Product authority | `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §4 governs User Personas. |
 | Relationship | **Complements, does not modify** the approved documents. On any conflict, EA/SAD/EDA/API prevail and a governed change request is raised. |
 | Status | **For Design & Architecture Review Board** — no code, no React |
 | Owners | Chief Experience Officer · Enterprise UX Architect · Design System Lead · Principal Product Designer · Government Digital Experience Architect · Human Factors Specialist |
@@ -88,6 +89,13 @@ flowchart TB
 ---
 
 ## 5. User Personas
+
+**Frozen personas govern.** `EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §4 defines the
+eight frozen product personas. The table below describes **UX interaction
+archetypes** used for interaction and information architecture only. They are
+not product personas, do not replace the frozen set, and create no product
+scope. Where an archetype has no frozen counterpart, it is a design construct
+pending a Freeze change through the Freeze's own unfreeze procedure.
 
 | Persona | Goals | Context & constraints | Key needs |
 |---|---|---|---|
