@@ -274,6 +274,7 @@ jobs:
     name: Container vulnerability gates
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
     strategy:
