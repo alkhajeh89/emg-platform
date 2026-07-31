@@ -7,14 +7,22 @@ centralized secrets store (Engineering Master Plan §5).
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Literal
+from urllib.parse import parse_qs, urlsplit
+
+from emg_api_contracts import reject_unknown_environment
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+StoreBackend = Literal["memory", "postgres"]
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="EMG_AUDIT_", env_file=".env", extra="ignore")
 
     # Storage backend: "memory" (tests / local without a DB) or "postgres".
-    store_backend: str = "memory"
+    store_backend: StoreBackend = "memory"
+    deployment_environment: Literal["development", "test", "production"] = "development"
 
     # PostgreSQL connection (used only when store_backend == "postgres").
     # Local-dev default matches docker-compose.yml's emg_audit_app role created
@@ -38,6 +46,8 @@ class Settings(BaseSettings):
     # tenant_claim — except a missing claim is not an authentication error
     # (see authn.py's `_extract_attributes`).
     classification_clearance_claim: str = "classification_clearance"
+    tenant_claim: str = "tenant_id"
+    policy_config_path: Path = Path("services/audit/config/policy.example.yaml")
 
     @property
     def keycloak_issuer(self) -> str:
@@ -50,3 +60,17 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_runtime_configuration(settings: Settings) -> None:
+    """Prevent volatile audit storage in production."""
+
+    if settings.deployment_environment == "production" and settings.store_backend == "memory":
+        raise RuntimeError("audit cannot start in production with the in-memory store backend")
+    if settings.deployment_environment == "production":
+        reject_unknown_environment("EMG_AUDIT_", set(Settings.model_fields))
+        if urlsplit(settings.keycloak_base_url).scheme != "https":
+            raise RuntimeError("audit production Keycloak transport must use HTTPS")
+        sslmode = parse_qs(urlsplit(settings.postgres_dsn).query).get("sslmode", [])
+        if not sslmode or sslmode[-1] not in {"require", "verify-ca", "verify-full"}:
+            raise RuntimeError("audit production PostgreSQL transport must require TLS")

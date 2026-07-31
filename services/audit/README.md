@@ -1,5 +1,10 @@
 # services/audit
 
+Audit ingestion derives `tenant_id` from the verified service token. Event
+lookup, listing, pagination, and export are constrained by that tenant and
+by classifications authorized through the configured Policy Enforcement
+Point. Client-supplied filters can only narrow this server-owned scope.
+
 Module 6 — Enterprise Audit, Provenance & Digital Evidence Platform.
 
 - **Sprint 6:** **FEAT-04-1 (Audit Event Pipeline)** — activated as a minimal
@@ -91,8 +96,15 @@ All prefixed `EMG_AUDIT_` (see `config.py`); local-dev defaults match
 `docker-compose.yml` and must be overridden per environment from the
 centralized secrets store for anything secret-shaped.
 
+`EMG_AUDIT_STORE_BACKEND` accepts only `memory` and `postgres`. Production
+must set `EMG_AUDIT_DEPLOYMENT_ENVIRONMENT=production` and use `postgres`;
+unknown values and volatile in-memory production storage prevent startup.
+The in-memory backend and local compose credentials are for development and
+tests only; local compose is not a production deployment profile.
+
 | Variable | Default (local dev) | Purpose |
 | --- | --- | --- |
+| `EMG_AUDIT_DEPLOYMENT_ENVIRONMENT` | `development` | `development`, `test`, or `production`; activates the durable-storage boot gate. |
 | `EMG_AUDIT_STORE_BACKEND` | `memory` | `memory` (tests/local) or `postgres` (tier-1). |
 | `EMG_AUDIT_POSTGRES_DSN` | *(local-dev placeholder)* | DSN for the append-only store; uses the INSERT/SELECT-only `emg_audit_app` role. |
 | `EMG_AUDIT_KEYCLOAK_BASE_URL` | `http://localhost:8080` | Keycloak base URL (token issuer/JWKS). |

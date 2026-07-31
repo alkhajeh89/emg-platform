@@ -43,6 +43,12 @@ _TEST_SCHEMA = "migration_test"
 _RESET_SCHEMA_SQL = f"DROP SCHEMA IF EXISTS {_TEST_SCHEMA} CASCADE"
 _CREATE_SCHEMA_SQL = f"CREATE SCHEMA {_TEST_SCHEMA}"
 _SET_SEARCH_PATH_SQL = f"SET search_path TO {_TEST_SCHEMA}"
+_APP_ROLE = "emg_knowledge_graph_app"
+_MIGRATOR_ROLE = "emg_knowledge_graph_migrator"
+_CREATE_APP_ROLE_SQL = f"CREATE ROLE {_APP_ROLE} NOLOGIN"
+_CREATE_MIGRATOR_ROLE_SQL = f"CREATE ROLE {_MIGRATOR_ROLE} NOLOGIN"
+_DROP_APP_ROLE_SQL = f"DROP ROLE IF EXISTS {_APP_ROLE}"
+_DROP_MIGRATOR_ROLE_SQL = f"DROP ROLE IF EXISTS {_MIGRATOR_ROLE}"
 
 
 @pytest.fixture
@@ -51,16 +57,33 @@ def pg_executor() -> Iterator[object]:  # pragma: no cover - runs only with a li
 
     settings = PersistenceSettings(postgres_dsn=_PG_DSN)
     conn = connect(settings)
-    with conn.cursor() as cur:
-        cur.execute(_RESET_SCHEMA_SQL)
-        cur.execute(_CREATE_SCHEMA_SQL)
-        cur.execute(_SET_SEARCH_PATH_SQL)
-    conn.commit()
+    created_roles: set[str] = set()
     try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT rolname FROM pg_roles WHERE rolname IN (%s, %s)",
+                (_APP_ROLE, _MIGRATOR_ROLE),
+            )
+            existing_roles = {row[0] for row in cur.fetchall()}
+            if _APP_ROLE not in existing_roles:
+                cur.execute(_CREATE_APP_ROLE_SQL)
+                created_roles.add(_APP_ROLE)
+            if _MIGRATOR_ROLE not in existing_roles:
+                cur.execute(_CREATE_MIGRATOR_ROLE_SQL)
+                created_roles.add(_MIGRATOR_ROLE)
+            cur.execute(_RESET_SCHEMA_SQL)
+            cur.execute(_CREATE_SCHEMA_SQL)
+            cur.execute(_SET_SEARCH_PATH_SQL)
+        conn.commit()
         yield PostgresMigrationExecutor(conn)
     finally:
+        conn.rollback()
         with conn.cursor() as cur:
             cur.execute(_RESET_SCHEMA_SQL)
+            if _APP_ROLE in created_roles:
+                cur.execute(_DROP_APP_ROLE_SQL)
+            if _MIGRATOR_ROLE in created_roles:
+                cur.execute(_DROP_MIGRATOR_ROLE_SQL)
         conn.commit()
         conn.close()
 
@@ -88,11 +111,35 @@ def neo4j_executor() -> Iterator[object]:  # pragma: no cover - runs only with a
 @requires_postgres
 def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
     applied = run_migrations(pg_executor)
-    assert [a.version for a in applied] == [1, 2]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
+    assert applied[2].name == "mutation_idempotency"
+    assert applied[3].name == "mutation_ledger"
     assert run_migrations(pg_executor) == ()
     assert migration_status(pg_executor).is_up_to_date is True
+
+    connection = pg_executor._connection
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_schema_privilege(" "'emg_knowledge_graph_app', current_schema(), 'CREATE')"
+        )
+        assert cursor.fetchone() == (False,)
+        cursor.execute(
+            "SELECT tableowner FROM pg_tables "
+            "WHERE schemaname = current_schema() AND tablename = 'tenants'"
+        )
+        assert cursor.fetchone() == ("emg_knowledge_graph_migrator",)
+        cursor.execute(
+            "SELECT "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.tenants', 'SELECT'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.tenants', 'DELETE'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.mutation_idempotency', 'DELETE')"
+        )
+        assert cursor.fetchone() == (True, False, True)
 
 
 @requires_postgres

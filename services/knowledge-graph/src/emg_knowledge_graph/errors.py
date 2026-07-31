@@ -1,6 +1,17 @@
 """Application-level errors for knowledge-graph orchestration."""
 
+from typing import Literal
+
 from emg_errors import EMGError
+
+SchemaNegotiationFailureCode = Literal[
+    "MALFORMED_SCHEMA",
+    "UNKNOWN_SCHEMA",
+    "RETIRED_SCHEMA",
+    "INCOMPATIBLE_SCHEMA",
+    "ADAPTER_FAILURE",
+    "NEGOTIATION_UNCONFIGURED",
+]
 
 
 class KnowledgeGraphApplicationError(EMGError):
@@ -19,6 +30,75 @@ class RevisionBuildError(KnowledgeGraphApplicationError):
     """Validated ontology input could not be merged into the memory graph."""
 
     error_code = "KNOWLEDGE_GRAPH_REVISION_BUILD_FAILED"
+
+
+class InvalidMutationCommandError(KnowledgeGraphApplicationError):
+    """A mutation command violates an application-boundary invariant."""
+
+    error_code = "KNOWLEDGE_GRAPH_INVALID_MUTATION_COMMAND"
+
+
+class MutationBuildError(KnowledgeGraphApplicationError):
+    """A validated mutation could not produce its immutable graph revision."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_BUILD_FAILED"
+
+
+class IdempotencyMismatchError(KnowledgeGraphApplicationError):
+    """An idempotency key was reused for a different canonical command."""
+
+    error_code = "KNOWLEDGE_GRAPH_IDEMPOTENCY_MISMATCH"
+
+
+class LegacyIdempotencyConflictError(KnowledgeGraphApplicationError):
+    """A pre-fingerprint idempotency record cannot be replayed safely."""
+
+    error_code = "KNOWLEDGE_GRAPH_LEGACY_IDEMPOTENCY_CONFLICT"
+
+
+class IdempotencyContentionError(KnowledgeGraphApplicationError):
+    """A claim could not be acquired within the configured wait boundary."""
+
+    error_code = "KNOWLEDGE_GRAPH_IDEMPOTENCY_CONTENTION"
+
+
+class MutationReplayIntegrityError(KnowledgeGraphApplicationError):
+    """Persisted replay data failed its ledger integrity checks."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_REPLAY_INTEGRITY"
+
+
+class MutationResourceMetadataError(KnowledgeGraphApplicationError):
+    """Required read-only authorization metadata was unavailable or incomplete."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_RESOURCE_METADATA"
+
+
+class MutationAuthorizationConflictError(KnowledgeGraphApplicationError):
+    """Authorization-relevant metadata changed after preflight."""
+
+    error_code = "KNOWLEDGE_GRAPH_MUTATION_AUTHORIZATION_CONFLICT"
+
+
+class SchemaNegotiationError(KnowledgeGraphApplicationError):
+    """A preferred semantic-schema version could not be resolved safely."""
+
+    error_code = "KNOWLEDGE_GRAPH_SCHEMA_NEGOTIATION_FAILED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: SchemaNegotiationFailureCode,
+    ) -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
+
+
+class UnsupportedFingerprintVersionError(KnowledgeGraphApplicationError):
+    """An active replay uses a fingerprint reader not deployed here."""
+
+    error_code = "KNOWLEDGE_GRAPH_UNSUPPORTED_FINGERPRINT_VERSION"
 
 
 class InvalidHistoryQueryError(KnowledgeGraphApplicationError):

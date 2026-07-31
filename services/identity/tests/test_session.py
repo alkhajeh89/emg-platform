@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import jwt
 import pytest
@@ -114,6 +115,39 @@ def test_refresh_rotates_tokens_and_preserves_claims(manager, principal):
     claims = manager.verify(pair2.access_token, expected_type="access")
     assert claims.subject == principal.subject
     assert claims.roles == principal.roles
+
+
+def test_refresh_token_is_single_use_and_reuse_revokes_family(manager, principal):
+    first = manager.issue(principal)
+    rotated = manager.refresh(first.refresh_token)
+
+    with pytest.raises(AuthorizationError, match="reuse detected"):
+        manager.refresh(first.refresh_token)
+
+    with pytest.raises(AuthorizationError, match="family has been revoked"):
+        manager.verify(rotated.access_token, expected_type="access")
+    with pytest.raises(AuthorizationError, match="reuse detected"):
+        manager.refresh(rotated.refresh_token)
+
+
+def test_parallel_refresh_allows_one_rotation_and_revokes_family(manager, principal):
+    first = manager.issue(principal)
+
+    def rotate() -> object:
+        try:
+            return manager.refresh(first.refresh_token)
+        except AuthorizationError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: rotate(), range(2)))
+
+    successes = [outcome for outcome in outcomes if not isinstance(outcome, Exception)]
+    failures = [outcome for outcome in outcomes if isinstance(outcome, AuthorizationError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    with pytest.raises(AuthorizationError, match="family has been revoked"):
+        manager.verify(successes[0].access_token, expected_type="access")  # type: ignore[union-attr]
 
 
 def test_refresh_rejects_access_token_presented_as_refresh(manager, principal):

@@ -7,7 +7,11 @@ from types import TracebackType
 from typing import Any, cast
 
 import pytest
-from emg_persistence.postgres import PostgresTransactionProvider, TransactionProvider
+from emg_persistence.postgres import (
+    ContextBoundTransactionProvider,
+    PostgresTransactionProvider,
+    TransactionProvider,
+)
 from psycopg import Connection
 
 
@@ -132,3 +136,51 @@ def test_each_transaction_acquires_exactly_one_fresh_connection() -> None:
 def test_transaction_is_an_abstract_context_manager() -> None:
     provider, _ = _provider([])
     assert isinstance(provider.transaction(), AbstractContextManager)
+
+
+def test_context_bound_provider_reuses_outer_connection_with_savepoint() -> None:
+    events: list[str] = []
+    connections = _FakeConnectionProvider(events)
+    provider = ContextBoundTransactionProvider(connections)
+
+    with provider.outer_transaction() as outer:
+        events.append("outer-body")
+        with provider.transaction() as joined:
+            events.append("joined-body")
+            assert joined is outer
+
+    assert events == [
+        "acquire",
+        "begin",
+        "outer-body",
+        "begin",
+        "joined-body",
+        "commit",
+        "commit",
+        "close",
+    ]
+    assert connections.acquire_calls == 1
+
+
+def test_context_bound_provider_rolls_back_outer_after_nested_failure() -> None:
+    events: list[str] = []
+    connections = _FakeConnectionProvider(events)
+    provider = ContextBoundTransactionProvider(connections)
+
+    with pytest.raises(RuntimeError, match="injected"), provider.outer_transaction():
+        with provider.transaction():
+            events.append("graph-write")
+        events.append("ledger-write")
+        raise RuntimeError("injected")
+
+    assert events == [
+        "acquire",
+        "begin",
+        "begin",
+        "graph-write",
+        "commit",
+        "ledger-write",
+        "rollback",
+        "close",
+    ]
+    assert connections.acquire_calls == 1

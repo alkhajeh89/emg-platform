@@ -13,6 +13,7 @@ import threading
 from datetime import datetime, timezone
 
 import pytest
+from _persistence_integration_helpers import truncate_persistence_tables
 from emg_persistence import PersistenceConflictError, PersistenceSettings
 from emg_persistence.revisions import Revision, RevisionHead
 from emg_platform_core import PrincipalRef, TenantId
@@ -60,14 +61,12 @@ def repo():  # type: ignore[no-untyped-def]  # pragma: no cover - runs only with
     settings = PersistenceSettings(postgres_dsn=_PG_DSN)
     conn = connect(settings)
     run_migrations(PostgresMigrationExecutor(conn))  # ensure baseline schema
-    with conn.cursor() as cur:
-        cur.execute("TRUNCATE graph_revisions, graph_head")
+    truncate_persistence_tables(conn)
     conn.commit()
     try:
         yield PostgresRevisionRepository(conn)
     finally:
-        with conn.cursor() as cur:
-            cur.execute("TRUNCATE graph_revisions, graph_head")
+        truncate_persistence_tables(conn)
         conn.commit()
         conn.close()
 
@@ -168,8 +167,7 @@ def test_revalidation_lock_blocks_concurrent_head_advance() -> None:  # pragma: 
     primary_connection = connect(settings)
     competing_connection = connect(settings)
     run_migrations(PostgresMigrationExecutor(primary_connection))
-    with primary_connection.cursor() as cur:
-        cur.execute("TRUNCATE graph_revisions, graph_head")
+    truncate_persistence_tables(primary_connection)
     primary_connection.commit()
     primary_repo = PostgresRevisionRepository(primary_connection)
     competing_repo = PostgresRevisionRepository(competing_connection)
@@ -201,8 +199,7 @@ def test_revalidation_lock_blocks_concurrent_head_advance() -> None:  # pragma: 
         assert failures == []
         assert primary_repo.get_head(_TENANT).revision_number == 2
     finally:
-        with primary_connection.cursor() as cur:
-            cur.execute("TRUNCATE graph_revisions, graph_head")
+        truncate_persistence_tables(primary_connection)
         primary_connection.commit()
         primary_connection.close()
         competing_connection.close()

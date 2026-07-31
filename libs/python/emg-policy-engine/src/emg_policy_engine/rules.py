@@ -8,7 +8,7 @@ default, a `load_*` function that never raises on a missing file, and a
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PolicyRule(BaseModel):
@@ -57,6 +57,8 @@ class PolicyRule(BaseModel):
     never by a new comparison primitive in this schema or in `PolicyEngine`.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     rule_id: str
     resource_type: str
     action: str
@@ -74,5 +76,7 @@ class PolicyConfig(BaseModel):
     `PolicyEngine.evaluate()`, not an operator-adjustable setting, so a
     misconfigured policy file can never flip the platform's fail-closed
     posture."""
+
+    model_config = ConfigDict(extra="forbid")
 
     rules: list[PolicyRule] = Field(default_factory=list)

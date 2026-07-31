@@ -18,6 +18,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from emg_audit_service.authn import ServiceTokenValidator
+from emg_errors import AuthorizationError
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +35,8 @@ def _issue_service_token(
     scope="svc-audit",
     exp_delta=300,
     classification_clearance=None,
+    tenant_id="tenant-a",
+    token_roles=None,
 ):
     now = int(time.time())
     payload = {
@@ -43,6 +46,10 @@ def _issue_service_token(
         "aud": settings.service_token_audience,
         "azp": client_id,
         "scope": scope,
+        "tenant_id": tenant_id,
+        "realm_access": {
+            "roles": (["service-account", scope] if token_roles is None else list(token_roles))
+        },
     }
     if classification_clearance is not None:
         payload["classification_clearance"] = classification_clearance
@@ -64,6 +71,24 @@ def test_validate_extracts_classification_clearance_claim_into_attributes(
     principal = validator.validate(token)
 
     assert principal.attributes == {"classification_clearance": "SECRET"}
+
+
+def test_validate_rejects_missing_tenant(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(settings, private_key, tenant_id=None)
+    with pytest.raises(AuthorizationError, match="tenant_id"):
+        validator.validate(token)
+
+
+def test_validate_rejects_missing_registered_role(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(
+        settings,
+        private_key,
+        token_roles=("service-account",),
+    )
+    with pytest.raises(AuthorizationError, match="required registered roles"):
+        validator.validate(token)
 
 
 def test_validate_defaults_to_unclassified_when_claim_is_absent(settings, rsa_keypair, validator):

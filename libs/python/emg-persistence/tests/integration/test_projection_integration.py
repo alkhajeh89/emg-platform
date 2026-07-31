@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 
 import pytest
+from _persistence_integration_helpers import truncate_persistence_tables
 from emg_memory_graph import (
     EMPTY_GRAPH,
     EdgeDirection,
@@ -151,14 +152,12 @@ def revision_repository(pg_settings: PersistenceSettings) -> Iterator[PostgresRe
     # pragma: no cover - live DB only
     connection = connect(pg_settings)
     run_migrations(PostgresMigrationExecutor(connection))
-    with connection.cursor() as cur:
-        cur.execute("TRUNCATE graph_revisions, graph_head")
+    truncate_persistence_tables(connection)
     connection.commit()
     try:
         yield PostgresRevisionRepository(connection)
     finally:
-        with connection.cursor() as cur:
-            cur.execute("TRUNCATE graph_revisions, graph_head")
+        truncate_persistence_tables(connection)
         connection.commit()
         connection.close()
 
@@ -410,8 +409,7 @@ def test_store_read_falls_back_to_postgresql_when_neo4j_is_unreachable(
 
     connection = connect(pg_settings)
     run_migrations(PostgresMigrationExecutor(connection))
-    with connection.cursor() as cur:
-        cur.execute("TRUNCATE graph_revisions, graph_head, outbox")
+    truncate_persistence_tables(connection)
     connection.commit()
     connection.close()
 
@@ -432,7 +430,6 @@ def test_store_read_falls_back_to_postgresql_when_neo4j_is_unreachable(
     assert result.content_hash() == graph.content_hash()
 
     connection = connect(pg_settings)
-    with connection.cursor() as cur:
-        cur.execute("TRUNCATE graph_revisions, graph_head, outbox")
+    truncate_persistence_tables(connection)
     connection.commit()
     connection.close()

@@ -80,11 +80,14 @@ def _classification_allowed(
     resource_type: str,
     action: str,
     classification: Classification,
+    decision_cache: dict[Classification, bool] | None = None,
 ) -> bool:
     """The single point every function in this module calls to ask "is
     `classification` within `principal`'s clearance" — always via the
     shared `PolicyEnforcementPoint`/`PolicyEngine`, never a local
     comparison."""
+    if decision_cache is not None and classification in decision_cache:
+        return decision_cache[classification]
     request = AuthorizationRequest(
         principal=principal,
         resource_type=resource_type,
@@ -92,6 +95,8 @@ def _classification_allowed(
         resource_attributes={"classification": classification.value},
     )
     decision = pep.authorize(request)
+    if decision_cache is not None:
+        decision_cache[classification] = decision.allowed
     return decision.allowed
 
 
@@ -101,13 +106,16 @@ def filter_entities(
     resource_type: str,
     items: Iterable[EntitySummary],
     action: str = DEFAULT_ACTION,
+    decision_cache: dict[Classification, bool] | None = None,
 ) -> tuple[EntitySummary, ...]:
     """Prune `items` to those whose own classification is within
     `principal`'s clearance, preserving order."""
     return tuple(
         item
         for item in items
-        if _classification_allowed(pep, principal, resource_type, action, item.classification)
+        if _classification_allowed(
+            pep, principal, resource_type, action, item.classification, decision_cache
+        )
     )
 
 
@@ -117,13 +125,16 @@ def filter_edges(
     resource_type: str,
     items: Iterable[EdgeDetails],
     action: str = DEFAULT_ACTION,
+    decision_cache: dict[Classification, bool] | None = None,
 ) -> tuple[EdgeDetails, ...]:
     """Prune `items` to those whose own classification is within
     `principal`'s clearance, preserving order."""
     return tuple(
         item
         for item in items
-        if _classification_allowed(pep, principal, resource_type, action, item.classification)
+        if _classification_allowed(
+            pep, principal, resource_type, action, item.classification, decision_cache
+        )
     )
 
 

@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from emg_api_contracts import ApiError, ApiResponse
+from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import AuthorizationError, EMGError, UpstreamServiceError, ValidationError
-from emg_telemetry import set_correlation_id
+from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -25,6 +25,8 @@ from .routers.auth import router as auth_router
 from .routers.authz import router as authz_router
 from .routers.federation import router as federation_router
 from .routers.service_auth import router as service_auth_router
+
+_log = get_logger("identity.api")
 
 _ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     ValidationError: 400,
@@ -44,6 +46,10 @@ def create_app() -> FastAPI:
         ),
         version="0.4.0",
     )
+    app.add_middleware(HttpRequestSecurityMiddleware)
+    from .dependencies import validate_identity_runtime_configuration
+
+    app.router.add_event_handler("startup", validate_identity_runtime_configuration)
 
     @app.middleware("http")
     async def correlation_id_middleware(
@@ -58,7 +64,21 @@ def create_app() -> FastAPI:
     @app.exception_handler(EMGError)
     async def emg_error_handler(request: Request, exc: EMGError) -> JSONResponse:
         status_code = _ERROR_STATUS_MAP.get(type(exc), 500)
-        error = ApiError(error_code=exc.error_code, message=exc.message)
+        _log.warning(
+            "request failed: error_code=%s error_type=%s status_code=%d",
+            exc.error_code,
+            type(exc).__name__,
+            status_code,
+            extra={
+                "module": "identity",
+                "action": "http_request",
+                "outcome": "error",
+            },
+        )
+        error = ApiError(
+            error_code=exc.error_code,
+            message=_public_error_message(exc, status_code),
+        )
         envelope: ApiResponse[None] = ApiResponse(data=None, error=error)
         return JSONResponse(status_code=status_code, content=_envelope_dict(envelope))
 
@@ -95,6 +115,16 @@ def _envelope_dict(envelope: ApiResponse[None]) -> dict[str, object]:
         ),
         "correlation_id": envelope.correlation_id,
     }
+
+
+def _public_error_message(exc: EMGError, status_code: int) -> str:
+    if isinstance(exc, AuthorizationError):
+        return "Authentication failed"
+    if isinstance(exc, UpstreamServiceError):
+        return "Upstream service unavailable"
+    if status_code >= 500:
+        return "Internal server error"
+    return exc.message
 
 
 app = create_app()

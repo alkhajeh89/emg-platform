@@ -1,56 +1,49 @@
 -- EMG™ Knowledge Graph service — PostgreSQL role bootstrap
 -- (Knowledge Graph Integration Closure, Group B3).
 --
--- Creates the application role the Knowledge Graph service connects as
+-- Creates separate migration-owner and runtime application roles.
 -- (services/knowledge-graph/src/emg_knowledge_graph_api/config.py's
 -- `postgres_dsn` default, and docker-compose.yml's `knowledge-graph`
 -- service). This script is mounted into the Postgres container's
 -- /docker-entrypoint-initdb.d (docker-compose.yml) alongside the audit
 -- scripts and is safe to re-run (IF NOT EXISTS / idempotent GRANTs).
 --
--- Deliberate deviation from the audit role's least-privilege shape
--- (001_audit_events.sql): audit's schema (audit_events) is created by that
--- seed script itself, so its application role only ever needs narrow
--- INSERT/SELECT grants on tables that already exist by the time it
--- connects. The Knowledge Graph service is different: it owns no
--- pre-created schema here. Its tables (tenants, graph_revisions,
--- graph_head, outbox, evidence_ledger, projection_checkpoints,
--- schema_migrations) are created at container startup by
--- `emg_knowledge_graph_api.migrate` (Group B4), which applies
--- `emg-persistence`'s existing V001/V002 PostgreSQL migrations *as this
--- same role*. PostgreSQL 15+ does not grant `CREATE` on the `public`
--- schema to non-owner roles by default, so this role needs an explicit
--- `CREATE ON SCHEMA public` grant to run those migrations; it then owns
--- every table it creates and therefore already has full privileges on
--- them (no separate per-table GRANT is needed or issued here).
---
--- Architectural note (recorded, not resolved, here): this makes
--- `emg_knowledge_graph_app` a broader-privileged role than audit's
--- append-only role -- it can create and alter schema objects in `public`,
--- not just read/write specific rows. This is a direct consequence of this
--- service being the first (and, as of this sprint, only) consumer of
--- `emg-persistence`'s migration runner in this repository; no other
--- service currently owns or migrates these tables. See the Knowledge Graph
--- Integration Closure implementation specification and
--- `EMG_ARCHITECTURE_DECISION_REGISTER.md` for follow-up if a narrower,
--- migration-role-vs-app-role split is later deemed necessary.
+-- The one-shot migration process uses the migrator credential and owns all
+-- schema objects. The serving process receives only the application
+-- credential. V005 grants its exact DML privileges after transferring any
+-- legacy runtime-owned objects to the migrator.
 
 DO $$
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'emg_knowledge_graph_migrator') THEN
+        CREATE ROLE emg_knowledge_graph_migrator LOGIN PASSWORD 'emg_knowledge_graph_migrator_local_dev_only_do_not_use_in_prod';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'emg_knowledge_graph_app') THEN
         CREATE ROLE emg_knowledge_graph_app LOGIN PASSWORD 'emg_knowledge_graph_local_dev_only_do_not_use_in_prod';
     END IF;
 END
 $$;
 
--- Local-dev-only password placeholder above, overridden per-environment from
+-- The migrator may assume the runtime role only to transfer ownership away
+-- from legacy runtime-owned objects during V005. The reverse grant does not
+-- exist, so the runtime credential can never assume the owner role.
+GRANT emg_knowledge_graph_app TO emg_knowledge_graph_migrator;
+
+-- Local-dev-only password placeholders above, overridden per-environment from
 -- the centralized secrets store (Engineering Master Plan §5) -- never a real
 -- value. Matches the default `postgres_dsn` in
 -- `emg_knowledge_graph_api/config.py` and docker-compose.yml's
 -- `knowledge-graph` service so local development works out of the box.
 
--- Required so the migration runner (connecting as this role) can create the
--- baseline tables on first startup. Ownership of created objects then
--- carries the role's full privileges on them -- no further per-table GRANT
--- is required.
-GRANT CREATE ON SCHEMA public TO emg_knowledge_graph_app;
+-- Required so the separate migration job can create and own schema objects.
+REVOKE CREATE ON SCHEMA public FROM emg_knowledge_graph_app;
+GRANT USAGE ON SCHEMA public TO emg_knowledge_graph_app;
+GRANT CREATE, USAGE ON SCHEMA public TO emg_knowledge_graph_migrator;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO emg_knowledge_graph_migrator;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO emg_knowledge_graph_migrator;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO emg_knowledge_graph_migrator;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE emg_knowledge_graph_migrator IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO emg_knowledge_graph_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE emg_knowledge_graph_migrator IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO emg_knowledge_graph_app;

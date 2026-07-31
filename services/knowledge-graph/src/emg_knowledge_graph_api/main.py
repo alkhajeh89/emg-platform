@@ -14,15 +14,19 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from emg_api_contracts import ApiError, ApiResponse
+from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import EMGError
-from emg_telemetry import set_correlation_id
+from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from .errors import DEFAULT_ERROR_STATUS, ERROR_STATUS_MAP
+from .dependencies import validate_schema_runtime_configuration
+from .errors import error_headers, error_status, public_error_message
 from .routers.health import router as health_router
 from .routers.knowledge_graph import router as knowledge_graph_router
+from .routers.mutations import router as mutation_router
+
+_log = get_logger("knowledge_graph.api")
 
 
 def create_app() -> FastAPI:
@@ -38,6 +42,8 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
     )
+    app.add_middleware(HttpRequestSecurityMiddleware)
+    app.router.add_event_handler("startup", validate_schema_runtime_configuration)
 
     @app.middleware("http")
     async def correlation_id_middleware(
@@ -51,13 +57,29 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(EMGError)
     async def emg_error_handler(request: Request, exc: EMGError) -> JSONResponse:
-        status_code = ERROR_STATUS_MAP.get(type(exc), DEFAULT_ERROR_STATUS)
-        error = ApiError(error_code=exc.error_code, message=exc.message)
+        status_code = error_status(exc)
+        _log.warning(
+            "request failed: error_code=%s error_type=%s status_code=%d",
+            exc.error_code,
+            type(exc).__name__,
+            status_code,
+            extra={
+                "module": "knowledge-graph",
+                "action": "http_request",
+                "outcome": "error",
+            },
+        )
+        error = ApiError(error_code=exc.error_code, message=public_error_message(exc))
         envelope: ApiResponse[None] = ApiResponse(data=None, error=error)
-        return JSONResponse(status_code=status_code, content=_envelope_dict(envelope))
+        return JSONResponse(
+            status_code=status_code,
+            content=_envelope_dict(envelope),
+            headers=error_headers(exc),
+        )
 
     app.include_router(health_router)
     app.include_router(knowledge_graph_router)
+    app.include_router(mutation_router)
     return app
 
 

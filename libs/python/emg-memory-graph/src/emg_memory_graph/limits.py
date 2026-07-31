@@ -16,6 +16,7 @@ MAX_TEXT_LENGTH: int = 8_192
 MAX_METADATA_ENTRIES: int = 128
 MAX_EVIDENCE_REFS: int = 256
 MAX_ALIASES: int = 64
+MAX_SUPERSEDES: int = 500
 MAX_TEMPORAL_INTERVALS: int = 4_096
 
 # --- Graph collections -------------------------------------------------------

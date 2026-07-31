@@ -4,13 +4,15 @@
 # the same multi-stage layout as services/audit/Dockerfile and
 # services/identity/Dockerfile.
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /build
+COPY requirements-production.lock /build/requirements-production.lock
+RUN pip install --require-hashes -r /build/requirements-production.lock
 
 # Shared libraries (Module 3, ADR-012) this service depends on — copied in
 # explicitly rather than installed from an index, since they are not yet
@@ -41,7 +43,7 @@ COPY libs/python/emg-audit-client /build/libs/python/emg-audit-client
 
 COPY services/knowledge-graph /build/services/knowledge-graph
 
-RUN pip install \
+RUN pip install --no-deps --no-build-isolation \
     /build/libs/python/emg-common-types \
     /build/libs/python/emg-errors \
     /build/libs/python/emg-ontology \
@@ -59,7 +61,7 @@ RUN pip install \
     /build/libs/python/emg-policy-engine \
     /build/services/knowledge-graph
 
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93 AS runtime
 
 RUN useradd --create-home --uid 10001 emg
 COPY --from=base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -81,11 +83,16 @@ COPY --from=base /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY --from=base /build/services/knowledge-graph/config /app/services/knowledge-graph/config
 
+# ADR-033 Phase 3: the reviewed, immutable production catalog is packaged
+# with the deployment and loaded before the process can serve traffic.
+ENV EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH=services/knowledge-graph/config/schema-catalog.json \
+    EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT=production
+
 USER emg
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')" || exit 1
 
-# Apply any pending PostgreSQL migrations (Group B4; no-op unless
-# EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND=postgres) before serving traffic.
-CMD ["sh", "-c", "python -m emg_knowledge_graph_api.migrate && uvicorn emg_knowledge_graph_api.main:app --host 0.0.0.0 --port 8000"]
+# Migrations run as a separate deployment job with the owner credential.
+# The serving process receives only the least-privileged runtime credential.
+CMD ["uvicorn", "emg_knowledge_graph_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "5", "--limit-concurrency", "100", "--limit-max-requests", "10000"]

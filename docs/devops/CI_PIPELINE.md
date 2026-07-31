@@ -1,5 +1,21 @@
 # CI Pipeline
 
+## SRS-3 supply-chain gates
+
+CI installs `requirements-dev.lock` and `requirements-production.lock` with
+hash verification. Change the corresponding input file, regenerate with
+`pip-compile --generate-hashes --allow-unsafe --strip-extras`, and review the
+complete lock diff. Never hand-edit a lock.
+
+Every third-party GitHub Action and container is pinned to an immutable commit
+or image digest. CI blocks vulnerable production dependencies, critical
+container vulnerabilities, and committed secrets. It uploads JSON/SARIF
+reports plus a deterministic CycloneDX SBOM.
+
+Version tags also produce a deterministic source archive, SBOM, local in-toto
+provenance statement, and GitHub build-provenance attestation. Verify the
+attestation and each subject SHA-256 before deployment.
+
 ## Purpose
 To execute automated quality checks on pushed code and pull requests.
 

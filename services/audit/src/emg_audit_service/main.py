@@ -12,20 +12,31 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from emg_api_contracts import ApiError, ApiResponse
-from emg_errors import AuthorizationError, EMGError, UpstreamServiceError, ValidationError
-from emg_telemetry import set_correlation_id
+from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
+from emg_errors import (
+    AuthorizationError,
+    EMGError,
+    PermissionDeniedError,
+    UpstreamServiceError,
+    ValidationError,
+)
+from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from .authorization import validate_audit_policy_configuration
+from .config import get_settings, validate_runtime_configuration
 from .routers.custody import router as custody_router
 from .routers.events import router as events_router
 from .routers.health import router as health_router
 from .routers.integrity import router as integrity_router
 
+_log = get_logger("audit.api")
+
 _ERROR_STATUS_MAP: dict[type[EMGError], int] = {
     ValidationError: 400,
     AuthorizationError: 401,
+    PermissionDeniedError: 403,
     UpstreamServiceError: 502,
 }
 
@@ -47,6 +58,13 @@ def create_app() -> FastAPI:
         ),
         version="0.3.0",
     )
+    app.add_middleware(HttpRequestSecurityMiddleware)
+
+    def validate_startup() -> None:
+        validate_runtime_configuration(get_settings())
+        validate_audit_policy_configuration()
+
+    app.router.add_event_handler("startup", validate_startup)
 
     @app.middleware("http")
     async def correlation_id_middleware(
@@ -61,7 +79,21 @@ def create_app() -> FastAPI:
     @app.exception_handler(EMGError)
     async def emg_error_handler(request: Request, exc: EMGError) -> JSONResponse:
         status_code = _ERROR_STATUS_MAP.get(type(exc), 500)
-        error = ApiError(error_code=exc.error_code, message=exc.message)
+        _log.warning(
+            "request failed: error_code=%s error_type=%s status_code=%d",
+            exc.error_code,
+            type(exc).__name__,
+            status_code,
+            extra={
+                "module": "audit",
+                "action": "http_request",
+                "outcome": "error",
+            },
+        )
+        error = ApiError(
+            error_code=exc.error_code,
+            message=_public_error_message(exc, status_code),
+        )
         envelope: ApiResponse[None] = ApiResponse(data=None, error=error)
         return JSONResponse(status_code=status_code, content=_envelope_dict(envelope))
 
@@ -82,6 +114,18 @@ def _envelope_dict(envelope: ApiResponse[None]) -> dict[str, object]:
         ),
         "correlation_id": envelope.correlation_id,
     }
+
+
+def _public_error_message(exc: EMGError, status_code: int) -> str:
+    if isinstance(exc, AuthorizationError):
+        return "Authentication failed"
+    if isinstance(exc, PermissionDeniedError):
+        return "Access denied"
+    if isinstance(exc, UpstreamServiceError):
+        return "Upstream service unavailable"
+    if status_code >= 500:
+        return "Internal server error"
+    return exc.message
 
 
 app = create_app()

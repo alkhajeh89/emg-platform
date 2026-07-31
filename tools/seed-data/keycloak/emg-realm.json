@@ -20,7 +20,8 @@
       { "name": "service-account", "description": "Service account role for internal EMG service authentication and controlled machine-to-machine access." },
       { "name": "svc-identity", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the Identity Service's own service principal. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
       { "name": "svc-authorization", "description": "Authorization service role for managing policy evaluation and access control decisions across EMG services." },
-      { "name": "svc-audit", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the (not-yet-implemented, EPIC-04) Audit Service's service principal — registered now for the same reason. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." }
+      { "name": "svc-audit", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the (not-yet-implemented, EPIC-04) Audit Service's service principal — registered now for the same reason. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
+      { "name": "svc-knowledge-graph-writer", "description": "ADR-027 (Revision 2) Stage 0: least-privilege role for a service principal authorized to mutate the Knowledge Graph (e.g. a future ADR-020 ingestion service) — registered ahead of a concrete grantee, the same precedent svc-audit set. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." }
     ]
   },
   "clientScopes": [
@@ -75,6 +76,54 @@
           }
         }
       ]
+    },
+    {
+      "name": "emg-service-security-claims",
+      "description": "SRS-2: emits verified tenant, classification-clearance, and realm-role claims consistently for every approved service client.",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "emg-service-tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "emg-service-clearance-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "classification_clearance",
+            "claim.name": "classification_clearance",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "emg-service-realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "clients": [
@@ -115,7 +164,7 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience"],
+      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
       "attributes": {
         "access.token.lifespan": "300"
       }
@@ -136,7 +185,7 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience"],
+      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
       "attributes": {
         "access.token.lifespan": "300"
       }
@@ -157,7 +206,28 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience"],
+      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "emg-svc-knowledge-graph-writer",
+      "name": "EMG Service Principal — Knowledge Graph Writer",
+      "description": "SRS-2: approved least-privilege client for ADR-027 mutations.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
       "attributes": {
         "access.token.lifespan": "300"
       }
@@ -200,19 +270,41 @@
       "username": "service-account-emg-svc-identity",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-identity",
-      "realmRoles": ["service-account", "svc-identity"]
+      "realmRoles": ["service-account", "svc-identity"],
+      "attributes": {
+        "tenant_id": ["tenant-dev"],
+        "classification_clearance": ["INTERNAL"]
+      }
     },
     {
       "username": "service-account-emg-svc-authorization",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-authorization",
-      "realmRoles": ["service-account", "svc-authorization"]
+      "realmRoles": ["service-account", "svc-authorization"],
+      "attributes": {
+        "tenant_id": ["tenant-dev"],
+        "classification_clearance": ["INTERNAL"]
+      }
     },
     {
       "username": "service-account-emg-svc-audit",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-audit",
-      "realmRoles": ["service-account", "svc-audit"]
+      "realmRoles": ["service-account", "svc-audit"],
+      "attributes": {
+        "tenant_id": ["tenant-dev"],
+        "classification_clearance": ["SECRET"]
+      }
+    },
+    {
+      "username": "service-account-emg-svc-knowledge-graph-writer",
+      "enabled": true,
+      "serviceAccountClientId": "emg-svc-knowledge-graph-writer",
+      "realmRoles": ["service-account", "svc-knowledge-graph-writer"],
+      "attributes": {
+        "tenant_id": ["tenant-dev"],
+        "classification_clearance": ["SECRET"]
+      }
     }
   ]
 }

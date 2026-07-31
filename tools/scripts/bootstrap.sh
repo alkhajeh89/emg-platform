@@ -95,11 +95,9 @@ fi
 # 4. Base tooling + dev toolchain
 # ---------------------------------------------------------------------------
 emg_print_env_banner
-log "Upgrading pip / setuptools / wheel"
-"$VENV_PY" -m pip install --quiet --upgrade pip setuptools wheel
-
-log "Installing developer toolchain (requirements-dev.txt)"
-"$VENV_PY" -m pip install --quiet -r "$ROOT_DIR/requirements-dev.txt"
+log "Installing the hash-locked developer toolchain (requirements-dev.lock)"
+"$VENV_PY" -m pip install --quiet --require-hashes \
+  -r "$ROOT_DIR/requirements-dev.lock"
 
 # ---------------------------------------------------------------------------
 # 5. Editable install of every local package (libs first, then services)

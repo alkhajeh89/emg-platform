@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 from emg_auth_client import AuthorizationRequest, Principal
-from emg_policy_engine import default_policy_config, load_policy_config, validate_policy_config
+from emg_policy_engine import (
+    PolicyConfigurationError,
+    default_policy_config,
+    load_policy_config,
+    load_validated_policy_config,
+    validate_policy_config,
+)
 from emg_policy_engine.engine import PolicyEngine
 from emg_policy_engine.rules import PolicyConfig, PolicyRule
 from pydantic import ValidationError
@@ -49,6 +55,35 @@ def test_load_policy_config_malformed_file_raises():
 
     with pytest.raises(ValidationError):
         load_policy_config(path)
+
+
+def test_policy_rule_rejects_unknown_fields(tmp_path: Path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+rules:
+  - rule_id: misspelled-role
+    resource_type: identity.diagnostics
+    action: read
+    required_role: [platform-user]
+"""
+    )
+    with pytest.raises(ValidationError, match="required_role"):
+        load_policy_config(policy_path)
+
+
+def test_validated_loader_rejects_conditionless_allow(tmp_path: Path):
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+rules:
+  - rule_id: unsafe
+    resource_type: identity.diagnostics
+    action: read
+"""
+    )
+    with pytest.raises(PolicyConfigurationError, match="no conditions"):
+        load_validated_policy_config(policy_path)
 
 
 def test_validate_default_config_has_no_problems():
@@ -170,12 +205,14 @@ def _kg_example_policy_path() -> Path:
 
 def test_kg_example_policy_config_loads_and_has_no_advisory_problems():
     """The shipped Knowledge Graph example config (ADR-025 Group C4 allow
-    rules plus ADR-026 Revision 2 Group D6 classification deny rules) must
-    load without error and trip no advisory validation problem — no unknown
-    roles, no rule with an empty allow-list, no rule with zero conditions at
-    all (required_resource_attributes now counts as a condition)."""
+    rules, ADR-026 Revision 2 Group D6 classification deny rules, and
+    ADR-027 Revision 3 Stage 2 mutation rules) must load without error and
+    trip no advisory validation problem — no unknown roles, no rule with an
+    empty allow-list, no rule with zero conditions at all
+    (required_resource_attributes now counts as a condition)."""
     config = load_policy_config(_kg_example_policy_path())
-    assert len(config.rules) == 20  # 5 allow + 15 classification deny rules
+    # 20 read rules + 15 mutation allows + 33 mutation classification denies.
+    assert len(config.rules) == 68
     assert validate_policy_config(config) == []
 
 

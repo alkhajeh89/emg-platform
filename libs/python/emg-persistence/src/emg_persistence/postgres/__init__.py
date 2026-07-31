@@ -9,15 +9,22 @@ from __future__ import annotations
 
 from .checkpoint_repository import PostgresProjectionCheckpointRepository
 from .migration_executor import PostgresMigrationExecutor
+from .mutation_repository import PostgresMutationRepository
 from .outbox_repository import PostgresOutboxRepository
 from .pool import ConnectionProvider, DirectConnectionProvider, connect
 from .revision_repository import PostgresRevisionRepository
-from .transactions import PostgresTransactionProvider, TransactionProvider
+from .transactions import (
+    ContextBoundTransactionProvider,
+    PostgresTransactionProvider,
+    TransactionProvider,
+)
 
 __all__ = [
     "ConnectionProvider",
+    "ContextBoundTransactionProvider",
     "DirectConnectionProvider",
     "PostgresMigrationExecutor",
+    "PostgresMutationRepository",
     "PostgresOutboxRepository",
     "PostgresProjectionCheckpointRepository",
     "PostgresRevisionRepository",

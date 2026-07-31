@@ -40,7 +40,8 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Iterable, Iterator
 
 from emg_audit_client import (
     AuditEvent,
@@ -176,3 +177,70 @@ def collect_all_custody(
             break
         cursor = encode_cursor(page[-1].chain_sequence)
     return out[:EXPORT_MAX_ROWS]
+
+
+def iter_audit_views(
+    store: AuditEventStore,
+    base: AuditQuery,
+    to_view: Callable[[AuditEvent], AuditEventView],
+) -> Iterator[AuditEventView]:
+    """Yield a bounded export page-by-page without retaining prior pages."""
+    cursor: str | None = None
+    emitted = 0
+    while emitted < EXPORT_MAX_ROWS:
+        query = base.model_copy(update={"cursor": cursor, "limit": EXPORT_PAGE_SIZE})
+        page = store.query(query)
+        for event in page[: EXPORT_MAX_ROWS - emitted]:
+            yield to_view(event)
+            emitted += 1
+        if len(page) < EXPORT_PAGE_SIZE:
+            break
+        cursor = encode_cursor(page[-1].sequence_number)
+
+
+def iter_custody_views(
+    store: CustodyEventStore,
+    base: CustodyQuery,
+    to_view: Callable[[CustodyEvent], CustodyEventView],
+) -> Iterator[CustodyEventView]:
+    """Yield a bounded custody export page-by-page."""
+    cursor: str | None = None
+    emitted = 0
+    while emitted < EXPORT_MAX_ROWS:
+        query = base.model_copy(update={"cursor": cursor, "limit": EXPORT_PAGE_SIZE})
+        page = store.query(query)
+        for event in page[: EXPORT_MAX_ROWS - emitted]:
+            yield to_view(event)
+            emitted += 1
+        if len(page) < EXPORT_PAGE_SIZE:
+            break
+        cursor = encode_cursor(page[-1].chain_sequence)
+
+
+def stream_json(views: Iterable[AuditEventView | CustodyEventView]) -> Iterator[str]:
+    """Stream a JSON array while holding at most one view in memory."""
+    yield "["
+    first = True
+    for view in views:
+        if not first:
+            yield ","
+        first = False
+        yield json.dumps(view.model_dump(mode="json"), separators=(",", ":"))
+    yield "]"
+
+
+def stream_csv(
+    views: Iterable[AuditEventView | CustodyEventView], columns: list[str]
+) -> Iterator[str]:
+    """Stream CSV records with formula-injection protection."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(columns)
+    yield buffer.getvalue()
+    for view in views:
+        buffer.seek(0)
+        buffer.truncate(0)
+        writer.writerow(
+            [_neutralize_csv_cell(_isoformat(getattr(view, column))) for column in columns]
+        )
+        yield buffer.getvalue()

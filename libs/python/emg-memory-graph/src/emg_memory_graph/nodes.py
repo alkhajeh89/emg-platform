@@ -16,14 +16,16 @@ without a breaking change.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from emg_common_types import Classification
+from emg_knowledge_lifecycle import VersionState
 from emg_ontology import Entity
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .evidence import EvidenceRef
 from .labels import SafeLabel, SafeText
-from .limits import MAX_ALIASES, MAX_EVIDENCE_REFS
+from .limits import MAX_ALIASES, MAX_EVIDENCE_REFS, MAX_SUPERSEDES
 from .metadata import Metadata
 from .temporal import TemporalHistory
 
@@ -41,6 +43,9 @@ class MemoryNode(BaseModel):
     source: SafeLabel
     confidence: float = Field(ge=0.0, le=1.0)
     classification: Classification = Classification.INTERNAL
+    owner: SafeLabel | Literal[""] = ""
+    lifecycle_status: VersionState = VersionState.ACTIVE
+    supersedes: tuple[SafeLabel, ...] = ()
     evidence: tuple[EvidenceRef, ...] = Field(min_length=1)
     aliases: tuple[SafeText, ...] = ()
     histories: tuple[TemporalHistory, ...] = ()
@@ -61,6 +66,15 @@ class MemoryNode(BaseModel):
         if len(value) > MAX_ALIASES:
             raise ValueError(f"too many aliases (max {MAX_ALIASES})")
         return tuple(sorted(set(value)))
+
+    @field_validator("supersedes")
+    @classmethod
+    def _bounded_unique_supersedes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) > MAX_SUPERSEDES:
+            raise ValueError(f"too many supersedes references (max {MAX_SUPERSEDES})")
+        if len(value) != len(set(value)):
+            raise ValueError("duplicate node_id in supersedes")
+        return tuple(sorted(value))
 
     @field_validator("histories")
     @classmethod
@@ -109,6 +123,7 @@ class MemoryNode(BaseModel):
             source=entity.provenance_reference.source_principal,
             confidence=entity.trust_score,
             classification=entity.classification,
+            owner=entity.owner,
             evidence=evidence,
             aliases=aliases,
             histories=histories,

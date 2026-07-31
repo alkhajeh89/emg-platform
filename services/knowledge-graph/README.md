@@ -1,5 +1,18 @@
 # services/knowledge-graph
 
+Mutation authorization is checked at preflight and revalidated through the
+same PEP against the exact immutable graph snapshot read inside the write
+transaction. Authorization-relevant drift returns a safe conflict. Stored
+idempotent replays are reauthorized against current metadata.
+
+PostgreSQL deployments use separate runtime and migration jobs and DSNs. The
+serving container receives only the DML runtime credential. A one-shot
+migration job receives `EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN`, exits
+successfully before serving instances start, and never shares its owner
+credential with the runtime process. The runtime role has no schema ownership
+or DDL; its only delete permission is the narrowly required deletion of an
+expired idempotency claim during conflict-aware replacement.
+
 Scaffolded in Sprint 1 (FEAT-01-1). Governing architecture: Module 7 — Knowledge
 Graph Platform. No business logic or API implementation exists yet — see
 /services/README.md for target Epic/Sprint.
@@ -57,8 +70,10 @@ unconditionally default-deny:
 - A **missing** policy file is not a startup error — it is treated as an
   **empty ruleset**, which denies every request.
 - A **malformed** (present but invalid) policy file *is* a startup error
-  (raises `pydantic.ValidationError` when the policy dependency is first
-  resolved).
+  (raises during the mandatory startup gate).
+- A structurally valid but semantically unsafe policy—such as an unknown
+  field, duplicate rule identifier, unknown role, empty allow-list, or
+  conditionless rule—is also a startup error.
 - **No request is ever silently allowed** due to a configuration problem.
 
 This means a deployment that forgets to supply (or mounts the wrong path
@@ -72,6 +87,9 @@ needed."
 
 **Deployment requirements:**
 
+- `EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND` accepts only `memory` and
+  `postgres`. Unknown values fail validation, and production rejects
+  `memory`; local compose values remain development-only.
 - The container image must have `config/policy.example.yaml` (or the
   deployment's own policy file) present at the path
   `EMG_KNOWLEDGE_GRAPH_API_POLICY_CONFIG_PATH` resolves to inside the
@@ -100,3 +118,29 @@ granting a role (e.g. `service-account`) therefore grant that access to
 *any* service holding that realm role, not to a specifically reviewed
 Knowledge Graph consumer. Introducing a registry-based allow-list, mirroring
 `identity`/`audit`, is a follow-up task outside this ADR's authorized scope.
+
+## Schema negotiation (ADR-033)
+
+The production schema catalog is the reviewed, immutable artifact at
+`services/knowledge-graph/config/schema-catalog.json`. ADR-033 Phase 3 ships
+canonical version `2.1.0` under catalog generation `catalog-v2.1.0-gen1`.
+It contains only that Published, Strict version and therefore uses identity
+canonicalization; the production normalizer registration set is empty.
+
+The production image packages the catalog and sets
+`EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH` to its in-container location.
+Startup loads and validates the catalog, runs the normalizer boot gate, and
+fails before serving traffic if the artifact is missing, malformed, or
+inconsistent. Production never falls back to the unconfigured placeholder.
+The placeholder remains available only through explicit opt-in in an
+explicitly identified development or test environment and rejects every
+negotiation.
+
+Deployments replacing the packaged catalog must point
+`EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH` at a version-controlled,
+read-only artifact and redeploy the service; catalogs are never reloaded or
+mutated at runtime. `Preferred-Schema-Version` remains mandatory on mutation
+requests, and successful responses return the same accepted contract in
+`Effective-Schema-Version`. Readiness, structured telemetry, and schema
+metrics expose the canonical version and catalog generation without exposing
+the catalog filesystem path.

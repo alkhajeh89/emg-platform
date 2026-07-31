@@ -54,6 +54,7 @@ MAX_PROVENANCE_VALUE_LEN = 1024
 # producer never sets it.
 EVENT_SCHEMA_VERSION_V1 = 1
 EVENT_SCHEMA_VERSION_V2 = 2
+EVENT_SCHEMA_VERSION_V3 = 3
 
 
 class SubmittedAuditEvent(BaseModel):
@@ -110,6 +111,7 @@ class AuditEvent(BaseModel):
     # one producer cannot suppress another producer's event by reusing its
     # event_id (Sprint 6 security-review fix, Priority 5).
     source_principal: str
+    tenant_id: str | None = None
     sequence_number: int
     # Event schema version (server-assigned from the presence of provenance):
     # 1 for a Sprint 6-style event with no provenance (hash byte-for-byte

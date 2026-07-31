@@ -20,6 +20,9 @@ def _token(settings, private_key, *, client_id="emg-svc-identity", scope="svc-id
             "aud": settings.service_token_audience,
             "azp": client_id,
             "scope": scope,
+            "tenant_id": "tenant-a",
+            "classification_clearance": "SECRET",
+            "realm_access": {"roles": ["service-account", scope]},
         },
         private_key,
         algorithm="RS256",
@@ -55,13 +58,14 @@ def _event_with_provenance(event_id="evt-prov") -> dict:
     }
 
 
-def test_ingest_with_provenance_persists_version_2(client, settings, rsa_keypair, store):
+def test_ingest_with_provenance_persists_tenant_aware_version(client, settings, rsa_keypair, store):
     private_key, _ = rsa_keypair
     ingest_h = {"Authorization": f"Bearer {_token(settings, private_key)}"}
     resp = client.post("/audit/events", json=_event_with_provenance("evt-prov"), headers=ingest_h)
     assert resp.status_code == 200
     persisted = store._events[0]  # type: ignore[attr-defined]
-    assert persisted.schema_version == 2
+    assert persisted.schema_version == 3
+    assert persisted.tenant_id == "tenant-a"
     assert persisted.provenance is not None
     assert persisted.provenance.evidence_origin == "sensor-A"
 

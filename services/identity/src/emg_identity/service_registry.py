@@ -40,4 +40,8 @@ SERVICE_REGISTRY: dict[str, ServiceRegistryEntry] = {
         service_name="audit",
         roles=("service-account", "svc-audit"),
     ),
+    "emg-svc-knowledge-graph-writer": ServiceRegistryEntry(
+        service_name="knowledge-graph-writer",
+        roles=("service-account", "svc-knowledge-graph-writer"),
+    ),
 }

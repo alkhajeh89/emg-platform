@@ -53,6 +53,7 @@ class ServicePrincipal:
     roles: tuple[str, ...] = field(default_factory=tuple)
     scopes: tuple[str, ...] = field(default_factory=tuple)
     attributes: dict[str, str] = field(default_factory=dict)
+    tenant_id: str = ""
 
 
 # Recognized service clients — mirrors identity's SERVICE_REGISTRY and the
@@ -62,6 +63,10 @@ _RECOGNIZED_CLIENTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "emg-svc-identity": ("identity", ("service-account", "svc-identity")),
     "emg-svc-authorization": ("authorization", ("service-account", "svc-authorization")),
     "emg-svc-audit": ("audit", ("service-account", "svc-audit")),
+    "emg-svc-knowledge-graph-writer": (
+        "knowledge-graph-writer",
+        ("service-account", "svc-knowledge-graph-writer"),
+    ),
 }
 
 
@@ -127,15 +132,28 @@ class ServiceTokenValidator:
             raise AuthorizationError(f"Unrecognized service client '{client_id}'")
 
         service_name, roles = _RECOGNIZED_CLIENTS[client_id]
+        realm_access = payload.get("realm_access")
+        raw_roles = realm_access.get("roles", ()) if isinstance(realm_access, dict) else ()
+        token_roles = tuple(str(role) for role in raw_roles) if isinstance(raw_roles, list) else ()
+        if not set(roles).issubset(token_roles):
+            raise AuthorizationError(
+                f"Service client '{client_id}' token is missing its required registered roles"
+            )
         raw_scope = payload.get("scope", "")
         scopes = tuple(str(raw_scope).split()) if raw_scope else ()
         attributes = _extract_attributes(payload, self._settings)
+        tenant_id = payload.get(self._settings.tenant_claim)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise AuthorizationError(
+                f"Service token is missing the required '{self._settings.tenant_claim}' claim"
+            )
         return ServicePrincipal(
             client_id=client_id,
             service_name=service_name,
-            roles=roles,
+            roles=token_roles,
             scopes=scopes,
             attributes=attributes,
+            tenant_id=tenant_id,
         )
 
 

@@ -30,10 +30,11 @@ from emg_audit_client import AuditEvent, AuditQuery, SubmittedAuditEvent
 from emg_audit_pipeline import encode_cursor
 from emg_common_types import Classification
 from fastapi import APIRouter, Query, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import StreamingResponse
 
-from ..authn import AuditReaderDep, ServicePrincipalDep
-from ..reporting import audit_events_to_csv, collect_all_audit
+from ..authn import ServicePrincipalDep
+from ..authorization import AuditReadScope, AuditReadScopeDep
+from ..reporting import AUDIT_CSV_COLUMNS, iter_audit_views, stream_csv, stream_json
 from ..schemas import AuditEventPage, AuditEventView, IngestResponse
 from ..store import StoreDep
 
@@ -72,7 +73,11 @@ async def ingest_event(
 ) -> IngestResponse:
     # source_principal is assigned from the authenticated token, never from
     # producer content (Sprint 6 security-review fix, Priority 5).
-    persisted = store.append(event, source_principal=principal.client_id)
+    persisted = store.append(
+        event,
+        source_principal=principal.client_id,
+        tenant_id=principal.tenant_id,
+    )
     return IngestResponse(
         event_id=persisted.event_id,
         sequence_number=persisted.sequence_number,
@@ -84,6 +89,7 @@ async def ingest_event(
 def _build_query(
     *,
     actor: str | None,
+    event_id: str | None,
     correlation_id: str | None,
     module: str | None,
     action: str | None,
@@ -95,9 +101,11 @@ def _build_query(
     end_time: datetime | None,
     cursor: str | None,
     limit: int,
+    scope: AuditReadScope,
 ) -> AuditQuery:
     return AuditQuery(
         actor=actor,
+        event_id=event_id,
         correlation_id=correlation_id,
         module=module,
         action=action,
@@ -109,14 +117,17 @@ def _build_query(
         end_time=end_time,
         cursor=cursor,
         limit=limit,
+        tenant_id=scope.tenant_id,
+        allowed_classifications=scope.classifications,
     )
 
 
 @router.get("/events", response_model=list[AuditEventView])
 async def query_events(
-    reader: AuditReaderDep,
+    scope: AuditReadScopeDep,
     store: StoreDep,
     actor: str | None = None,
+    event_id: str | None = None,
     correlation_id: str | None = None,
     module: str | None = None,
     action: str | None = None,
@@ -133,6 +144,7 @@ async def query_events(
 ) -> list[AuditEventView]:
     query = _build_query(
         actor=actor,
+        event_id=event_id,
         correlation_id=correlation_id,
         module=module,
         action=action,
@@ -144,15 +156,17 @@ async def query_events(
         end_time=end_time,
         cursor=None,
         limit=limit,
+        scope=scope,
     )
     return [_to_view(event) for event in store.query(query)]
 
 
 @router.get("/events/page", response_model=AuditEventPage)
 async def query_events_page(
-    reader: AuditReaderDep,
+    scope: AuditReadScopeDep,
     store: StoreDep,
     actor: str | None = None,
+    event_id: str | None = None,
     correlation_id: str | None = None,
     module: str | None = None,
     action: str | None = None,
@@ -167,6 +181,7 @@ async def query_events_page(
 ) -> AuditEventPage:
     query = _build_query(
         actor=actor,
+        event_id=event_id,
         correlation_id=correlation_id,
         module=module,
         action=action,
@@ -177,12 +192,14 @@ async def query_events_page(
         start_time=start_time,
         end_time=end_time,
         cursor=cursor,
-        limit=limit,
+        limit=limit + 1,
+        scope=scope,
     )
-    events = store.query(query)
+    matched = store.query(query)
+    events = matched[:limit]
     # A full page implies there may be more; the next cursor is the last row's
     # sequence. A short page is the end of the result set (next_cursor = None).
-    next_cursor = encode_cursor(events[-1].sequence_number) if len(events) == limit else None
+    next_cursor = encode_cursor(events[-1].sequence_number) if len(matched) > limit else None
     return AuditEventPage(
         items=[_to_view(event) for event in events],
         next_cursor=next_cursor,
@@ -192,10 +209,11 @@ async def query_events_page(
 
 @router.get("/events/export", response_model=None)
 async def export_events(
-    reader: AuditReaderDep,
+    scope: AuditReadScopeDep,
     store: StoreDep,
     format: Literal["json", "csv"] = "json",
     actor: str | None = None,
+    event_id: str | None = None,
     correlation_id: str | None = None,
     module: str | None = None,
     action: str | None = None,
@@ -208,6 +226,7 @@ async def export_events(
 ) -> Response:
     base = _build_query(
         actor=actor,
+        event_id=event_id,
         correlation_id=correlation_id,
         module=module,
         action=action,
@@ -219,13 +238,14 @@ async def export_events(
         end_time=end_time,
         cursor=None,
         limit=100,
+        scope=scope,
     )
     # Single store query per page (keyset), never per row — not N+1.
-    views = collect_all_audit(store, base, _to_view)
+    views = iter_audit_views(store, base, _to_view)
     if format == "csv":
-        return PlainTextResponse(
-            audit_events_to_csv(views),
+        return StreamingResponse(
+            stream_csv(views, AUDIT_CSV_COLUMNS),
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="audit_events.csv"'},
         )
-    return JSONResponse(content=[view.model_dump(mode="json") for view in views])
+    return StreamingResponse(stream_json(views), media_type="application/json")

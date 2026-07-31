@@ -67,6 +67,11 @@ class PostgresMigrationExecutor:
         with self._connection.cursor() as cur:
             cur.execute(_SELECT_APPLIED, {"kind": MigrationKind.POSTGRES.value})
             rows = cur.fetchall()
+        # psycopg starts an implicit transaction for the SELECT above. End that
+        # read-only scope so each subsequent ``apply()`` owns a real top-level
+        # transaction rather than only a savepoint whose outer transaction
+        # would be rolled back when the migration connection closes.
+        self._connection.commit()
         return tuple(
             AppliedMigration(
                 version=row[0],

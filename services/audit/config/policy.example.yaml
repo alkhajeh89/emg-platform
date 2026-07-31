@@ -1,0 +1,33 @@
+rules:
+  - rule_id: audit-event-read
+    resource_type: audit.event
+    action: read
+    effect: allow
+    required_roles: [svc-audit]
+
+  - rule_id: audit-event-deny-unclassified-clearance
+    resource_type: audit.event
+    action: read
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: audit-event-deny-internal-clearance
+    resource_type: audit.event
+    action: read
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: audit-event-deny-confidential-clearance
+    resource_type: audit.event
+    action: read
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]

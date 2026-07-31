@@ -48,6 +48,7 @@ class AuditQuery(BaseModel):
 
     # --- Sprint 6 (FEAT-04-1) minimal US-04 surface ---
     actor: str | None = None
+    event_id: str | None = None
     correlation_id: CorrelationId | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
@@ -57,10 +58,16 @@ class AuditQuery(BaseModel):
     outcome: AuditOutcome | None = None
     source_system: str | None = None
     classification: Classification | None = None
+    # Server-side authorization constraints. HTTP clients cannot set these;
+    # the audit service derives them from verified claims and the PEP.
+    tenant_id: str | None = None
+    allowed_classifications: tuple[Classification, ...] | None = None
     # Filter by whether an event carries a provenance record (FEAT-04-2). This
     # is the coherent, scalar "filter by provenance" dimension; deep filtering
     # on individual provenance sub-fields is deferred (see sprint-8-design.md).
     has_provenance: bool | None = None
     # --- pagination ---
     cursor: str | None = None
-    limit: int = Field(default=100, ge=1, le=1000)
+    # 1001 is reserved for the service's limit+1 lookahead; HTTP inputs remain
+    # capped at 1000.
+    limit: int = Field(default=100, ge=1, le=1001)

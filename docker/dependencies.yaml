@@ -32,6 +32,8 @@ services:
       - emg-api-contracts
       - emg-audit-client
       - emg-audit-pipeline
+      - emg-auth-client
+      - emg-policy-engine
 
 
   persistence:

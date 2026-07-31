@@ -104,6 +104,18 @@ class ServiceTokenValidator:
         entry = SERVICE_REGISTRY[client_id]
         raw_scope = payload.get("scope", "")
         scopes = tuple(str(raw_scope).split()) if raw_scope else ()
+        realm_access = payload.get("realm_access")
+        raw_roles = realm_access.get("roles", ()) if isinstance(realm_access, dict) else ()
+        token_roles = tuple(str(role) for role in raw_roles) if isinstance(raw_roles, list) else ()
+        if not set(entry.roles).issubset(token_roles):
+            raise AuthorizationError(
+                f"Service client '{client_id}' token is missing its required registered roles"
+            )
+        tenant_id = payload.get(self._settings.tenant_claim)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise AuthorizationError(
+                f"Service token is missing the required '{self._settings.tenant_claim}' claim"
+            )
 
         scope_satisfied = (
             required_scope is None or required_scope in scopes or required_scope in entry.roles
@@ -117,7 +129,8 @@ class ServiceTokenValidator:
         return ServicePrincipal(
             client_id=client_id,
             service_name=entry.service_name,
-            roles=entry.roles,
+            roles=token_roles,
             scopes=scopes,
             attributes=attributes,
+            tenant_id=tenant_id,
         )

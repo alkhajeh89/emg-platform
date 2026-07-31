@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 from emg_common_types import Classification
 from emg_memory_graph import (
@@ -32,6 +33,158 @@ class BuildRevisionResult:
     edges_created: int
     node_inputs_merged: int
     edge_inputs_merged: int
+
+
+@dataclass(frozen=True, slots=True)
+class MutationAuditIntent:
+    """Immutable application intent for later audit reconciliation.
+
+    Stage 1 returns this data to its caller and performs no audit persistence.
+    """
+
+    tenant: TenantId
+    principal: PrincipalRef
+    idempotency_key: str
+    action: str
+    resource_type: str
+    resource_id: str
+    related_resource_ids: tuple[str, ...]
+    classification: Classification
+    reason: str | None
+    revision_number: int
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class MutationResult:
+    """Committed mutation receipt data, build statistics, and audit intents."""
+
+    tenant: TenantId
+    principal: PrincipalRef
+    revision_number: int
+    content_hash: str
+    node_count: int
+    edge_count: int
+    revision_created: bool
+    nodes_created: int
+    edges_created: int
+    node_inputs_merged: int
+    edge_inputs_merged: int
+    audit_intents: tuple[MutationAuditIntent, ...]
+
+
+def mutation_audit_reference(mutation_id: UUID) -> str:
+    """Return the stable public audit reference for one committed mutation."""
+
+    return f"audit:{mutation_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class MutationExecutionResult:
+    """Transport-neutral result of an original or replayed mutation execution."""
+
+    mutation_result: MutationResult
+    mutation_id: UUID
+    audit_reference: str
+    replayed: bool
+    timestamp: datetime
+
+    @classmethod
+    def from_mutation(
+        cls,
+        mutation_result: MutationResult,
+        *,
+        mutation_id: UUID,
+        ledger_completed_at: datetime,
+        replayed: bool,
+    ) -> MutationExecutionResult:
+        return cls(
+            mutation_result=mutation_result,
+            mutation_id=mutation_id,
+            audit_reference=mutation_audit_reference(mutation_id),
+            replayed=replayed,
+            timestamp=ledger_completed_at,
+        )
+
+    @property
+    def tenant(self) -> TenantId:
+        return self.mutation_result.tenant
+
+    @property
+    def principal(self) -> PrincipalRef:
+        return self.mutation_result.principal
+
+    @property
+    def revision_number(self) -> int:
+        return self.mutation_result.revision_number
+
+    @property
+    def content_hash(self) -> str:
+        return self.mutation_result.content_hash
+
+    @property
+    def node_count(self) -> int:
+        return self.mutation_result.node_count
+
+    @property
+    def edge_count(self) -> int:
+        return self.mutation_result.edge_count
+
+    @property
+    def revision_created(self) -> bool:
+        return self.mutation_result.revision_created
+
+    @property
+    def nodes_created(self) -> int:
+        return self.mutation_result.nodes_created
+
+    @property
+    def edges_created(self) -> int:
+        return self.mutation_result.edges_created
+
+    @property
+    def node_inputs_merged(self) -> int:
+        return self.mutation_result.node_inputs_merged
+
+    @property
+    def edge_inputs_merged(self) -> int:
+        return self.mutation_result.edge_inputs_merged
+
+    @property
+    def audit_intents(self) -> tuple[MutationAuditIntent, ...]:
+        return self.mutation_result.audit_intents
+
+
+@dataclass(frozen=True, slots=True)
+class MutationReplayProjection:
+    """External-safe projection of the internal persisted mutation result."""
+
+    tenant_id: str
+    revision_number: int
+    content_hash: str
+    node_count: int
+    edge_count: int
+    revision_created: bool
+    nodes_created: int
+    edges_created: int
+    node_inputs_merged: int
+    edge_inputs_merged: int
+
+
+def project_mutation_replay(result: MutationResult) -> MutationReplayProjection:
+    """Exclude principal, audit, reason, classification, and ledger metadata."""
+    return MutationReplayProjection(
+        tenant_id=result.tenant.value,
+        revision_number=result.revision_number,
+        content_hash=result.content_hash,
+        node_count=result.node_count,
+        edge_count=result.edge_count,
+        revision_created=result.revision_created,
+        nodes_created=result.nodes_created,
+        edges_created=result.edges_created,
+        node_inputs_merged=result.node_inputs_merged,
+        edge_inputs_merged=result.edge_inputs_merged,
+    )
 
 
 @dataclass(frozen=True, slots=True)

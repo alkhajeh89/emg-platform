@@ -21,6 +21,10 @@ from .rules import PolicyConfig
 _log = logging.getLogger("emg.policy_engine")
 
 
+class PolicyConfigurationError(ValueError):
+    """Raised when a structurally valid policy is semantically unsafe."""
+
+
 def default_policy_config() -> PolicyConfig:
     """The safe default when no policy file is present: zero rules. Because
     `PolicyEngine.evaluate()` is default-deny, this denies every request —
@@ -105,3 +109,13 @@ def validate_policy_config(config: PolicyConfig) -> list[str]:
                 )
 
     return errors
+
+
+def load_validated_policy_config(path: Path) -> PolicyConfig:
+    """Load policy data and reject every semantic validation problem."""
+
+    config = load_policy_config(path)
+    problems = validate_policy_config(config)
+    if problems:
+        raise PolicyConfigurationError("invalid policy configuration: " + "; ".join(problems))
+    return config

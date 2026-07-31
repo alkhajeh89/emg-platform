@@ -44,7 +44,13 @@ class AuditSink(Protocol):
 class AuditEventStore(Protocol):
     """The append-only audit system-of-record."""
 
-    def append(self, event: SubmittedAuditEvent, *, source_principal: str) -> AuditEvent:
+    def append(
+        self,
+        event: SubmittedAuditEvent,
+        *,
+        source_principal: str,
+        tenant_id: str | None = None,
+    ) -> AuditEvent:
         """Append one event and return the fully-persisted record with
         server-assigned `source_principal`, `sequence_number`, `timestamp`,
         `ingest_time`, and hash-chain fields.

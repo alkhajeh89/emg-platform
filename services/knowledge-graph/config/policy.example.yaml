@@ -353,3 +353,485 @@ rules:
       classification_clearance: [CONFIDENTIAL]
     required_resource_attributes:
       classification: [SECRET]
+
+  # --------------------------------------------------------------------
+  # ADR-027 Revision 3, Stage 2: Knowledge Graph mutation authorization.
+  #
+  # These rules are policy data only. No route or application method is
+  # wired by this stage. Every allow requires an explicitly resolved
+  # classification_clearance, so a missing or unrecognized value satisfies
+  # no allow rule and remains fail-closed. Classification dominance uses the
+  # same deny-overrides pattern as ADR-026 above: future integration evaluates
+  # each classification involved in an operation through the PEP using
+  # resource_attributes={"classification": value}. Update/reclassify checks
+  # current and proposed values separately; relationship operations also check
+  # both endpoint classifications separately. No local ranking or comparator
+  # is introduced.
+
+  # --- Entity operation-level authorization ---------------------------
+
+  - rule_id: kg-entity-create
+    resource_type: knowledge-graph.entity
+    action: create
+    effect: allow
+    description: >-
+      Knowledge stewards and the dedicated Knowledge Graph writer service
+      role may create entities.
+    required_roles: [knowledge-steward, svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-update-human
+    resource_type: knowledge-graph.entity
+    action: update
+    effect: allow
+    description: >-
+      Knowledge stewards may update entities, including the approved human
+      owner-override path.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-update-service-owner
+    resource_type: knowledge-graph.entity
+    action: update
+    effect: allow
+    description: >-
+      A Knowledge Graph writer service may update only an entity it owns.
+    required_roles: [svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+    required_resource_attributes:
+      owner_matches_principal: ["true"]
+
+  - rule_id: kg-entity-retire-human
+    resource_type: knowledge-graph.entity
+    action: retire
+    effect: allow
+    description: >-
+      Knowledge stewards may retire entities through the approved human
+      owner-override path.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-retire-service-owner
+    resource_type: knowledge-graph.entity
+    action: retire
+    effect: allow
+    description: >-
+      A Knowledge Graph writer service may retire only an entity it owns.
+    required_roles: [svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+    required_resource_attributes:
+      owner_matches_principal: ["true"]
+
+  - rule_id: kg-entity-restore-human
+    resource_type: knowledge-graph.entity
+    action: restore
+    effect: allow
+    description: Knowledge stewards alone may restore entities.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-merge-human
+    resource_type: knowledge-graph.entity
+    action: merge
+    effect: allow
+    description: Knowledge stewards alone may merge entities.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-reclassify-human
+    resource_type: knowledge-graph.entity
+    action: reclassify
+    effect: allow
+    description: Knowledge stewards alone may reclassify entities.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-bulk
+    resource_type: knowledge-graph.entity
+    action: bulk
+    effect: allow
+    description: >-
+      Knowledge stewards and the dedicated Knowledge Graph writer service
+      role may submit entity bulk operations.
+    required_roles: [knowledge-steward, svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  # --- Relationship operation-level authorization ---------------------
+
+  - rule_id: kg-relationship-create
+    resource_type: knowledge-graph.relationship
+    action: create
+    effect: allow
+    description: >-
+      Knowledge stewards and the dedicated Knowledge Graph writer service
+      role may create relationships.
+    required_roles: [knowledge-steward, svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-update-human
+    resource_type: knowledge-graph.relationship
+    action: update
+    effect: allow
+    description: >-
+      Knowledge stewards may update relationships through the approved human
+      owner-override path.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-update-service-owner
+    resource_type: knowledge-graph.relationship
+    action: update
+    effect: allow
+    description: >-
+      A Knowledge Graph writer service may update only a relationship it owns.
+    required_roles: [svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+    required_resource_attributes:
+      owner_matches_principal: ["true"]
+
+  - rule_id: kg-relationship-retire-human
+    resource_type: knowledge-graph.relationship
+    action: retire
+    effect: allow
+    description: >-
+      Knowledge stewards may retire relationships through the approved human
+      owner-override path.
+    required_roles: [knowledge-steward]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-retire-service-owner
+    resource_type: knowledge-graph.relationship
+    action: retire
+    effect: allow
+    description: >-
+      A Knowledge Graph writer service may retire only a relationship it owns.
+    required_roles: [svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+    required_resource_attributes:
+      owner_matches_principal: ["true"]
+
+  - rule_id: kg-relationship-bulk
+    resource_type: knowledge-graph.relationship
+    action: bulk
+    effect: allow
+    description: >-
+      Knowledge stewards and the dedicated Knowledge Graph writer service
+      role may submit relationship bulk operations.
+    required_roles: [knowledge-steward, svc-knowledge-graph-writer]
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED, INTERNAL, CONFIDENTIAL, SECRET]
+
+  # --- Entity classification deny-overrides ---------------------------
+
+  - rule_id: kg-entity-create-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: create
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-create-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: create
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-create-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: create
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-entity-update-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: update
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-update-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: update
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-update-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: update
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-entity-retire-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: retire
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-retire-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: retire
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-retire-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: retire
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-entity-restore-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: restore
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-restore-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: restore
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-restore-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: restore
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-entity-merge-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: merge
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-merge-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: merge
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-merge-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: merge
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-entity-reclassify-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: reclassify
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-reclassify-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: reclassify
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-reclassify-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: reclassify
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-entity-bulk-deny-unclassified-clearance
+    resource_type: knowledge-graph.entity
+    action: bulk
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-bulk-deny-internal-clearance
+    resource_type: knowledge-graph.entity
+    action: bulk
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-entity-bulk-deny-confidential-clearance
+    resource_type: knowledge-graph.entity
+    action: bulk
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  # --- Relationship classification deny-overrides ---------------------
+
+  - rule_id: kg-relationship-create-deny-unclassified-clearance
+    resource_type: knowledge-graph.relationship
+    action: create
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-create-deny-internal-clearance
+    resource_type: knowledge-graph.relationship
+    action: create
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-create-deny-confidential-clearance
+    resource_type: knowledge-graph.relationship
+    action: create
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-relationship-update-deny-unclassified-clearance
+    resource_type: knowledge-graph.relationship
+    action: update
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-update-deny-internal-clearance
+    resource_type: knowledge-graph.relationship
+    action: update
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-update-deny-confidential-clearance
+    resource_type: knowledge-graph.relationship
+    action: update
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-relationship-retire-deny-unclassified-clearance
+    resource_type: knowledge-graph.relationship
+    action: retire
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-retire-deny-internal-clearance
+    resource_type: knowledge-graph.relationship
+    action: retire
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-retire-deny-confidential-clearance
+    resource_type: knowledge-graph.relationship
+    action: retire
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]
+
+  - rule_id: kg-relationship-bulk-deny-unclassified-clearance
+    resource_type: knowledge-graph.relationship
+    action: bulk
+    effect: deny
+    required_attributes:
+      classification_clearance: [UNCLASSIFIED]
+    required_resource_attributes:
+      classification: [INTERNAL, CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-bulk-deny-internal-clearance
+    resource_type: knowledge-graph.relationship
+    action: bulk
+    effect: deny
+    required_attributes:
+      classification_clearance: [INTERNAL]
+    required_resource_attributes:
+      classification: [CONFIDENTIAL, SECRET]
+
+  - rule_id: kg-relationship-bulk-deny-confidential-clearance
+    resource_type: knowledge-graph.relationship
+    action: bulk
+    effect: deny
+    required_attributes:
+      classification_clearance: [CONFIDENTIAL]
+    required_resource_attributes:
+      classification: [SECRET]

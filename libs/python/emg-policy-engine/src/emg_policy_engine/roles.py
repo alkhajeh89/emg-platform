@@ -106,6 +106,16 @@ ROLE_CATALOG: dict[str, RoleDefinition] = {
         "Least-privilege role for the Audit Service's service principal.",
         "Keycloak realm seed (Sprint 3, FEAT-02-3); Module 5",
     ),
+    "svc-knowledge-graph-writer": _entry(
+        "svc-knowledge-graph-writer",
+        "service",
+        "Least-privilege role for a service principal authorized to mutate "
+        "the Knowledge Graph (e.g. a future ADR-020 ingestion service). "
+        "Registered ahead of a concrete grantee, the same precedent "
+        "svc-audit set (Sprint 3) for the then-not-yet-implemented Audit "
+        "Service.",
+        "ADR-027 (Revision 2) §5, Knowledge Graph Mutation API; Module 7",
+    ),
 }
 
 

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+from _persistence_integration_helpers import truncate_persistence_tables
 from emg_memory_graph import (
     EMPTY_GRAPH,
     EvidenceRef,
@@ -83,16 +84,14 @@ def settings() -> PersistenceSettings:  # pragma: no cover - live DB only
 def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: no cover
     connection = connect(settings)
     run_migrations(PostgresMigrationExecutor(connection))
-    with connection.cursor() as cursor:
-        cursor.execute("TRUNCATE outbox, graph_revisions, graph_head")
+    truncate_persistence_tables(connection)
     connection.commit()
     connection.close()
     try:
         yield
     finally:
         connection = connect(settings)
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE outbox, graph_revisions, graph_head")
+        truncate_persistence_tables(connection)
         connection.commit()
         connection.close()
 

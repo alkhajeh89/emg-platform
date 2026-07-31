@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, cast
 from emg_audit_client import (
     EVENT_SCHEMA_VERSION_V1,
     EVENT_SCHEMA_VERSION_V2,
+    EVENT_SCHEMA_VERSION_V3,
     AuditEvent,
     AuditQuery,
     SubmittedAuditEvent,
@@ -59,6 +60,7 @@ def _build_persisted_event(
     submitted: SubmittedAuditEvent,
     *,
     source_principal: str,
+    tenant_id: str | None,
     sequence_number: int,
     prev_hash: str,
     now: datetime | None = None,
@@ -74,7 +76,11 @@ def _build_persisted_event(
     6). A producer cannot set the version directly."""
     timestamp = now or _utcnow()
     schema_version = (
-        EVENT_SCHEMA_VERSION_V2 if submitted.provenance is not None else EVENT_SCHEMA_VERSION_V1
+        EVENT_SCHEMA_VERSION_V3
+        if tenant_id is not None
+        else (
+            EVENT_SCHEMA_VERSION_V2 if submitted.provenance is not None else EVENT_SCHEMA_VERSION_V1
+        )
     )
     event_hash = compute_hash(
         event_id=submitted.event_id,
@@ -85,10 +91,12 @@ def _build_persisted_event(
         submitted=submitted,
         prev_hash=prev_hash,
         schema_version=schema_version,
+        tenant_id=tenant_id,
     )
     return AuditEvent(
         event_id=submitted.event_id,
         source_principal=source_principal,
+        tenant_id=tenant_id,
         sequence_number=sequence_number,
         schema_version=schema_version,
         timestamp=timestamp,
@@ -113,6 +121,15 @@ def _build_persisted_event(
 
 
 def _matches(event: AuditEvent, query: AuditQuery) -> bool:
+    if query.tenant_id is not None and event.tenant_id != query.tenant_id:
+        return False
+    if query.event_id is not None and event.event_id != query.event_id:
+        return False
+    if (
+        query.allowed_classifications is not None
+        and event.classification not in query.allowed_classifications
+    ):
+        return False
     # Sprint 6 (FEAT-04-1) filters.
     if query.actor is not None and event.actor != query.actor:
         return False
@@ -148,7 +165,13 @@ class InMemoryAuditEventStore:
         self._by_key: dict[tuple[str, str], AuditEvent] = {}
         self._lock = threading.Lock()
 
-    def append(self, event: SubmittedAuditEvent, *, source_principal: str) -> AuditEvent:
+    def append(
+        self,
+        event: SubmittedAuditEvent,
+        *,
+        source_principal: str,
+        tenant_id: str | None = None,
+    ) -> AuditEvent:
         sanitized = validate_and_sanitize(event)
         with self._lock:
             key = (source_principal, sanitized.event_id)
@@ -160,6 +183,7 @@ class InMemoryAuditEventStore:
             persisted = _build_persisted_event(
                 sanitized,
                 source_principal=source_principal,
+                tenant_id=tenant_id,
                 sequence_number=sequence_number,
                 prev_hash=prev_hash,
             )
@@ -227,7 +251,13 @@ class PostgresAuditEventStore:
     def __init__(self, connection: Connection) -> None:
         self._conn = connection
 
-    def append(self, event: SubmittedAuditEvent, *, source_principal: str) -> AuditEvent:
+    def append(
+        self,
+        event: SubmittedAuditEvent,
+        *,
+        source_principal: str,
+        tenant_id: str | None = None,
+    ) -> AuditEvent:
         sanitized = validate_and_sanitize(event)
         import time
 
@@ -236,7 +266,7 @@ class PostgresAuditEventStore:
         last_exc: Exception | None = None
         for attempt in range(self._MAX_APPEND_ATTEMPTS):
             try:
-                return self._append_once(sanitized, source_principal)
+                return self._append_once(sanitized, source_principal, tenant_id)
             except (
                 psycopg.errors.SerializationFailure,
                 psycopg.errors.UniqueViolation,
@@ -251,7 +281,12 @@ class PostgresAuditEventStore:
         assert last_exc is not None
         raise last_exc
 
-    def _append_once(self, sanitized: SubmittedAuditEvent, source_principal: str) -> AuditEvent:
+    def _append_once(
+        self,
+        sanitized: SubmittedAuditEvent,
+        source_principal: str,
+        tenant_id: str | None,
+    ) -> AuditEvent:
         with self._conn.cursor() as cur:
             # Serialize the whole append against the audit chain (released at
             # commit/rollback). All chain reads/writes below happen under it.
@@ -281,19 +316,21 @@ class PostgresAuditEventStore:
             persisted = _build_persisted_event(
                 sanitized,
                 source_principal=source_principal,
+                tenant_id=tenant_id,
                 sequence_number=sequence_number,
                 prev_hash=prev_hash,
             )
             cur.execute(
                 f"""
                 INSERT INTO {self._TABLE} (
-                    event_id, source_principal, sequence_number, timestamp, ingest_time,
+                    event_id, source_principal, tenant_id, sequence_number, timestamp, ingest_time,
                     prev_hash, event_hash, actor, actor_type, module, action,
                     outcome, correlation_id, resource_type, resource_id,
                     classification, source_system, source_component, reason, metadata,
                     schema_version, provenance
                 ) VALUES (
-                    %(event_id)s, %(source_principal)s, %(sequence_number)s, %(timestamp)s,
+                    %(event_id)s, %(source_principal)s, %(tenant_id)s,
+                    %(sequence_number)s, %(timestamp)s,
                     %(ingest_time)s, %(prev_hash)s, %(event_hash)s, %(actor)s, %(actor_type)s,
                     %(module)s, %(action)s, %(outcome)s, %(correlation_id)s, %(resource_type)s,
                     %(resource_id)s, %(classification)s, %(source_system)s,
@@ -314,6 +351,17 @@ class PostgresAuditEventStore:
         if query.actor is not None:
             clauses.append("actor = %(actor)s")
             params["actor"] = query.actor
+        if query.event_id is not None:
+            clauses.append("event_id = %(event_id)s")
+            params["event_id"] = query.event_id
+        if query.tenant_id is not None:
+            clauses.append("tenant_id = %(tenant_id)s")
+            params["tenant_id"] = query.tenant_id
+        if query.allowed_classifications is not None:
+            clauses.append("classification = ANY(%(allowed_classifications)s)")
+            params["allowed_classifications"] = [
+                value.value for value in query.allowed_classifications
+            ]
         if query.correlation_id is not None:
             clauses.append("correlation_id = %(correlation_id)s")
             params["correlation_id"] = query.correlation_id
@@ -400,7 +448,7 @@ class PostgresAuditEventStore:
         "event_id, source_principal, sequence_number, timestamp, ingest_time, prev_hash, "
         "event_hash, actor, actor_type, module, action, outcome, correlation_id, "
         "resource_type, resource_id, classification, source_system, source_component, "
-        "reason, metadata, schema_version, provenance"
+        "reason, metadata, schema_version, provenance, tenant_id"
     )
 
     def _fetch_by_key(self, source_principal: str, event_id: str) -> AuditEvent:
@@ -427,6 +475,7 @@ class PostgresAuditEventStore:
         return {
             "event_id": event.event_id,
             "source_principal": event.source_principal,
+            "tenant_id": event.tenant_id or "legacy-unscoped",
             "sequence_number": event.sequence_number,
             "timestamp": event.timestamp,
             "ingest_time": event.ingest_time,
@@ -469,6 +518,7 @@ class PostgresAuditEventStore:
             else int(cast(int, raw_schema_version))
         )
         raw_provenance = row[21] if len(row) > 21 else None
+        tenant_id = None if len(row) <= 22 or row[22] is None else str(row[22])
         if raw_provenance is None:
             provenance = None
         elif isinstance(raw_provenance, dict):
@@ -478,6 +528,7 @@ class PostgresAuditEventStore:
         return AuditEvent(
             event_id=str(row[0]),
             source_principal=str(row[1]),
+            tenant_id=tenant_id,
             sequence_number=int(cast(int, row[2])),
             schema_version=schema_version,
             timestamp=cast(datetime, row[3]),

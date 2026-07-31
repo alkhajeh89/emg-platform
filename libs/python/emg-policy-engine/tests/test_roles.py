@@ -13,7 +13,8 @@ from pathlib import Path
 
 from emg_policy_engine import ROLE_CATALOG, RoleDefinition, is_known_role, role_ids
 
-# The eight roles approved for Sprint 5, matching the Keycloak realm seed.
+# The eight roles approved for Sprint 5, plus svc-knowledge-graph-writer
+# (ADR-027 Revision 2 Stage 0), matching the Keycloak realm seed.
 _EXPECTED_ROLE_IDS = {
     "platform-user",
     "investigator",
@@ -23,6 +24,7 @@ _EXPECTED_ROLE_IDS = {
     "svc-identity",
     "svc-authorization",
     "svc-audit",
+    "svc-knowledge-graph-writer",
 }
 
 _REALM_SEED = (
@@ -52,7 +54,13 @@ def test_every_role_has_a_category_description_and_reference():
 
 
 def test_service_roles_are_categorised_as_service():
-    for role_id in ("service-account", "svc-identity", "svc-authorization", "svc-audit"):
+    for role_id in (
+        "service-account",
+        "svc-identity",
+        "svc-authorization",
+        "svc-audit",
+        "svc-knowledge-graph-writer",
+    ):
         assert ROLE_CATALOG[role_id].category == "service"
 
 

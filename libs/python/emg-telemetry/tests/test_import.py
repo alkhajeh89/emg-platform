@@ -10,6 +10,13 @@ def test_correlation_id_roundtrip():
     assert get_correlation_id() == cid
 
 
+def test_invalid_or_oversized_correlation_id_is_replaced():
+    for untrusted in ("has space", "line\nbreak", "x" * 129):
+        cid = set_correlation_id(untrusted)
+        assert cid != untrusted
+        assert len(cid) <= 128
+
+
 def test_logger_emits_json_with_schema_fields():
     log = get_logger("test-module")
     stream = io.StringIO()

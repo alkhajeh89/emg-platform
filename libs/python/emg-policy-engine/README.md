@@ -14,7 +14,8 @@ split rationale).
 
 - `PolicyRule` / `PolicyConfig` — pydantic schema for a versioned, local ABAC
   ruleset (role and attribute/scope conditions per resource type + action).
-- `load_policy_config()` / `default_policy_config()` / `validate_policy_config()`
+- `load_policy_config()` / `load_validated_policy_config()` /
+  `default_policy_config()` / `validate_policy_config()`
   — safe-default config loading, same pattern as Sprint 3's
   `emg_identity.federation` module: a missing file is not an error (falls
   back to an empty, default-deny ruleset); a malformed *existing* file is.
@@ -36,9 +37,10 @@ split rationale).
   `svc-authorization`, `svc-audit`). This is a role **vocabulary** the ABAC
   engine's `required_roles` conditions draw from — **not** a second
   authorization mechanism. No permission matrix, no role hierarchy, no
-  enforcement method. `validate_policy_config` uses it to *advisorily* flag
-  a policy rule referencing an unknown role (never a hard load failure — a
-  documented known limitation). See `docs/engineering/sprint-5-design.md`.
+  enforcement method. `validate_policy_config` reports an unknown role and
+  production composition uses `load_validated_policy_config` to reject every
+  reported semantic problem before serving traffic. See
+  `docs/engineering/sprint-5-design.md`.
 - `testing.py` — the **authorization testing harness** (FEAT-03-4):
   `AuthorizationScenario` (a declarative expectation), `assert_scenario`
   (raises `AssertionError` on mismatch), and `run_scenarios` (batch runner
