@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 from emg_knowledge_graph import (
     CloseRelationshipCommand,
@@ -44,6 +44,15 @@ PreferredSchemaVersionHeader = Annotated[
 
 router = APIRouter(prefix="/api/v1", tags=["knowledge-graph-mutations"])
 
+_EFFECTIVE_SCHEMA_VERSION_RESPONSE: dict[str, Any] = {
+    "headers": {
+        "Effective-Schema-Version": {
+            "description": "The accepted schema contract for the mutation request.",
+            "schema": {"type": "string"},
+        }
+    }
+}
+
 
 def _prepare(
     request: MutationRequest,
@@ -82,6 +91,7 @@ def _require_identity(path_value: str, body_value: str, *, field: str) -> None:
     "/entities",
     response_model=MutationResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={status.HTTP_201_CREATED: _EFFECTIVE_SCHEMA_VERSION_RESPONSE},
 )
 def create_entity(
     request: CreateEntityRequest,
@@ -105,7 +115,11 @@ def create_entity(
     return _respond(result, prepared=prepared, response=response)
 
 
-@router.put("/entities/{entity_id}", response_model=MutationResponse)
+@router.put(
+    "/entities/{entity_id}",
+    response_model=MutationResponse,
+    responses={status.HTTP_200_OK: _EFFECTIVE_SCHEMA_VERSION_RESPONSE},
+)
 def replace_entity(
     entity_id: str,
     request: ReplaceEntityRequest,
@@ -130,7 +144,11 @@ def replace_entity(
     return _respond(result, prepared=prepared, response=response)
 
 
-@router.put("/relationships/{edge_id}", response_model=MutationResponse)
+@router.put(
+    "/relationships/{edge_id}",
+    response_model=MutationResponse,
+    responses={status.HTTP_200_OK: _EFFECTIVE_SCHEMA_VERSION_RESPONSE},
+)
 def replace_relationship(
     edge_id: str,
     request: ReplaceRelationshipRequest,
@@ -155,7 +173,11 @@ def replace_relationship(
     return _respond(result, prepared=prepared, response=response)
 
 
-@router.post("/relationships/{edge_id}/close", response_model=MutationResponse)
+@router.post(
+    "/relationships/{edge_id}/close",
+    response_model=MutationResponse,
+    responses={status.HTTP_200_OK: _EFFECTIVE_SCHEMA_VERSION_RESPONSE},
+)
 def close_relationship(
     edge_id: str,
     request: CloseRelationshipRequest,
@@ -180,7 +202,11 @@ def close_relationship(
     return _respond(result, prepared=prepared, response=response)
 
 
-@router.post("/entities/{survivor_id}/merge", response_model=MutationResponse)
+@router.post(
+    "/entities/{survivor_id}/merge",
+    response_model=MutationResponse,
+    responses={status.HTTP_200_OK: _EFFECTIVE_SCHEMA_VERSION_RESPONSE},
+)
 def merge_entities(
     survivor_id: str,
     request: MergeEntitiesRequest,

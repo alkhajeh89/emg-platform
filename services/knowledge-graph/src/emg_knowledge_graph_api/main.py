@@ -31,14 +31,11 @@ _log = get_logger("knowledge_graph.api")
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="EMG Knowledge Graph Query API",
+        title="EMG Knowledge Graph API",
         description=(
-            "Sprint 7.4: a typed HTTP boundary over the Sprint 7.1-7.3 "
-            "Knowledge Graph Query Engine application service (ADR-022, "
-            "ADR-023, ADR-024). Read-only: entity/edge lookup and listing, "
-            "neighbor traversal, single-shortest-path search, and "
-            "point-in-time attribute history, each against either the "
-            "current graph head or one exact historical revision."
+            "Typed HTTP boundary for tenant-scoped Knowledge Graph queries and "
+            "the five ADR-027 Revision 5 mutation operations. Mutation requests "
+            "use ADR-033 schema negotiation and return the ADR-030 public projection."
         ),
         version="0.1.0",
     )

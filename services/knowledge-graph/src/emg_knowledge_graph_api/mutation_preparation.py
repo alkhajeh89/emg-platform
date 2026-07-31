@@ -56,13 +56,9 @@ class MutationRequestPreparer:
         negotiated = self._schema_negotiator.negotiate(
             SchemaNegotiationRequest(preferred_version=preferred_schema_version)
         )
-        canonical_request = (
-            self._compatibility_adapters.normalize(
-                request,
-                source_version=negotiated.effective_version,
-            )
-            if negotiated.adapter_required
-            else request
+        canonical_request = self._compatibility_adapters.normalize(
+            request,
+            source_version=negotiated.effective_version,
         )
         command = map_mutation_request(
             canonical_request,

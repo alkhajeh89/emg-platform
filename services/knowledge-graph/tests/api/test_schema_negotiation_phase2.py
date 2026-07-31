@@ -118,7 +118,7 @@ class _CompatibilityAdapterSpy:
         ("2.0.0", SchemaCompatibility.BACKWARD),
     ],
 )
-def test_strict_and_backward_requests_bypass_normalization(
+def test_strict_and_backward_requests_use_identity_normalization(
     version: str,
     compatibility: SchemaCompatibility,
 ) -> None:
@@ -142,16 +142,17 @@ def test_strict_and_backward_requests_bypass_normalization(
         RegistryBackedSchemaNegotiator(catalog),
         adapters,
     )
+    request = _request()
 
     prepared = preparer.prepare(
-        _request(),
+        request,
         tenant=TENANT,
         principal=PRINCIPAL,
         idempotency_key=f"phase2-{version}",
         preferred_schema_version=version,
     )
 
-    assert adapters.calls == []
+    assert adapters.calls == [(request, version, None)]
     assert prepared.command.replacement.label == "Legacy Label"
     assert prepared.effective_schema_version == version
 

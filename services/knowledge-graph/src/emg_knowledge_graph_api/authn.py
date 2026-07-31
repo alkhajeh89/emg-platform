@@ -41,12 +41,24 @@ import jwt
 from emg_common_types import normalize_classification_clearance
 from emg_errors import AuthorizationError
 from emg_platform_core import TenantId
-from fastapi import Depends, Header
+from fastapi import Depends, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError as _PydanticValidationError
 
 from .config import Settings, get_settings
 
 SigningKeyResolver = Callable[[str], object]
+
+_BEARER_AUTH = HTTPBearer(
+    scheme_name="BearerAuth",
+    bearerFormat="JWT",
+    description="Service bearer token issued by the configured identity provider.",
+    auto_error=False,
+)
+BearerCredentialsDep = Annotated[
+    HTTPAuthorizationCredentials | None,
+    Security(_BEARER_AUTH),
+]
 
 _RECOGNIZED_CLIENTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "emg-svc-identity": ("identity", ("service-account", "svc-identity")),
@@ -233,17 +245,16 @@ TenantValidatorDep = Annotated[TenantServiceTokenValidator, Depends(tenant_valid
 
 def require_tenant_context(
     validator: TenantValidatorDep,
-    authorization: Annotated[str | None, Header()] = None,
+    credentials: BearerCredentialsDep,
 ) -> CallerContext:
     """Extract and verify the Bearer token, returning the authenticated
     caller's `CallerContext` (principal + resolved tenant). Raises
     AuthorizationError (mapped to HTTP 401) if the header is missing or
     malformed, the token is invalid, or the token carries no resolvable
     tenant claim — a request can never supply or override its own tenant."""
-    if not authorization or not authorization.lower().startswith("bearer "):
+    if credentials is None:
         raise AuthorizationError("Missing or malformed Authorization header")
-    token = authorization.split(" ", 1)[1].strip()
-    return validator.validate(token)
+    return validator.validate(credentials.credentials)
 
 
 TenantContextDep = Annotated[CallerContext, Depends(require_tenant_context)]
