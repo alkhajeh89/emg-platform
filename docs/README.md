@@ -2,6 +2,10 @@
 
 This directory contains the authoritative documentation for the EMG Platform.
 
+## Governance
+
+- [GR-001 — Documentation Governance Framework](governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md)
+
 ## Product
 
 - [Product Vision](product/EMG_PRODUCT_VISION.md)

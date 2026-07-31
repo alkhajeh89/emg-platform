@@ -15,6 +15,14 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 ---
 
+## Governance Documents (Non-ADR)
+
+| ID | Type | Status | Approval | Scope and effect |
+| :--- | :--- | :--- | :--- | :--- |
+| GR-001 | Governance Document — **not an ADR** | **Ratified and Effective (2026-08-01); C-1, C-2, and C-3 satisfied** | Jointly approved by the Office of the CTO and Architecture Board | Governs documentation authority only. It does not redefine product scope or architecture and does not amend the Product Architecture Freeze or any accepted ADR. See `docs/governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md`. |
+
+---
+
 ## Open Architecture Decisions
 
 | ID | Decision Area | Status | Owner | Evidence | Blocking Questions |

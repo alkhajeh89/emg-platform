@@ -7,8 +7,13 @@ Baseline: `adr-026-complete`
 
 ## Protocol Precedence
 
-This document is the authoritative operating protocol for all EMG
-repository work.
+Under `docs/governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md`,
+this document is the L4 repository operating and implementation protocol.
+It governs operating conduct, workflow, communication, and implementation
+protocol. GR-001 governs documentation authority and conflict precedence;
+it does not govern day-to-day operating conduct. This protocol does not
+govern documentation precedence and cannot override GR-001, the Product
+Architecture Freeze, or accepted ADRs on their respective subjects.
 
 Whenever a session explicitly concerns the EMG repository or begins by
 referencing this document (`docs/architecture/PROMPT_TEMPLATE_POST_ADR026.md`),
