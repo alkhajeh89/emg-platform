@@ -1,0 +1,2 @@
+# Synthetic idempotency test value; not a credential.
+67f12691970d10e7606085a6be8bf278c2b2d547:services/knowledge-graph/tests/api/test_schema_negotiation_phase2.py:generic-api-key:199

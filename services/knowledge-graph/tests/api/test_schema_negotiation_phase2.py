@@ -197,7 +197,7 @@ def test_normalization_runs_once_and_only_canonical_dto_reaches_command_builder(
         legacy_request,
         tenant=TENANT,
         principal=PRINCIPAL,
-        idempotency_key="phase2-normalized",
+        idempotency_key="test",
         preferred_schema_version="1.2.0",
     )
 
