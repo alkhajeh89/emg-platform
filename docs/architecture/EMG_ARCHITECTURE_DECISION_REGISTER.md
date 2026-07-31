@@ -21,6 +21,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | D-A-001 | Module Numbering Governance | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §6 (Gap 4a), §7 (Gap 4) | Which numbering scheme is canonical? |
 | D-A-002 | Entity Resolution Ownership | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §2 (Gap 1) | Standalone service, part of `emg-memory-graph`, or shared library? |
+| D-A-004 | ADR-027 Stage 4 Phases 4B–4E Scope Definition | **Open** | TBD | `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2; `docs/specifications/ADR-033/Phase4-Design-Package.md` §11; commits `08949e0`, `f59cb4b`, `0ea7c74`; merge commit `aefc82c` | What scope, sequencing, prerequisites, boundaries, and acceptance criteria are separately approved for each of Phases 4B–4E? |
 
 ## Resolved Architecture Decisions
 
@@ -32,7 +33,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 | ADR | Status | Implemented phase |
 | :--- | :--- | :--- |
-| ADR-027 Revision 5 | **Accepted** | Stage 4 complete through Phase 4A (`08949e0`); Phase 4B not started |
+| ADR-027 Revision 5 | **Accepted** | Stage 4 Phase 4A originally implemented (`08949e0`), reconciled by the conformance package (`f59cb4b`) and patch (`0ea7c74`), and merged to `develop` (`aefc82c`); Phases 4B–4E have not started and their scope remains open under D-A-004 |
 | ADR-029 Revision 2 | **Accepted** | Domain implementation complete (`97b211d`) |
 | ADR-030 Revision 4 | **Accepted** | Atomic mutation ledger complete (`2dab646`) |
 | ADR-032 | **Accepted** | Mutation-path schema negotiation implemented; read-path adoption remains separate |
@@ -110,6 +111,41 @@ installed. This is a bootstrap-hygiene fix only — the package, its
 otherwise untouched; none of the three ownership questions above have been
 answered. See `docs/devops/DEPENDENCY_GOVERNANCE.md` for the fix detail.
 
+### D-A-004 — ADR-027 Stage 4 Phases 4B–4E Scope Definition
+
+**Current state:** ADR-027 Revision 5 Stage 4 Phase 4A was originally
+implemented at commit `08949e0`. Its final governance reconciliation and
+narrow conformance work were recorded at commits `f59cb4b` and `0ea7c74`
+and merged to `develop` at `aefc82c`. The reconciled Phase 4 Design Package
+records Phase 4A as implemented, identifies Phase 4B only as the next
+delivery phase, and states expressly that it neither defines nor claims
+completion of Phase 4B's scope. Phases 4C–4E are recorded only as later,
+not-started phases.
+
+**Owner:** TBD.
+
+**Evidence:**
+
+- `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2.
+- `docs/specifications/ADR-033/Phase4-Design-Package.md` §11.
+- Original Phase 4A implementation commit `08949e0`.
+- Governance reconciliation commit `f59cb4b`.
+- Narrow conformance commit `0ea7c74`.
+- Merge commit `aefc82c`.
+
+**Blocking question:** What scope, sequencing, prerequisites, architectural
+boundaries, and acceptance criteria are separately approved for each of
+ADR-027 Stage 4 Phases 4B–4E?
+
+**Binding constraint on future work:** phase labels and sequencing alone do
+not authorize implementation. No route, command, DTO semantic, domain,
+persistence, ledger, GraphStore, authorization-policy, or schema capability
+may be inferred for Phases 4B–4E until its scope is explicitly approved.
+This register entry records the unresolved governance requirement; it does
+not define any phase's scope and does not create or amend an ADR.
+
+**Status:** Open.
+
 ---
 
 ## Observations
@@ -118,7 +154,7 @@ Observations are short, evidence-based findings that do not require a
 binary accept/reject decision the way the Open Architecture Decisions above
 do. They record what was found and a recommendation, and are closed when the
 recommendation is actioned (or explicitly declined) — not left open-ended
-like D-A-001/D-A-002.
+like D-A-001, D-A-002, and D-A-004.
 
 | ID | Title | Recommendation | Evidence |
 | :--- | :--- | :--- | :--- |
@@ -481,11 +517,13 @@ documentation-only update.
 
 ---
 
-## Tracked Tasks (Phase 3)
+## Tracked Architecture Tasks
 
 | ID | Task | Status | Acceptance Criteria |
 | :--- | :--- | :--- | :--- |
 | T-A-001 | Extend dependency manifest coverage to all EMG Python components | **Done (2026-07-25)** | See below |
+| T-A-002 | Ratify the supported-schema discovery transport contract | **Open** | A named owner and governance authority approve the URI, authentication model, response DTO, and transport acceptance criteria before any standalone discovery endpoint is implemented |
+| T-A-003 | Assign and ratify durable effective-schema-version audit recording | **Open** | A named owner and target ADR (an ADR-030 revision or a separate ADR) are assigned, and the durable-recording and migration contract is approved before any persistence or ledger change |
 
 ### T-A-001 — Extend dependency manifest coverage to all EMG Python components
 
@@ -529,6 +567,82 @@ declared reality rather than an idealized dependency direction.
 (`PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` §10) — complete before any new
 Phase 3 service is scaffolded, so drift detection covers new work from day
 one.
+
+### T-A-002 — Ratify the supported-schema discovery transport contract
+
+**Current state:** ADR-032 §2.3 requires the server to publish its
+authoritative supported schema-version set, and ADR-033 Revision 2 §10.4
+requires a discovery surface exposing supported versions, lifecycle state,
+retirement instants, and the recommended current version. The Phase 4
+Design Package clarifies that mutation-request negotiation is live but is
+not a standalone discovery endpoint. Its §4 records the discovery URI,
+authentication model, and response DTO as unratified and therefore
+governance-blocked.
+
+**Owner:** TBD.
+
+**Evidence:**
+
+- `docs/architecture/EMG_ADR-032_KNOWLEDGE_GRAPH_SCHEMA_VERSIONING_AND_EVOLUTION.md`
+  §2.3.
+- `docs/architecture/EMG_ADR-033_SCHEMA_REGISTRY_AND_NEGOTIATION_SERVICE.md`
+  §10.4.
+- `docs/specifications/ADR-033/Phase4-Design-Package.md` §§4 and 13.
+
+**Blocking questions:** What URI and method expose discovery? What
+authentication and visibility rules apply? What closed response DTO
+represents supported versions, lifecycle states, retirement instants, and
+the recommended version? What public error and OpenAPI contract applies?
+
+**Acceptance criteria:** a named owner and governance authority approve the
+complete transport contract and its acceptance evidence before
+implementation begins.
+
+**Binding constraint:** no standalone discovery route may be added while
+this task is Open. Existing schema negotiation on approved mutation
+requests remains unchanged and must not be represented as the discovery
+surface.
+
+**Status:** Open.
+
+### T-A-003 — Assign and ratify durable effective-schema-version audit recording
+
+**Current state:** ADR-032 §2.4 requires the effective schema version in all
+audit records. ADR-033 Revision 2 §10.3 confirms that the accepted contract
+version currently terminates at the HTTP response header and is exposed
+only through health, metrics, and structured logs; it is not persisted in
+the mutation ledger, idempotency index, or another durable store.
+`command_schema_version` is the distinct internal command-envelope version
+and must not be repurposed. ADR-033 records this unmet requirement as OG-1
+and its binding condition C2 requires assignment of an owner and target ADR.
+
+**Owner:** TBD.
+
+**Evidence:**
+
+- `docs/architecture/EMG_ADR-032_KNOWLEDGE_GRAPH_SCHEMA_VERSIONING_AND_EVOLUTION.md`
+  §2.4.
+- `docs/architecture/EMG_ADR-033_SCHEMA_REGISTRY_AND_NEGOTIATION_SERVICE.md`
+  §10.3, §15 OG-1, and binding condition C2.
+- `docs/architecture/EMG_ADR-030_MUTATION_LEDGER_ATOMIC_IDEMPOTENCY.md`
+  §5.1.
+
+**Blocking questions:** Who owns OG-1? Will its contract be governed by an
+ADR-030 revision or a separate ADR? Which durable audit records carry the
+accepted schema version, and what atomicity, immutability, replay, migration,
+retention, and backfill semantics apply?
+
+**Acceptance criteria:** a named owner and target ADR (an ADR-030 revision
+or a separate ADR) are assigned, and the durable record shape, transaction
+boundary, migration strategy, replay behavior, and acceptance evidence are
+approved before implementation begins.
+
+**Binding constraint:** no ledger column, persistence behavior, migration,
+fingerprint input, replay semantic, or `command_schema_version` meaning may
+change while this task is Open. This entry tracks ADR-033 OG-1; it does not
+resolve it or amend ADR-030.
+
+**Status:** Open.
 
 ---
 

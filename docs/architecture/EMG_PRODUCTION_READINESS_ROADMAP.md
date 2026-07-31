@@ -12,6 +12,27 @@ the Engineering Backlog, and the security/technical-debt registers), aimed at
 answering one question: **what stands between the current repository state
 and a first production-ready release, and in what order should it be closed?**
 
+## Governance Reconciliation Addendum — 2026-08-01
+
+**Reconciliation baseline:** `develop` at `aefc82c` (PR #37).
+
+This addendum is deliberately narrow. It re-verifies only the Knowledge Graph
+mutation-delivery facts changed since the original 2026-07-27 audit; it does
+not re-audit or restate unrelated roadmap findings.
+
+- ADR-027 Revision 5 is Accepted and implemented through Stage 4 Phase 4A.
+  The original five-route HTTP transport landed in `08949e0`; the governance
+  and code conformance work landed in `f59cb4b` and `0ea7c74`, respectively,
+  and was merged to `develop` by PR #37 at `aefc82c`.
+- ADR-028 remains **Referenced, not written, not begun**. That status was
+  re-verified at this baseline and is unchanged by this reconciliation.
+- The ADR-027 decision to provide a Knowledge Graph write path is closed.
+  Scope for ADR-027 Stage 4 Phases 4B–4E remains undefined and is tracked as
+  D-A-004; this roadmap does not define it.
+- The separate `emg-knowledge-pipeline` service binding and the Neo4j serving-
+  projection binding remain open integration work. Phase 4A completion does
+  not imply that either binding is complete.
+
 ---
 
 ## 1. Architecture vs. Engineering Status
@@ -28,7 +49,7 @@ planning: **a majority of the frozen architecture has no corresponding code.**
 | 4 (Identity) | Frozen | Implemented through Sprint 3 | Live service, tested |
 | 5 (Authorization & Policy) | Frozen | Baseline complete; first live enforcement adopter is ADR-025 | `services/authz` itself is still an empty scaffold — the library (`emg-policy-engine`) is the real, live enforcement path instead |
 | 6 (Audit) | Frozen | Complete (EPIC-04, FEAT-04-1→4) | Clearance-based classification-aware *read authorization* remains filter-only, not enforced (see §4) |
-| 7 (Knowledge Graph) | Frozen | Query API live and fully authorization- and classification-enforced (ADR-024/025/026) | **No mutation/ingestion endpoint exists.** The library-first ingestion pipeline (`emg-knowledge-pipeline`), trust scoring, semantic layer, and lifecycle library are all built but **none are wired to a live store or service**. No Neo4j binding. |
+| 7 (Knowledge Graph) | Frozen | Query API and ADR-027 Revision 5's five-route mutation API are live and authorization- and classification-enforced through Stage 4 Phase 4A | The ADR-027 write-path decision is closed. The separate library-first ingestion pipeline (`emg-knowledge-pipeline`), trust scoring, semantic layer, and lifecycle library remain unwired to a live service path, and the Neo4j serving-projection binding remains open. |
 | 8 (Search / GraphRAG) | Frozen | Scaffolded only | Zero implementation |
 | 9 (AI Orchestration) | Frozen | Scaffolded only | Zero implementation |
 | 10 (Decision Intelligence) | Frozen | Scaffolded only | Zero implementation |
@@ -41,10 +62,13 @@ planning: **a majority of the frozen architecture has no corresponding code.**
 - `libs/python/emg-entity-resolution` has a **0-byte `pyproject.toml`** and
   zero source files — an abandoned or premature scaffold (tracked as open
   decision D-A-002, unresolved).
-- The Knowledge Graph Query API (`emg_knowledge_graph_api/routers/knowledge_graph.py`)
-  exposes **no `POST`/`PUT`/`PATCH`/`DELETE` route** — it is read-only. The
-  ingestion pipeline that could populate it (`emg-knowledge-pipeline`, built
-  in Sprint 10) is a standalone library, not wired into any service.
+- The Knowledge Graph query router
+  (`emg_knowledge_graph_api/routers/knowledge_graph.py`) remains read-only;
+  that router is not the service's complete HTTP surface. The same service
+  registers `emg_knowledge_graph_api/routers/mutations.py`, which exposes the
+  five ADR-027 Revision 5 mutation routes. The separate ingestion pipeline
+  (`emg-knowledge-pipeline`, built in Sprint 10) remains a standalone library
+  not wired into a live service path.
 
 ---
 
@@ -63,8 +87,8 @@ planning: **a majority of the frozen architecture has no corresponding code.**
 | ADR-022/023/024 | KG Revision Build / History / Query Engine | Implemented | Live, tested |
 | ADR-025 | KG Tenant & Authorization Model | **Accepted — implemented** | Live; one open follow-up (no client-id allow-list registry, see §4) |
 | ADR-026 Rev 2 | KG Classification Enforcement Model | **Accepted — fully implemented** | Live; this session's ADR-026 final blocker fix is the most recent change |
-| ADR-027 | KG Mutation API | **Referenced, not written, not begun** | Blocks any write path into the Knowledge Graph service |
-| ADR-028 | Audit reconciliation | **Referenced, not written, not begun** | Blocks any cross-service audit-integrity guarantee beyond single-service append-only logs |
+| ADR-027 Revision 5 | KG Mutation API | **Accepted — implemented through Stage 4 Phase 4A** | Five-route HTTP mutation transport and final conformance are merged on `develop` at `aefc82c` (PR #37); the write-path decision is closed. Later-phase scope is not defined here. |
+| ADR-028 | Audit reconciliation | **Referenced, not written, not begun** | Re-verified at `aefc82c`; status unchanged. Blocks any cross-service audit-integrity guarantee beyond single-service append-only logs. |
 
 ADR-001 through ADR-013 do not exist in this repository and must not be
 treated as approved or implied.
@@ -86,6 +110,11 @@ From `EMG_ARCHITECTURE_DECISION_REGISTER.md`, still **Open**:
   constraint already recorded, and it directly affects how any future
   Knowledge Graph ingestion or connector-sourced entity matching should be
   designed.
+- **D-A-004 — ADR-027 Stage 4 Phase 4B–4E Scope Definition.** Phase 4A is
+  complete; the objectives and acceptance criteria for later ADR-027 delivery
+  phases have not been approved. This open decision blocks work from being
+  labeled Phase 4B–4E, but it does **not** reopen the accepted write-path
+  decision or Phase 4A completion.
 
 ---
 
@@ -177,6 +206,11 @@ this repository's own precedent of treating governance/documentation
 cleanup as cheap, high-leverage work that should not be deferred behind
 larger features.
 
+The Phase 0–4 labels in this section are production-readiness sequencing
+labels only. They do not map to ADR-027 delivery phases or ADR-033 schema
+phases, and the frontend work listed below remains a separate future product
+track.
+
 ### Phase 0 — Governance cleanup (low effort, unblocks nothing technical but reduces review risk on everything after)
 
 1. Resolve **D-A-001** (module numbering) — publish one canonical scheme or
@@ -205,21 +239,17 @@ larger features.
    scoped, no new ADR needed (the mechanism already exists elsewhere in the
    repo).
 
-### Phase 2 — Decide and close the Knowledge Graph write path
+### Phase 2 — ADR-027 write-path decision closed; integration bindings remain open
 
-8. **Resolve ADR-027 (Mutation API) scope.** This is the most consequential
-   open product decision in the repository: the Knowledge Graph is
-   currently query-only, and its own ingestion library
-   (`emg-knowledge-pipeline`) is built but unwired. A first production
-   release needs an explicit decision on whether it ships **read-only**
-   (acceptable only if some other already-live path populates the graph) or
-   **requires** a live mutation/ingestion endpoint. This should not be
-   decided implicitly by which sprint happens to run next.
-9. If mutation is in scope for v1: wire `emg-knowledge-pipeline` to a real
-   `GraphStore` binding (the Neo4j binding is still the deferred piece per
-   TD-002/`ARCHITECTURE_STATUS.md` Module 7 notes), and design ADR-027's
-   authorization/classification enforcement as a direct extension of the
-   already-proven ADR-025/026 mechanism — not a new authorization model.
+8. **ADR-027 mutation write path — Closed.** ADR-027 Revision 5 is Accepted,
+   and Stage 4 Phase 4A's five authenticated mutation routes and conformance
+   requirements are complete on `develop` at `aefc82c` (PR #37). D-A-004
+   tracks definition of Phase 4B–4E and does not reopen this decision.
+9. **Complete the still-open population and serving bindings.** Wire the
+   separate `emg-knowledge-pipeline` into an approved live service path and
+   complete the Neo4j serving-projection binding. These are integration tasks
+   that remain open after Phase 4A; they must not be represented as completed
+   merely because the ADR-027 HTTP write surface is live.
 
 ### Phase 3 — Infrastructure & operability floor (EPIC-11/EPIC-12 minimum viable subset)
 
@@ -250,13 +280,15 @@ Modules 8, 9, and 10 (Search/GraphRAG, AI Orchestration, Decision
 Intelligence — EPIC-06 through EPIC-09) and the frontend (EPIC-10) have zero
 implementation. Given the module-dependency gate and the fact that Modules
 8–10 all consume the Knowledge Graph, **none of this should begin before
-Phase 2's mutation-path decision is made** — starting Search or AI
-Orchestration against a Knowledge Graph whose write-path shape is still
-undecided risks rework. This phase is listed for completeness, not as part
-of the critical path to a first production-ready release, which this
-document interprets as Identity + Audit + Knowledge Graph (with its
-write-path decision resolved) running on real infrastructure with a real
-security and observability floor.
+Phase 2's remaining population and serving bindings are implemented and
+validated** —
+the ADR-027 write-path decision is closed, but starting Search or AI
+Orchestration while the ingestion-pipeline and Neo4j projection bindings are
+still incomplete risks rework. This phase is listed for completeness, not as
+part of the critical path to a first production-ready release, which this
+document interprets as Identity + Audit + Knowledge Graph (with its write-path
+decision resolved and its required bindings complete) running on real
+infrastructure with a real security and observability floor.
 
 ---
 
@@ -267,7 +299,7 @@ security and observability floor.
 | Module numbering / entity-resolution ownership unresolved | Governance | 0 |
 | Audit classification read-authorization is filter-only | Security | 1 |
 | No Knowledge Graph client registry allow-list | Security | 1 |
-| Knowledge Graph mutation path undecided and unwired | Architecture decision + implementation | 2 |
+| ADR-027 write path decided and Phase 4A implemented; ingestion-pipeline and Neo4j serving bindings remain open | Integration implementation | 2 |
 | No IaC / cluster provisioning beyond local docker-compose | Infrastructure | 3 |
 | No centralized secrets management | Security / Infrastructure | 3 |
 | No security scanning in CI | Security | 3 |
@@ -286,9 +318,10 @@ fail-closed security posture) is consistently honored everywhere it has been
 engineered. The risks that remain are scope and sequencing risks, not
 architectural-integrity risks:
 
-- The Knowledge Graph mutation-path decision (§7, Phase 2) is the single
-  highest-leverage undecided item — every downstream module (8–10) and the
-  production-readiness timeline both depend on it, directly or indirectly.
+- The Knowledge Graph write-path decision is closed, but the open ingestion-
+  pipeline and Neo4j serving-projection bindings (§7, Phase 2) remain the
+  highest-leverage Module 7 integration risk for downstream modules 8–10 and
+  the production-readiness timeline.
 - Infrastructure/operability (EPIC-11/12) is a large, currently-zero body of
   work; underestimating its size relative to feature work is the most likely
   planning failure mode for a "first production release" target date.
