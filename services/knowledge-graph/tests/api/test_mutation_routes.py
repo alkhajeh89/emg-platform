@@ -15,6 +15,7 @@ from emg_knowledge_graph import (
     MutationResult,
     ReplaceEntityCommand,
     ReplaceRelationshipCommand,
+    SchemaNegotiationError,
     SchemaNegotiationRequest,
     SchemaNegotiationResult,
 )
@@ -299,6 +300,41 @@ def test_only_the_five_approved_mutation_routes_are_registered(
     }
 
 
+def test_openapi_documents_bearer_auth_and_effective_schema_header(
+    route_client: tuple[TestClient, _ApplicationSpy, _Negotiator],
+) -> None:
+    client, _, _ = route_client
+    schema: dict[str, Any] = client.get("/openapi.json").json()
+
+    assert schema["info"]["title"] == "EMG Knowledge Graph API"
+    assert "Read-only" not in schema["info"]["description"]
+    bearer = schema["components"]["securitySchemes"]["BearerAuth"]
+    assert bearer["type"] == "http"
+    assert bearer["scheme"] == "bearer"
+    assert bearer["bearerFormat"] == "JWT"
+
+    operations = (
+        ("post", "/api/v1/entities", "201"),
+        ("put", "/api/v1/entities/{entity_id}", "200"),
+        ("put", "/api/v1/relationships/{edge_id}", "200"),
+        ("post", "/api/v1/relationships/{edge_id}/close", "200"),
+        ("post", "/api/v1/entities/{survivor_id}/merge", "200"),
+    )
+    for method, path, success_status in operations:
+        operation = schema["paths"][path][method]
+        assert operation["security"] == [{"BearerAuth": []}]
+        header_parameters = {
+            parameter["name"].lower()
+            for parameter in operation.get("parameters", [])
+            if parameter["in"] == "header"
+        }
+        assert "authorization" not in header_parameters
+        response_header = operation["responses"][success_status]["headers"][
+            "Effective-Schema-Version"
+        ]
+        assert response_header["schema"] == {"type": "string"}
+
+
 def test_mutation_response_mapping_is_pure_and_excludes_internal_state() -> None:
     mapped = mutation_response(_execution_result())
 
@@ -338,6 +374,56 @@ def test_server_controlled_owner_is_rejected_before_delegation(
     assert negotiator.requests == []
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        (
+            "PUT",
+            "/api/v1/entities/path-entity",
+            {"replacement": _node(), "action": "update", "as_of": NOW.isoformat()},
+        ),
+        (
+            "PUT",
+            "/api/v1/relationships/path-relationship",
+            {"replacement": _edge(), "as_of": NOW.isoformat()},
+        ),
+        (
+            "POST",
+            "/api/v1/relationships/path-relationship/close",
+            {
+                "edge_id": "relationship-1",
+                "as_of": NOW.isoformat(),
+                "reason": "relationship ended",
+            },
+        ),
+        (
+            "POST",
+            "/api/v1/entities/path-entity/merge",
+            {
+                "survivor_id": "entity-1",
+                "source_ids": ["entity-2"],
+                "as_of": NOW.isoformat(),
+                "reason": "duplicate records",
+            },
+        ),
+    ],
+)
+def test_path_identifier_mismatch_is_rejected_before_preparation(
+    route_client: tuple[TestClient, _ApplicationSpy, _Negotiator],
+    method: str,
+    path: str,
+    payload: dict[str, object],
+) -> None:
+    client, application, negotiator = route_client
+
+    response = client.request(method, path, json=payload, headers=HEADERS)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["error_code"] == "KNOWLEDGE_GRAPH_INVALID_MUTATION_COMMAND"
+    assert application.calls == []
+    assert negotiator.requests == []
+
+
 @pytest.mark.parametrize("missing_header", ["X-Idempotency-Key", "Preferred-Schema-Version"])
 def test_required_mutation_headers_are_validated(
     route_client: tuple[TestClient, _ApplicationSpy, _Negotiator],
@@ -351,3 +437,30 @@ def test_required_mutation_headers_are_validated(
     assert response.status_code == 422
     assert application.calls == []
     assert negotiator.requests == []
+
+
+def test_unsupported_schema_is_rejected_before_application_dispatch(
+    route_client: tuple[TestClient, _ApplicationSpy, _Negotiator],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, application, negotiator = route_client
+
+    def reject(request: SchemaNegotiationRequest) -> SchemaNegotiationResult:
+        negotiator.requests.append(request)
+        raise SchemaNegotiationError(
+            "unknown schema",
+            failure_code="UNKNOWN_SCHEMA",
+        )
+
+    monkeypatch.setattr(negotiator, "negotiate", reject)
+
+    response = client.post(
+        "/api/v1/entities",
+        json=_create_payload(),
+        headers={**HEADERS, "Preferred-Schema-Version": "9.9.9"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["error_code"] == "KNOWLEDGE_GRAPH_SCHEMA_NEGOTIATION_FAILED"
+    assert negotiator.requests == [SchemaNegotiationRequest(preferred_version="9.9.9")]
+    assert application.calls == []

@@ -3,8 +3,17 @@ from pathlib import Path
 import pytest
 from emg_knowledge_graph_api import dependencies
 from emg_knowledge_graph_api.config import Settings, validate_secure_transport
+from emg_knowledge_graph_api.main import create_app
+from emg_knowledge_graph_infrastructure import SchemaCatalogValidationError
 from emg_policy_engine import PolicyConfigurationError
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
+
+
+def _clear_startup_singletons() -> None:
+    dependencies._settings_singleton.cache_clear()
+    dependencies._policy_enforcement_point_singleton.cache_clear()
+    dependencies._schema_components_singleton.cache_clear()
 
 
 def test_unknown_knowledge_graph_backend_is_rejected() -> None:
@@ -86,3 +95,57 @@ def test_policy_semantic_validation_is_a_startup_gate(
         dependencies.validate_schema_runtime_configuration()
 
     dependencies._policy_enforcement_point_singleton.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("catalog_document", "expected_message"),
+    [
+        (None, "failed to read schema catalog"),
+        (
+            '{"generation":"invalid","canonical_version":"2.1.0","versions":[]}',
+            "schema catalog must contain at least one version",
+        ),
+    ],
+)
+def test_missing_or_invalid_catalog_prevents_production_startup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    catalog_document: str | None,
+    expected_message: str,
+) -> None:
+    catalog_path = tmp_path / "schema-catalog.json"
+    if catalog_document is not None:
+        catalog_path.write_text(catalog_document, encoding="utf-8")
+
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT", "production")
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND", "postgres")
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_BASE_URL",
+        "https://keycloak.example.gov",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
+        "postgresql://runtime@postgres.example.gov/emg?sslmode=verify-full",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN",
+        "postgresql://migration@postgres.example.gov/emg?sslmode=verify-full",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",
+        "false",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH",
+        str(catalog_path),
+    )
+    _clear_startup_singletons()
+
+    try:
+        with (
+            pytest.raises(SchemaCatalogValidationError, match=expected_message),
+            TestClient(create_app()),
+        ):
+            pass
+    finally:
+        _clear_startup_singletons()
