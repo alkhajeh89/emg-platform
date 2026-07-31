@@ -6,11 +6,35 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `release/stage4`
+Current Branch: `develop` (through PR #37, merge commit `aefc82c`)
 
 Current Sprint: Sprint 14 (in progress) — **EPIC-13 Enterprise Integration
 Platform**, FEAT-13-1 (Universal Connector Framework — storage/vendor/protocol-
 independent, contracts-only). See "Additive roadmap" note below.
+
+## Delivery Track Taxonomy
+
+The following delivery tracks are distinct and must not be inferred to advance
+one another:
+
+- **ADR-027 Revision 5 delivery track.** Stage 4 Phase 4A is the HTTP mutation
+  transport and conformance phase and is complete at PR #37 (merge commit
+  `aefc82c`). Phase 4B has not started. This status document does not define or
+  authorize Phase 4B scope.
+- **ADR-033 Revision 2 schema track.** Phase 3 is complete at commit `5288392`.
+  ADR-033 Phase 4 is the future schema-registry phase for the first genuine
+  second schema version and its production normalizer; it has not started. It
+  is not ADR-027 Phase 4B. The supported-schema discovery surface remains
+  governance-blocked pending a ratified URI, authentication model, and response
+  DTO.
+- **Production-readiness track.** Security, operations, deployment, resilience,
+  accreditation, and release-readiness work is tracked independently.
+  Completion of a production-readiness item does not by itself advance
+  ADR-027 or ADR-033, and Phase 4A completion does not claim platform-wide
+  production readiness.
+- **Future UI/product-delivery track.** Any user interface, self-service
+  recovery portal, or other frontend surface is separate future product work.
+  Neither ADR-027 Phase 4A nor ADR-033 Phase 3 defines or authorizes UI scope.
 
 ---
 
@@ -57,7 +81,7 @@ status.
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4; **first live enforcement adopter delivered (ADR-025, 2026-07-27)** | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below). ADR-025 (Knowledge Graph Integration Closure, Group C) makes `services/knowledge-graph` the first service to actually enforce (not just introspect) an authorization decision using this module's PEP/`emg-policy-engine` stack — see Module 7 row and the ADR-025 entry in the ADRs table below. |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. SRS-2 adds verified-tenant confinement and PEP-backed classification authorization to event lookup, listing, pagination, and export. |
-| Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and mutation delivery complete through ADR-027 Stage 4 Phase 4A; ADR-033 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus ADR-027 Revision 5's five mutation routes through Phase 4A. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. ADR-033 Revision 2's canonical-only production catalog is active through Phase 3; Phase 4 and schema normalizers have not started. The Neo4j serving-projection binding remains deferred. |
+| Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 Phase 4A complete (PR #37, `aefc82c`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. PR #37 (`aefc82c`) closes the Phase 4A governance and conformance work. ADR-027 Phase 4B and ADR-033 Phase 4 have not started. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; no second schema version or production normalizer exists. The Neo4j serving-projection binding remains deferred. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -98,11 +122,11 @@ Only the following Architecture Decision Records are currently present in
 | ADR-021 | Enterprise API Strategy | Proposed |
 | ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted — implemented (Group C, 2026-07-27)** |
 | ADR-026 (Revision 2) | Knowledge Graph Classification Enforcement Model | **Accepted — fully implemented (Phase 1 + Phase 2, D1–D13, 2026-07-27)** |
-| ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — implemented through Stage 4 Phase 4A (2026-07-29)**: Stages 0–3, authorization policy, application wiring, transport DTOs, application projection, and the five approved HTTP mutation routes are complete. Phase 4B has not started. |
+| ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — Stage 4 Phase 4A implemented and conformance-complete (PR #37, merge commit `aefc82c`, 2026-08-01)**: Stages 0–3, authorization policy, application wiring, transport DTOs, application projection, exactly five approved HTTP mutation routes, schema negotiation, always-run normalization, and the final transport conformance checks are complete. Phase 4B has not started; this record neither defines nor authorizes its scope. |
 | ADR-029 (Revision 2) | Canonical Entity/Relationship Identity, Lifecycle, and Supersession Model | **Accepted — implemented (commit `97b211d`, tag `adr-029-approved-implementation`)** |
 | ADR-030 (Revision 4) | Mutation Ledger & Atomic Idempotency | **Accepted — implemented (Stage 3, commit `2dab646`, tag `adr-027-stage-3`)** |
 | ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted — mutation-path negotiation implemented; read-path adoption remains governed separately** |
-| ADR-033 (Revision 2) | Schema Registry and Negotiation Service | **Accepted — implemented through Phase 3 (commit `5288392`); Phase 4 and normalizers not started** |
+| ADR-033 (Revision 2) | Schema Registry and Negotiation Service | **Accepted — implemented through Phase 3 (commit `5288392`)**: the canonical-only production catalog and mutation-path negotiation are active. ADR-033 Phase 4—the first genuine second schema version and its production normalizer—has not started. Supported-schema discovery remains governance-blocked pending an approved transport contract. |
 | ADR-034 | Security State and Service Trust Hardening | **Accepted — implemented by SRS-2 (2026-07-30)** |
 
 *Implementation Notes (Authorization/Policy):*
@@ -120,11 +144,11 @@ here through the current ADR-033 Phase 3 baseline.
 ADR-019/020/021 accompany `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` and
 `IMPLEMENTATION_GAP_ANALYSIS.md` (2026-07-25). They are architecture-only —
 no service or library referenced by them has been implemented as a result of
-their creation. This table entry is additive bookkeeping only; it does not
-update the stale "Current Branch" field or the Module/Sprint narrative below,
-which `IMPLEMENTATION_GAP_ANALYSIS.md` §7 (Gap 4) flags as out of date
-relative to the actual current branch,
-`phase2/sprint5-outbox-event-persistence`.
+their creation. Their table entries remain additive bookkeeping only. The
+Project Status marker above records the merged `develop` baseline through
+PR #37 (`aefc82c`). The separate Module/EPIC/Sprint and Phase 0/1/2 numbering
+schemes remain unreconciled under D-A-001 and must not be treated as the same
+delivery track.
 
 **ADR-025 (2026-07-27) — implemented, not merely accepted.** Unlike
 ADR-019/020/021 above, ADR-025 (Knowledge Graph Tenant & Authorization Model)
@@ -428,5 +452,18 @@ clients) are recorded in ADR-025 §18 and in
 `services/knowledge-graph/README.md`'s "Authorization" section. Classification
 enforcement (ADR-026 Revision 2) was completed separately and later the same
 day (D1–D13; see the dedicated ADR-026 narrative above and OBS-A-004 in
-`EMG_ARCHITECTURE_DECISION_REGISTER.md`). The Mutation API (ADR-027) and audit
-reconciliation (ADR-028) remain explicitly out of scope and not begun.
+`EMG_ARCHITECTURE_DECISION_REGISTER.md`). At the time of that 2026-07-27
+closure, the Mutation API (ADR-027) and audit reconciliation (ADR-028) were out
+of scope and had not begun; their current status is recorded in the ADR table
+above.
+
+**ADR-027 Revision 5 Stage 4 Phase 4A conformance closure (2026-08-01).**
+PR #37 (merge commit `aefc82c`) merged the reconciled governance package
+(`f59cb4b`) and narrow conformance patch (`0ea7c74`) into `develop`. Phase 4A
+remains exactly the five mutation routes approved by ADR-027 Revision 5. The
+closure records always-run compatibility normalization, accurate bearer and
+effective-schema OpenAPI metadata, and focused transport/startup acceptance
+evidence without changing commands, DTO semantics, domain logic, authorization
+policy, GraphStore, persistence, or the mutation ledger. This closes only
+ADR-027 Stage 4 Phase 4A: it does not start or define Phase 4B, start ADR-033
+Phase 4, claim platform-wide production readiness, or authorize any UI surface.
