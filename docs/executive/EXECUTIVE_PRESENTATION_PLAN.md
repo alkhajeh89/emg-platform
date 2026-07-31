@@ -1,5 +1,9 @@
 # Executive Presentation Plan: EMG Platform
 
+**Classification:** Supporting executive presentation plan; non-governing
+**Authority:** Subordinate to the ratified `EXECUTIVE_SUMMARY.md`, the Product
+Architecture Freeze for product scope, and accepted ADRs for architecture
+
 ## Slide 1: Cover
 ### Executive Message
 Introducing the EMG Platform: A governed foundation for accountable organizational decision intelligence.
@@ -83,13 +87,16 @@ Evidenced
 Transforming organizational data into governed, actionable decision intelligence through unified, accountable architecture.
 
 ### Slide Content
-- **Governed Foundation**: Unified ontology for data consistency.
-- **Explainable Intelligence**: Grounded, cited, and trust-scored retrieval.
-- **Accountable Oversight**: Enforced Human-in-the-Loop authority.
+- **Governed Foundation**: Common concepts, evidence, provenance, and controls.
+- **Explainable Intelligence**: Grounded, cited, and trust-scored capabilities
+  as runtime integrations are delivered.
+- **Accountable Oversight**: Human authority preserved as approved HITL
+  enforcement capabilities are implemented.
 - **Auditability by Construction**: Traceable origin and veracity for all records.
 
 ### Recommended Visual
-A three-pillar diagram representing the Platform's core foundations.
+A three-characteristic diagram. These are non-governing solution
+characteristics, not alternative product pillars.
 
 ### Evidence Status
 Declared
@@ -99,43 +106,57 @@ Declared
 
 ## Slide 6: Solution Overview
 ### Executive Message
-An integrated, layered platform designed to ensure decision-making is verifiable and consistent.
+An integrated, layered platform with evidenced governance foundations and
+planned platform-wide observability.
 
 ### Slide Content
-- Modular architecture built on unified principles.
-- Decoupling of business logic from persistence technologies.
-- Layered approach: Foundation → Trust → Knowledge → Retrieval → AI → Decision.
-- Observability and governance built into every layer.
+- **Evidenced governance:** Subject-scoped documentation authority, frozen
+  product scope, and accepted architecture decisions establish the control
+  boundaries.
+- **Evidenced design:** Modular boundaries and decoupling of business logic
+  from persistence technologies are established in the accepted architecture
+  and implemented library seams.
+- **Planned delivery:** The progression from Foundation → Trust → Knowledge →
+  Retrieval → AI → Decision remains capability-dependent.
+- **Planned observability:** Platform-wide metrics, tracing, dashboards, and
+  alerting are not yet operational across every layer.
 
 ### Recommended Visual
 Simplified layered architecture diagram, focusing on the logical flow from data to decision.
 
 ### Evidence Status
-Evidenced
+Evidenced (governance and design boundaries) / Planned (platform-wide
+observability)
 
 ### Source Documents
-- docs/architecture/EMG_Architecture_Baseline_v1.0_Final.md
+- docs/governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md
+- docs/architecture/EMG_ADR-015_Unified_Enterprise_Observability.md
+- docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md
 - docs/executive/SOLUTION_OVERVIEW.md
 
 ## Slide 7: How EMG Creates Organizational Memory
 ### Executive Message
-Organizational memory is preserved as a single, governed, and traceable system of record.
+EMG's frozen product direction is a governed, traceable system of record for
+organizational memory; runtime adoption remains incremental.
 
 ### Slide Content
-- Knowledge Graph as the sole system of record for organizational memory.
+- Product scope defines EMG as the system of record for organizational memory.
 - Capturing provenance and organizational context.
 - Ensuring consistency across disparate data domains.
 - Traceability from decision recommendation to source evidence.
+- PostgreSQL-authoritative persistence and a rebuildable Neo4j projection are
+  implemented as an integration-tested library; the live service projection
+  binding remains open.
 
 ### Recommended Visual
 Flowchart showing data ingestion feeding into a central "Knowledge Graph" system of record.
 
 ### Evidence Status
-Evidenced
+Frozen product direction / Partially implemented
 
 ### Source Documents
-- docs/architecture/EMG_Architecture_Baseline_v1.0_Final.md
-- docs/executive/SOLUTION_OVERVIEW.md
+- docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md
+- docs/architecture/ARCHITECTURE_STATUS.md
 
 ## Slide 8: Executive Use Case
 ### Executive Message
@@ -158,22 +179,28 @@ Proposed
 
 ## Slide 9: Governance and Human Oversight
 ### Executive Message
-The architecture enforces human authority and policy oversight through immutable, construction-level gateways.
+Governance controls are evidenced; construction-level HITL enforcement remains
+planned.
 
 ### Slide Content
 - **Human Authority is Absolute**: AI recommends; humans decide.
-- **Constructed Enforcement**: Approval gateways enforced at the agent and decision layers.
-- **Governance Principles**: Board-level oversight and ADR-based change control.
-- **Ownership Registry**: Clear accountability for every domain and service.
+- **Constructed Enforcement (Planned)**: Approval gateways at the agent and
+  decision layers are not yet evidenced as platform-wide runtime controls.
+- **Governance Principles (Evidenced)**: Documentation governance and ADR-based
+  architecture change control are in force.
+- **Ownership Registry (Evidenced Architecture)**: ADR-016 records accountable
+  ownership for platform domains and services.
 
 ### Recommended Visual
 Diagram illustrating the "Human-in-the-Loop" approval gateway within the decision flow.
 
 ### Evidence Status
-Evidenced
+Evidenced (governance controls) / Planned (Constructed Enforcement)
 
 ### Source Documents
-- docs/architecture/EMG_Architecture_Baseline_v1.0_Final.md
+- docs/governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md
+- docs/architecture/EMG_ADR-016_Enterprise_Ownership_Registry.md
+- docs/executive/RISK_OVERVIEW.md
 
 ## Slide 10: Security and Trust
 ### Executive Message
@@ -182,14 +209,16 @@ A "Zero Trust" and audit-first design approach is fundamental to the platform's 
 ### Slide Content
 - **Zero Trust, Uniformly Extended**: Authentication and authorization at point of use.
 - **Audit-First Design**: Event-based provenance tracking as a foundational capability.
-- **Explainable Intelligence**: Trust scoring mechanisms for retrieval.
+- **Explainable Intelligence**: The trust-scoring library is implemented;
+  live-service and platform-wide runtime adoption remain planned.
 - **Independence**: Agnostic approach to underlying providers and deployments.
 
 ### Recommended Visual
 Iconographic representation of the security and trust principles: Audit, Authorization, Trust-Scoring, Agnostic Design.
 
 ### Evidence Status
-Evidenced (Controls) / Planned (Mechanisms)
+Evidenced (foundational controls and trust-scoring library) / Planned
+(platform-wide mechanisms)
 
 ### Source Documents
 - docs/security/SECURITY_ARCHITECTURE_OVERVIEW.md
@@ -216,13 +245,19 @@ Proposed
 
 ## Slide 12: Implementation Roadmap
 ### Executive Message
-The platform follows a structured, capability-based roadmap to incrementally deliver core governance and intelligence layers.
+The L4 delivery roadmap records completed, planned, and undefined work without
+creating product or architecture authority.
 
 ### Slide Content
 - **Foundation**: Established identity, authorization, and audit capability.
-- **Knowledge & Trust**: Core ontology and validation implementation.
-- **Retrieval & Grounding**: Search and knowledge retrieval pipeline.
-- **Agent Operations**: AI agent deployment with human approval enforcement.
+- **Knowledge & Trust**: Core libraries implemented; live-service and
+  platform-wide adoption incomplete.
+- **ADR-027 Stage 4 Phase 4A**: HTTP/API delivery conformance complete on
+  `develop` at `0726bde`.
+- **ADR-027 Phases 4B–4E**: Not started; scope remains undefined.
+- **Retrieval & Grounding (Planned)**: Search and knowledge retrieval pipeline.
+- **Agent Operations (Planned)**: AI agent deployment with human approval
+  enforcement.
 
 ### Recommended Visual
 Gantt-style phased timeline indicating the progression of capability maturity.
@@ -238,15 +273,18 @@ Evidenced / Declared / Planned
 While foundational controls are established, key operational risks and strategic decisions require executive attention.
 
 ### Slide Content
-- **Evidenced Controls**: Audit-first design; Human-in-the-Loop approval gateways.
-- **Unresolved Risks**: AI explainability; storage independence implementation.
+- **Evidenced Foundations**: Audit capabilities plus implemented trust-scoring
+  and persistence libraries.
+- **Unresolved Risks**: Platform-wide trust-scoring adoption, live service
+  persistence binding, and constructed HITL enforcement.
 - **Decisions Required**: Enterprise-wide risk appetite and target delivery dates for roadmap phases.
 
 ### Recommended Visual
 Three-column table: Evidenced Controls, Unresolved Risks, Decisions Required.
 
 ### Evidence Status
-Evidenced
+Evidenced (implemented foundations) / Planned or unresolved (platform-wide
+adoption and HITL enforcement)
 
 ### Source Documents
 - docs/executive/RISK_OVERVIEW.md
