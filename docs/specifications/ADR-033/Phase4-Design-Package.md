@@ -148,7 +148,7 @@ mapping are recorded in
 
 ## 13. Future Work
 *   Bulk/Batch mutation endpoints — **rejected for the current Stage 4 scope by D-A-004 (2026-08-01)**; batch semantics remain accepted at ADR-027 §11.1 and §10.5 and unexposed. Any future transport requires a new Architecture Board decision and ADR-027 Revision 6.
-*   Advanced query capability over the mutation ledger (Stage 5).
+*   ~~Advanced query capability over the mutation ledger (Stage 5).~~ **Removed (2026-08-01) — unsupported by any accepted ADR.** ADR-030 Revision 4 §4.2 scopes itself to the durable mutation record, fingerprint contract, replay contract, and the transaction composition required to make idempotency atomic with GraphStore, and defines no ledger query capability. ADR-027 Stage 5 is deployment documentation and rollout. This correction records the removal only; it implies no capability, no owner, and no future work.
 *   Tenant-specific self-service recovery portal — no UI is authorized in ADR-027 Stage 4 (D-A-004, BD-6).
 *   Supported-schema discovery surface, after its transport contract is ratified (T-A-002; outside Stage 4 per D-A-004, BD-7).
 

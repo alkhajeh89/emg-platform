@@ -196,6 +196,7 @@ like D-A-001, D-A-002, and D-A-004.
 | OBS-A-002 | Knowledge Graph Service Two-Package Structure | Accept as intentional, documented pattern (Actioned 2026-07-27) | See below |
 | OBS-A-003 | ADR-025 Knowledge Graph Authorization Enforcement — implementation-time findings | Accept both fixes as-implemented; registry-allow-list gap remains open (follow-up, not blocking) (Actioned 2026-07-27) | See below |
 | OBS-A-004 | ADR-026 Revision 2 Knowledge Graph Classification Enforcement — Phase 2 (D7–D13) completion record | Accept ADR-026 Revision 2 as fully implemented (Phase 1 + Phase 2); adopt Appendix ADR-026A's three principles as the standing rule for future `required_resource_attributes` reuse (Actioned 2026-07-27) | See below |
+| OBS-A-005 | ADR-027 Revision 5 §5.3 and ADR-025 §11 compose correctly — human-only mutation sequencing | Record as an implementation sequencing observation; no architecture change, no ADR modification, no new decision (2026-08-01) | See below |
 
 ### OBS-A-001 — Platform Core Dependency Direction Review
 
@@ -548,6 +549,37 @@ fully implemented (Phase 1 + Phase 2). Full `pytest`/`ruff`/`black`/
 `mypy --strict`/dependency-governance validation passed repo-wide for every
 batch, including this one. No code was committed as part of this
 documentation-only update.
+
+---
+
+### OBS-A-005 — ADR-027 Revision 5 §5.3 and ADR-025 §11 compose correctly — human-only mutation sequencing
+
+**Trigger:** An independent Architecture Board review asked whether
+ADR-027 Revision 5's authorization of human callers contradicts ADR-025's
+treatment of the human Knowledge Graph authentication path as future work.
+
+**Finding:** The two accepted ADRs compose correctly. ADR-027 Revision 5
+§5.3 restricts Restore, Merge, and Reclassify to
+`required_roles=["knowledge-steward"]`. ADR-025 §8.9 records the human
+`Principal` login path for the Knowledge Graph API as a reserved extension
+point not implemented by that ADR, and notes that
+`AuthorizationRequest.principal` is already typed generically so that adding
+a human path later requires no change to its authorization call site.
+
+**Repository-verified behaviour:** the three human-only mutation operations
+are intentionally unreachable for the service callers that exist today.
+`services/knowledge-graph/tests/test_authz_scenarios.py` asserts an
+`expected_outcome="deny"` for the writer service principal against
+`knowledge-graph.entity` `restore`, `merge`, and `reclassify`. This
+observation records only that tested behaviour.
+
+**Sequencing:** human authentication for the Knowledge Graph API remains
+future work under ADR-025 §8.9.
+
+**Status: Observation only (2026-08-01).** This is an implementation
+sequencing observation. It records no architecture change, modifies no ADR,
+and creates no new decision. No code, test, schema, or configuration was
+changed to produce it.
 
 ---
 
