@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from emg_persistence import PersistenceSettings
@@ -73,6 +74,7 @@ def pg_executor() -> Iterator[object]:  # pragma: no cover - runs only with a li
                 created_roles.add(_MIGRATOR_ROLE)
             cur.execute(_RESET_SCHEMA_SQL)
             cur.execute(_CREATE_SCHEMA_SQL)
+            cur.execute(f"GRANT CREATE, USAGE ON SCHEMA {_TEST_SCHEMA} TO {_MIGRATOR_ROLE}")
             cur.execute(_SET_SEARCH_PATH_SQL)
         conn.commit()
         yield PostgresMigrationExecutor(conn)
@@ -111,11 +113,13 @@ def neo4j_executor() -> Iterator[object]:  # pragma: no cover - runs only with a
 @requires_postgres
 def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
     applied = run_migrations(pg_executor)
-    assert [a.version for a in applied] == [1, 2, 3, 4, 5]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"
     assert applied[3].name == "mutation_ledger"
+    assert applied[4].name == "runtime_least_privilege"
+    assert applied[5].name == "runtime_column_privileges"
     assert run_migrations(pg_executor) == ()
     assert migration_status(pg_executor).is_up_to_date is True
 
@@ -140,6 +144,160 @@ def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # ty
             "current_schema() || '.mutation_idempotency', 'DELETE')"
         )
         assert cursor.fetchone() == (True, False, True)
+
+
+@requires_postgres
+def test_runtime_role_update_privileges_match_repository_operations(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
+    from psycopg.errors import InsufficientPrivilege
+
+    run_migrations(pg_executor)
+    connection = pg_executor._connection
+    mutation_id = uuid4()
+    tenant_id = "runtime-privilege-tenant"
+
+    # Seed the immutable ledger and dispatch rows without exercising their
+    # semantic triggers because this test verifies privileges only.
+    with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "INSERT INTO mutation_ledger (mutation_id, tenant_id, principal_id, "
+            "principal_kind, idempotency_key, command_fingerprint, "
+            "fingerprint_version, command_schema_version, operation, status, "
+            "graph_revision, graph_content_hash, write_receipt, mutation_result, "
+            "audit_intents, resource_count, requested_at, graph_revision_at, "
+            "replay_expires_at) VALUES (%s, %s, 'runtime-principal', 'service', "
+            "'runtime-privilege-ledger', %s, 1, 1, 'create_entity', 'succeeded', "
+            "1, 'hash-1', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 1, "
+            "clock_timestamp() - interval '1 second', "
+            "clock_timestamp() - interval '1 second', "
+            "clock_timestamp() + interval '1 hour')",
+            (mutation_id, tenant_id, "a" * 64),
+        )
+        cursor.execute(
+            "INSERT INTO mutation_dispatch (mutation_id, tenant_id, channel) "
+            "VALUES (%s, %s, 'audit')",
+            (mutation_id, tenant_id),
+        )
+
+    with connection.cursor() as cursor:
+        cursor.execute(f"SET ROLE {_APP_ROLE}")
+    connection.commit()
+    try:
+        with connection.transaction(), connection.cursor() as cursor:
+            cursor.execute("INSERT INTO tenants (tenant_id) VALUES (%s)", (tenant_id,))
+            cursor.execute(
+                "INSERT INTO graph_revisions (tenant_id, revision_number, content_hash, "
+                "principal_id, principal_kind, node_count, edge_count, graph_json) "
+                "VALUES (%s, 1, 'hash-1', 'runtime-principal', 'service', 0, 0, '{}'::jsonb)",
+                (tenant_id,),
+            )
+            cursor.execute(
+                "INSERT INTO graph_head "
+                "(tenant_id, head_revision_number, head_content_hash) "
+                "VALUES (%s, 1, 'hash-1')",
+                (tenant_id,),
+            )
+            cursor.execute(
+                "INSERT INTO outbox (event_id, tenant_id, revision_number, content_hash, "
+                "event_type, schema_version, idempotency_key, payload) "
+                "VALUES (%s, %s, 1, 'hash-1', 'graph.updated', 1, "
+                "'runtime-privilege-event', '{}'::jsonb)",
+                (uuid4(), tenant_id),
+            )
+            cursor.execute(
+                "INSERT INTO projection_checkpoints "
+                "(tenant_id, revision_number, event_id) VALUES (%s, 1, %s)",
+                (tenant_id, uuid4()),
+            )
+            cursor.execute(
+                "INSERT INTO mutation_idempotency "
+                "(tenant_id, principal_id, idempotency_key, operation_type, "
+                "state, command_fingerprint, fingerprint_version, "
+                "command_schema_version, requested_at, expires_at) "
+                "VALUES (%s, 'runtime-principal', 'runtime-privilege-key', "
+                "'create_entity', 'pending', %s, 1, 1, clock_timestamp(), "
+                "clock_timestamp() + interval '1 hour')",
+                (tenant_id, "a" * 64),
+            )
+
+            cursor.execute(
+                "UPDATE graph_head SET head_revision_number = 2, "
+                "head_content_hash = 'hash-2', updated_at = clock_timestamp() "
+                "WHERE tenant_id = %s",
+                (tenant_id,),
+            )
+            assert cursor.rowcount == 1
+            cursor.execute(
+                "UPDATE mutation_idempotency SET state = 'succeeded', "
+                "mutation_id = %s, revision_number = 1, content_hash = 'hash-1', "
+                "receipt_json = '{}'::jsonb, mutation_result_json = '{}'::jsonb, "
+                "expires_at = expires_at + interval '1 hour' "
+                "WHERE tenant_id = %s AND principal_id = 'runtime-principal' "
+                "AND idempotency_key = 'runtime-privilege-key'",
+                (mutation_id, tenant_id),
+            )
+            assert cursor.rowcount == 1
+            cursor.execute(
+                "UPDATE mutation_dispatch SET claim_owner = 'runtime-worker', "
+                "claim_expires_at = clock_timestamp() + interval '1 minute', "
+                "attempt_count = attempt_count + 1 "
+                "WHERE mutation_id = %s AND channel = 'audit'",
+                (mutation_id,),
+            )
+            assert cursor.rowcount == 1
+            cursor.execute(
+                "UPDATE mutation_dispatch SET source_system_id = 'runtime-system', "
+                "source_timeline = 1, source_commit_lsn = '0/10', source_tx_index = 0 "
+                "WHERE mutation_id = %s AND channel = 'audit'",
+                (mutation_id,),
+            )
+            assert cursor.rowcount == 1
+            cursor.execute(
+                "UPDATE mutation_dispatch SET delivered_at = clock_timestamp(), "
+                "claim_owner = NULL, claim_expires_at = NULL "
+                "WHERE mutation_id = %s AND channel = 'audit'",
+                (mutation_id,),
+            )
+            assert cursor.rowcount == 1
+            cursor.execute(
+                "SELECT head_revision_number FROM graph_head WHERE tenant_id = %s", (tenant_id,)
+            )
+            assert cursor.fetchone() == (2,)
+            cursor.execute(
+                "DELETE FROM mutation_idempotency "
+                "WHERE tenant_id = %s AND principal_id = 'runtime-principal' "
+                "AND idempotency_key = 'runtime-privilege-key'",
+                (tenant_id,),
+            )
+            assert cursor.rowcount == 1
+
+        with (
+            pytest.raises(InsufficientPrivilege),
+            connection.transaction(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "UPDATE mutation_dispatch SET available_at = clock_timestamp() "
+                "WHERE mutation_id = %s AND channel = 'audit'",
+                (mutation_id,),
+            )
+        with (
+            pytest.raises(InsufficientPrivilege),
+            connection.transaction(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute("UPDATE outbox SET published_at = clock_timestamp()")
+        with (
+            pytest.raises(InsufficientPrivilege),
+            connection.transaction(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute("UPDATE projection_checkpoints SET processed_at = clock_timestamp()")
+    finally:
+        connection.rollback()
+        with connection.cursor() as cursor:
+            cursor.execute("RESET ROLE")
+        connection.commit()
 
 
 @requires_postgres
