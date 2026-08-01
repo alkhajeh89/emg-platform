@@ -41,7 +41,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 | ADR | Status | Implemented phase |
 | :--- | :--- | :--- |
-| ADR-027 Revision 5 | **Accepted** | **Stage 4 complete.** Phase 4A implemented (`08949e0`), reconciled (`f59cb4b`, `0ea7c74`), and merged to `develop` (`aefc82c`). Phase 4B implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required. Phase 4E governance and conformance closure is complete. The five-route transport surface is unchanged and authoritative. Stage 5 remains a separate, unstarted stage |
+| ADR-027 Revision 5 | **Accepted** | **Stage 4 complete.** Phase 4A implemented (`08949e0`), reconciled (`f59cb4b`, `0ea7c74`), and merged to `develop` (`aefc82c`). Phase 4B implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required. Phase 4E governance and conformance closure is complete. The five-route transport surface is unchanged and authoritative. Stage 5 deployment documentation is complete at `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md`; it documents role, policy-rule, and claim provisioning requirements only and claims no production readiness. Production rollout prerequisites remain open |
 | ADR-029 Revision 2 | **Accepted** | Domain implementation complete (`97b211d`) |
 | ADR-030 Revision 4 | **Accepted** | Atomic mutation ledger complete (`2dab646`) |
 | ADR-032 | **Accepted** | Mutation-path schema negotiation implemented; read-path adoption remains separate |

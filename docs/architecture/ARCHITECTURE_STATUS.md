@@ -28,8 +28,10 @@ one another:
   complete. The five-route transport surface remains unchanged and
   authoritative. ADR-027 owns metric **emission**; ADR-015 / FEAT-12-3 owns
   collection, storage, dashboards, tracing, and alerting. No UI is authorized
-  in Stage 4. ADR-027 **Stage 5** (deployment documentation and rollout)
-  remains a separate, unstarted stage.
+  in Stage 4. ADR-027 **Stage 5** deployment documentation is complete at
+  `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md`; it
+  documents role, policy-rule, and claim provisioning requirements only and
+  claims no production readiness. Production rollout prerequisites remain open.
 - **ADR-033 Revision 2 schema track.** Phase 3 is complete at commit `5288392`.
   ADR-033 Phase 4 is the future schema-registry phase for the first genuine
   second schema version and its production normalizer; it has not started. It
@@ -131,7 +133,7 @@ Only the following Architecture Decision Records are currently present in
 | ADR-021 | Enterprise API Strategy | Proposed |
 | ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted — implemented (Group C, 2026-07-27)** |
 | ADR-026 (Revision 2) | Knowledge Graph Classification Enforcement Model | **Accepted — fully implemented (Phase 1 + Phase 2, D1–D13, 2026-07-27)** |
-| ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — Stage 4 complete (PR #45, merge commit `6536b73`, 2026-08-01)**: Phase 4A HTTP/API delivery conformance completed at `aefc82c`. Phase 4B mutation-path observability emission was implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required; Phase 4E governance and conformance closure is complete. Exactly five approved HTTP mutation routes remain unchanged and authoritative. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. Stage 5 remains separate and unstarted. |
+| ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — Stage 4 complete (PR #45, merge commit `6536b73`, 2026-08-01)**: Phase 4A HTTP/API delivery conformance completed at `aefc82c`. Phase 4B mutation-path observability emission was implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required; Phase 4E governance and conformance closure is complete. Exactly five approved HTTP mutation routes remain unchanged and authoritative. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. Stage 5 deployment documentation is complete at `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md`; it documents role, policy-rule, and claim provisioning requirements only and claims no production readiness. Production rollout prerequisites remain open. |
 | ADR-029 (Revision 2) | Canonical Entity/Relationship Identity, Lifecycle, and Supersession Model | **Accepted — implemented (commit `97b211d`, tag `adr-029-approved-implementation`)** |
 | ADR-030 (Revision 4) | Mutation Ledger & Atomic Idempotency | **Accepted — implemented (Stage 3, commit `2dab646`, tag `adr-027-stage-3`)** |
 | ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted — mutation-path negotiation implemented; read-path adoption remains governed separately** |
