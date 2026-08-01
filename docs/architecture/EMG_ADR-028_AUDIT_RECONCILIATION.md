@@ -92,14 +92,29 @@ introduced by this ADR.**
 `mutation_ledger`, never mutates the graph, and never bypasses the audit
 service's own ingestion path.
 
-**Decision D-4.** Delivery is **at-least-once with idempotent acceptance**. The
-audit service already treats a repeated `event_id` as a duplicate and does not
-append a second record (`emg_audit_client/event.py:65-68`). ADR-028 relies on
-that existing property rather than introducing exactly-once semantics.
+**Decision D-4.** Delivery is **at-least-once with idempotent acceptance**.
+
+**Fact.** Audit idempotency is scoped to the **composite key
+`(source_principal, event_id)`**, not to `event_id` alone:
+
+- `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/stores.py:163` —
+  "Idempotency is scoped to (source_principal, event_id) so one producer…"
+- `stores.py:177,180,217` — the in-memory store keys on
+  `(source_principal, sanitized.event_id)`.
+- `stores.py:340` — the PostgreSQL store declares
+  `ON CONFLICT (source_principal, event_id) DO NOTHING`.
+
+The docstring at `emg_audit_client/event.py:65-68` describes `event_id` alone
+and is incomplete relative to the implementation. **This ADR relies on the
+composite key as implemented.**
+
+ADR-028 relies on that existing property rather than introducing exactly-once
+semantics. **Consequence:** idempotency holds only while `source_principal` is
+stable for a given logical producer — see D-26 and D-33.
 
 **Decision D-5.** ADR-028 introduces **no change to authorization semantics**.
-The projector authenticates to the audit service as an ordinary service
-principal under the existing ADR-034 trust model.
+The projector authenticates to the audit service as a tenant-scoped service
+principal under the existing ADR-034 trust model (D-28).
 
 ## 4. Scope
 
@@ -108,8 +123,8 @@ principal under the existing ADR-034 trust model.
 1. **Deterministic projection** of stored `MutationAuditIntent` values into the
    `SubmittedAuditEvent` producer contract.
 2. **Idempotent delivery** using a deterministic, reproducible `event_id`.
-3. **Tenant-preserving and classification-preserving mapping**, subject to
-   Open Question OQ-1.
+3. **Tenant-preserving and classification-preserving mapping**, resolved for
+   tenant by §10.1 (D-28, per-tenant projector identity).
 4. **Reconciliation** of mutation-sourced events with read-path and
    operation-level audit events, as ADR-027 `:1319` requires.
 5. **Retry, replay, failure, and recovery semantics** for the delivery path.
@@ -188,7 +203,8 @@ own `sequence_number`, which the audit store assigns on append.
 
 | Responsibility | In ADR-028 |
 | :--- | :--- |
-| Claim undelivered `mutation_dispatch` rows on channel `audit` | Yes |
+| Claim undelivered `mutation_dispatch` rows on channel `audit`, partitioned by `tenant_id` (D-29) | Yes |
+| Select the approved tenant-matching credential for each row (D-32) | Yes |
 | Read `mutation_ledger.audit_intents` for the claimed `mutation_id` | Yes |
 | Derive a deterministic `event_id` per intent | Yes |
 | Map `MutationAuditIntent` to `SubmittedAuditEvent` | Yes |
@@ -257,8 +273,8 @@ stored `audit_intents` collection. Two properties follow:
 1. **Reproducible.** The same ledger row always yields the same identities. The
    ledger is immutable (ADR-030 §4.4), so the collection order is stable.
 2. **Distinct per intent.** A multi-intent mutation produces distinct
-   `event_id` values, satisfying the audit service's per-`event_id` duplicate
-   rule.
+   `event_id` values, so each intent is a distinct entry under the audit
+   service's `(source_principal, event_id)` duplicate rule (D-4).
 
 **Decision D-10.** The exact derivation function is a normative contract this
 ADR fixes in principle and leaves to implementation review to express. It must
@@ -332,9 +348,71 @@ carries the correct tenant and has no target field.
 propose that the audit service accept a tenant from producer content, and it
 does not propose a bypass of the ingestion path.
 
-**Open Question OQ-1** records the resolution options. This ADR does not choose
-among them, because each has consequences for ADR-034's accepted model and the
-choice is the Board's.
+### 10.1 Tenant attribution — resolved
+
+**Fact.** Resolved by Architecture Board decision **ADR-028-OQ1-DP-01 —
+Option B**. This supersedes the former Open Question OQ-1.
+
+**Decision D-28 — per-tenant projector identity.** The Audit Projector processes
+mutation-dispatch work using a **tenant-scoped service identity whose verified
+token tenant claim matches the mutation tenant**. The audit service continues
+assigning `tenant_id` **exclusively from the verified producer token**,
+preserving ADR-034 unchanged. Correct attribution is achieved by making the
+producing identity correct, never by making the payload authoritative.
+
+**Decision D-29 — binding constraints.** All seven bind any implementation of
+this ADR:
+
+1. Work **must** be partitioned by `mutation_dispatch.tenant_id`.
+2. The selected projector credential **must** carry the same `tenant_id`.
+3. A projector credential **must never** process another tenant's work.
+4. Tenant attribution **must not** be accepted from `SubmittedAuditEvent` or any
+   producer-controlled payload.
+5. **ADR-034 remains unchanged.**
+6. **No `SubmittedAuditEvent` contract change is authorized.**
+7. **No trusted producer tenant-override role is authorized.**
+
+**Decision D-30 — data flow.** For each claimed dispatch row, the projector
+selects the credential whose token tenant claim equals that row's `tenant_id`,
+then delivers through the unmodified `POST /events` path. The audit router
+assigns `tenant_id` from that token
+(`services/audit/src/emg_audit_service/routers/events.py:76-82`), and the value
+enters version-3 event hashing
+(`libs/python/emg-audit-pipeline/src/emg_audit_pipeline/hashing.py:136-137`).
+
+**Consequence.** `test_audit_reads_are_tenant_scoped_before_pagination`
+(`services/audit/tests/test_reporting_api.py:510`) continues to describe the
+governing behaviour without modification. No audit contract, schema, hash
+version, or existing test changes.
+
+**Consequence.** Options rejected by the Board are recorded for the review
+trail: a single projector identity attributing all mutations to one tenant, and
+a trusted-producer tenant-override role. Neither is authorized by this ADR.
+
+### 10.2 Governance ownership of tenant-claim issuance
+
+**Decision D-31.** **Identity/Security owns issuance and validation of
+tenant-scoped projector credentials.** D-28 relocates the trust boundary from
+event content to credential issuance; that boundary requires a named owner.
+
+**Decision D-32.** The Audit Projector **may select only credentials from an
+approved tenant-to-projector identity mapping**. Incorrect tenant assignment is
+a **fail-closed deployment error**: the projector must refuse to process work
+for which no approved, tenant-matching credential resolves, rather than fall
+back to any other identity.
+
+**Fact.** `services/audit/src/emg_audit_service/authn.py:62-70`
+(`_RECOGNIZED_CLIENTS`) allow-lists client identifiers and their registered
+roles. It does not constrain the **value** of the `tenant_id` claim;
+`authn.py:145-156` requires only that the claim be present and non-blank.
+Constraining the claim value is therefore an issuance-side responsibility, not
+an audit-service check.
+
+**Decision D-33.** The storage and implementation mechanism for the
+tenant-to-projector identity mapping is **an implementation-design requirement
+and is not specified here.** This ADR fixes the required properties —
+approved, tenant-matching, fail-closed, and stable per D-26 — and leaves the
+mechanism to implementation review.
 
 **Decision D-17.** Classification is preserved by direct mapping:
 `MutationAuditIntent.classification` maps to the submitted event's
@@ -343,9 +421,14 @@ classification is downgraded, defaulted, or omitted in projection.
 
 ## 11. Security
 
-**Decision D-18.** The projector authenticates to the audit service as an
-ordinary service principal. It introduces no new authentication mechanism, no
-new trust relationship, and no new token claim.
+**Decision D-18.** The projector authenticates to the audit service as a
+**tenant-scoped** service principal (D-28). It introduces no new authentication
+mechanism, no new trust relationship, and no new token claim; it uses the
+existing `tenant_id` claim the ADR-034 service-token contract already requires.
+
+**Consequence.** Compromise of one projector credential is confined to that
+credential's tenant. A single multi-tenant projector identity would not have
+that containment property; D-28 rejects it.
 
 **Decision D-19.** The projector holds **read-only** access to `mutation_ledger`
 and write access limited to the four mutable `mutation_dispatch` operational
@@ -374,8 +457,9 @@ eligible for another worker, as ADR-030 §5.4 already specifies.
 
 **Decision D-22 — partial delivery within one mutation.** A multi-intent
 mutation may fail after delivering some of its events. Because `event_id` is
-deterministic (D-9), redelivery of the whole collection is safe: already-accepted
-events are recognized as duplicates by the audit service and not appended twice.
+deterministic (D-9) **and `source_principal` is stable (D-26)**, redelivery of
+the whole collection is safe: already-accepted events match an existing
+`(source_principal, event_id)` pair and are not appended twice.
 **The unit of retry is the mutation, not the individual event.**
 
 **Decision D-23 — reconciliation status model.** Reconciliation status is
@@ -402,11 +486,28 @@ any projector outcome.
 the projector leaves `mutation_dispatch` rows undelivered and queryable; ADR-030
 §5.4 already guarantees they are not lost. Restarting resumes from the work set.
 
-**Decision D-26 — replay behaviour.** Replay is performed by clearing
-`delivered_at` for the affected rows and allowing normal claiming to resume.
-Because `event_id` is deterministic (D-9), replayed events are recognized as
-duplicates and do not create second records. **Replay is therefore safe by
-construction and requires no reconciliation of the audit store.**
+**Decision D-26 — replay behaviour and source-principal stability.** Replay is
+performed by clearing `delivered_at` for the affected rows and allowing normal
+claiming to resume. Replay safety depends on **both** halves of the audit
+service's composite idempotency key (D-4):
+
+1. `event_id` is deterministic (D-9); and
+2. **`source_principal` is stable.**
+
+**Per-tenant projector `source_principal` identities must remain stable across
+process restarts, credential rotation, retries, and replay. A change in
+`source_principal` can cause the same deterministic `event_id` to be accepted as
+a second audit event.**
+
+**Decision D-34 — credential rotation.** Credential rotation **must preserve the
+stable logical client identity used as `source_principal`**. Rotating the
+underlying secret is permitted; changing the logical identity presented to the
+audit service is not, because it silently breaks deduplication for every event
+already delivered under the previous identity.
+
+**Consequence.** With D-9, D-26, and D-34 held, replay is safe by construction
+and requires no reconciliation of the audit store. If D-34 is violated, replay
+produces duplicate audit records that no mechanism in this design detects.
 
 **Consequence.** No persisted state outside `mutation_dispatch`'s mutable
 operational fields depends on this ADR's mechanism.
@@ -473,6 +574,25 @@ projector is enabled.
   read API alongside read-path and operation-level events, satisfying
   ADR-027 `:1319`.
 
+**Tenant attribution (D-28 through D-34)**
+
+- AC-22. Work is partitioned by `mutation_dispatch.tenant_id`.
+- AC-23. The credential used for a row carries a token `tenant_id` claim equal
+  to that row's `tenant_id`.
+- AC-24. A projector credential never processes another tenant's work.
+- AC-25. No tenant value is read from `SubmittedAuditEvent` or any
+  producer-controlled payload.
+- AC-26. A row for which no approved, tenant-matching credential resolves is
+  refused fail-closed and left undelivered; no fallback identity is used.
+- AC-27. `source_principal` is stable across restarts, credential rotation,
+  retries, and replay.
+- AC-28. Rotating a credential's secret does not change the logical identity
+  presented as `source_principal`.
+- AC-29. Redelivery and replay create no second audit record under the
+  `(source_principal, event_id)` key.
+- AC-30. ADR-034, the `SubmittedAuditEvent` contract, the audit event schema
+  version, and `services/audit/tests/test_reporting_api.py:510` are unchanged.
+
 ## 16. Consequences
 
 **Positive**
@@ -489,11 +609,17 @@ projector is enabled.
 - A new long-running component enters the platform, with its own failure,
   claim-expiry, and monitoring characteristics.
 - At-least-once delivery makes correctness dependent on the audit service's
-  existing `event_id` duplicate rule. Should that rule change, this design's
-  idempotency guarantee changes with it.
+  existing `(source_principal, event_id)` duplicate rule. Should that rule
+  change, this design's idempotency guarantee changes with it.
 - Four ledger facts — `idempotency_key`, `related_resource_ids`,
   `revision_number`, `content_hash` — have no destination in the current audit
   contract and are not delivered unless OQ-6 is resolved otherwise.
+- Per-tenant projector identities (D-28) require one credential per tenant.
+  Credential provisioning and rotation burden scales with tenant count, and
+  rotation is constrained by D-34.
+- The trust boundary for tenant attribution moves to credential issuance
+  (D-31). A credential issued with an incorrect `tenant_id` claim would produce
+  correctly-hashed audit events attributed to the wrong tenant.
 
 **Neutral**
 
@@ -505,14 +631,16 @@ projector is enabled.
 Each of the following lacks sufficient repository evidence to decide. None is
 answered by inference in this draft.
 
-**OQ-1 — Tenant attribution across the producer boundary. (Blocking)**
-ADR-034 assigns `tenant_id` from the verified producer token, never from
-producer content. `MutationAuditIntent.tenant` carries the authoritative tenant
-and has no target field. Options include: a per-tenant projector identity; an
-ADR-034-governed exception permitting a trusted projector to assert tenant; or
-accepting attribution to the projector's own tenant. **Each option has
-consequences for ADR-034's accepted model. The Board must choose; this ADR does
-not.**
+### 17.1 Resolved
+
+**OQ-1 — Tenant attribution across the producer boundary. RESOLVED.**
+Resolved by Architecture Board decision **ADR-028-OQ1-DP-01 — Option B
+(per-tenant projector identity)**. See §10.1 (D-28 through D-30), §10.2 (D-31
+through D-33), §13 (D-26, D-34), and acceptance criteria AC-22 through AC-30.
+ADR-034 remains unchanged; no `SubmittedAuditEvent` contract change and no
+trusted producer tenant-override role is authorized.
+
+### 17.2 Unresolved
 
 **OQ-2 — `actor_type`, `module`, and `source_system` derivation.**
 All three are required or read by the audit contract and absent from
@@ -573,7 +701,14 @@ cross-checking beyond shared storage is undecided.
   — `:123-158`
 - `services/knowledge-graph/src/emg_knowledge_graph/results.py` — `:39-56`
 - `libs/python/emg-audit-client/src/emg_audit_client/event.py` — `:60-82`
+- `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/stores.py` — `:163`,
+  `:177`, `:180`, `:217`, `:340` (composite idempotency key)
+- `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/hashing.py` —
+  `:136-137` (version-3 tenant inclusion)
+- `services/audit/src/emg_audit_service/authn.py` — `:62-70`, `:145-156`
 - `services/audit/src/emg_audit_service/routers/events.py` — `:60-86`
+- `services/audit/tests/test_reporting_api.py` — `:510`
+- Architecture Board decision **ADR-028-OQ1-DP-01 — Option B**
 - `docs/architecture/ARCHITECTURE_STATUS.md`
 - `docs/architecture/EMG_ARCHITECTURE_DECISION_REGISTER.md`
 - `docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md` — `:91`
