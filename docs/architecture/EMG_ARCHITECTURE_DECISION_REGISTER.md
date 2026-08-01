@@ -35,13 +35,13 @@ not constitute approved architecture unless explicitly marked Accepted.
 | ID | Decision Area | Status | Owner | Evidence |
 | :--- | :--- | :--- | :--- | :--- |
 | D-A-003 | Entity/Relationship Identity, Lifecycle & Supersession Model | **Accepted — ADR-029 Revision 2 implemented (2026-07-28)** | Architecture Board / Chief Data Officer | `docs/architecture/EMG_ADR-029_ENTITY_RELATIONSHIP_IDENTITY_LIFECYCLE_SUPERSESSION_MODEL.md`; commit `97b211d`; tag `adr-029-approved-implementation` |
-| D-A-004 | ADR-027 Stage 4 Phases 4B–4E Scope Definition | **Accepted — Architecture Board, 2026-08-01** | Chief Data Officer (accountable owner); Architecture Board (approving authority) | `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2; `docs/specifications/ADR-033/Phase4-Design-Package.md` §11; commits `08949e0`, `f59cb4b`, `0ea7c74`; merge commit `aefc82c`; baseline `9588c6d` |
+| D-A-004 | ADR-027 Stage 4 Phases 4B–4E Scope Definition | **Accepted — Architecture Board, 2026-08-01** | Chief Data Officer (accountable owner); Architecture Board (approving authority) | `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2; `docs/specifications/ADR-033/Phase4-Design-Package.md` §11; `docs/specifications/ADR-027/ADR-027_STAGE4_CLOSURE_RECORD.md`; Phase 4A commits `08949e0`, `f59cb4b`, `0ea7c74` and merge commit `aefc82c`; Phase 4B implementation commit `c6c28bb` and PR #45 merge commit `6536b73`; baseline `9588c6d` |
 
 ## Knowledge Graph ADR Implementation Status
 
 | ADR | Status | Implemented phase |
 | :--- | :--- | :--- |
-| ADR-027 Revision 5 | **Accepted** | Stage 4 Phase 4A implemented (`08949e0`), reconciled (`f59cb4b`, `0ea7c74`), merged to `develop` (`aefc82c`). Stage 4 scope resolved by D-A-004 (2026-08-01): Phase 4B approved as mutation observability emission; Phases 4C and 4D closed as not required; Phase 4E is Stage 4 governance closure. The five-route transport surface is unchanged. Stage 5 remains a separate, unstarted stage |
+| ADR-027 Revision 5 | **Accepted** | **Stage 4 complete.** Phase 4A implemented (`08949e0`), reconciled (`f59cb4b`, `0ea7c74`), and merged to `develop` (`aefc82c`). Phase 4B implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required. Phase 4E governance and conformance closure is complete. The five-route transport surface is unchanged and authoritative. Stage 5 remains a separate, unstarted stage |
 | ADR-029 Revision 2 | **Accepted** | Domain implementation complete (`97b211d`) |
 | ADR-030 Revision 4 | **Accepted** | Atomic mutation ledger complete (`2dab646`) |
 | ADR-032 | **Accepted** | Mutation-path schema negotiation implemented; read-path adoption remains separate |
@@ -124,7 +124,10 @@ answered. See `docs/devops/DEPENDENCY_GOVERNANCE.md` for the fix detail.
 **Current state:** Resolved by the Architecture Board on 2026-08-01 against
 baseline `develop` `9588c6d`. ADR-027 Revision 5 Stage 4 Phase 4A was
 implemented at commit `08949e0`, reconciled at `f59cb4b` and `0ea7c74`, and
-merged to `develop` at `aefc82c`.
+merged to `develop` at `aefc82c`. Phase 4B was implemented at commit
+`c6c28bb` and merged through PR #45 at merge commit `6536b73`. Phase 4E has
+completed the documentation-only governance and conformance closure, and
+ADR-027 Revision 5 Stage 4 is complete.
 
 **Owner:** Chief Data Officer (accountable owner, Module 7, ADR-016 §1).
 
@@ -134,7 +137,9 @@ merged to `develop` at `aefc82c`.
 
 **Resolution:**
 
-- **Phase 4B — Approved.** Mutation-path observability emission only:
+- **Phase 4B — Approved and implemented.** Mutation-path observability
+  emission only, implemented at `c6c28bb` and merged through PR #45 at
+  `6536b73`:
   `mutation_requests_total`, `mutation_latency_seconds`,
   `idempotency_hits_total`, `authorization_denials_total`, and completion of
   safe structured-log fields at the mutation boundary. Excluded: any new
@@ -150,8 +155,11 @@ merged to `develop` at `aefc82c`.
   rollout remain ADR-027 Stage 5. IaC, secrets management, observability
   backends, HA/DR, dashboards, and alerting remain in the
   production-readiness track.
-- **Phase 4E — Approved.** Stage 4 governance and conformance closure;
-  documentation and register reconciliation only.
+- **Phase 4E — Complete.** Stage 4 governance and conformance closure;
+  documentation and register reconciliation only, with no new capability.
+
+The complete Stage 4 evidence and D-A-004 conformance mapping are recorded in
+`docs/specifications/ADR-027/ADR-027_STAGE4_CLOSURE_RECORD.md`.
 
 **Confirmed boundaries:**
 

@@ -10,6 +10,11 @@ The objective of ADR-027 Revision 5 Stage 4 Phase 4A is to expose the ratified K
 ### 1.1 Implementation Status
 ADR-027 Revision 5 Stage 4 Phase 4A is implemented. The five approved mutation routes are registered, schema negotiation is live on each mutation request, and this package records the final Phase 4A conformance state: identity normalization is an explicit always-run step, OpenAPI metadata reflects the live contract, and focused acceptance evidence covers the transport boundary. This status does not authorize new routes, commands, schema versions, or normalizers.
 
+ADR-027 Revision 5 Stage 4 is complete. Phase 4B observability emission was
+implemented at `c6c28bb` and merged through PR #45 at `6536b73`; Phases 4C and
+4D are closed as not required, and Phase 4E governance and conformance closure
+is complete.
+
 ### 1.2 Phase Identity
 The phase names belong to two distinct accepted plans and are not interchangeable:
 
@@ -102,7 +107,7 @@ Application errors currently use the repository-standard `ApiResponse`/`ApiError
 ## 8. Observability
 *   **Tracing:** `X-Correlation-ID` is optional. Existing middleware accepts a caller-supplied value or generates one when absent, then returns and propagates it.
 *   **Logging:** Structured JSON logs at every layer, including correlation and audit metadata where available.
-*   **Metrics:** `mutation_requests_total`, `mutation_latency_seconds`, `idempotency_hits_total`, and `authorization_denials_total` remain later ADR-027 delivery-hardening targets; ADR-033 negotiation metrics retain their accepted definitions.
+*   **Metrics:** Phase 4B implements emission of `mutation_requests_total`, `mutation_latency_seconds`, `idempotency_hits_total`, and `authorization_denials_total`, together with safe structured logs at the mutation boundary (`c6c28bb`, merged through PR #45 at `6536b73`). ADR-027 owns emission only; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. ADR-033 negotiation metrics retain their accepted definitions.
 
 ## 9. Security Model
 *   **Authorization:** Preflight evaluation via `PolicyEnforcementPoint` (ADR-025/026), followed by revalidation against the exact graph snapshot inside the transaction.
@@ -121,14 +126,18 @@ Application errors currently use the repository-standard `ApiResponse`/`ApiError
 | Phase | Scope | Status |
 | :--- | :--- | :--- |
 | **4A** | HTTP/API delivery conformance | **Implemented.** Five ADR-027 Revision 5 routes registered; schema negotiation live on mutation requests; always-run normalization, OpenAPI, and focused acceptance evidence complete. Merged to `develop` at `aefc82c`. |
-| **4B** | Mutation-path observability emission | **Approved, not started.** `mutation_requests_total`, `mutation_latency_seconds`, `idempotency_hits_total`, `authorization_denials_total`, and safe structured-log field completion at the mutation boundary. No new route, no new command, no DTO change, no payload or classification content in metric labels, no metrics backend, no dashboards, no alerts, no tracing collector, no production-readiness work. Emission only; ADR-015 / FEAT-12-3 owns collection and alerting. |
+| **4B** | Mutation-path observability emission | **Implemented.** Implementation commit `c6c28bb`; merged through PR #45 at `6536b73`. Emits `mutation_requests_total`, `mutation_latency_seconds`, `idempotency_hits_total`, `authorization_denials_total`, and safe structured logs at the mutation boundary. No new route, command, or DTO change; no payload or classification content in metric labels; no metrics backend, dashboard, alert, tracing collector, or production-readiness work. Emission only; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. |
 | **4C** | — | **Closed as not required (D-A-004, 2026-08-01).** A batch mutation HTTP route is rejected for the current Stage 4 scope. The five-route surface in §5 remains authoritative and complete. Batch semantics (ADR-027 §11.1, §10.5) remain accepted and unexposed; any future transport requires a new Board decision and ADR-027 Revision 6. |
 | **4D** | — | **Closed as not required (D-A-004, 2026-08-01).** Deployment documentation and rollout remain ADR-027 Stage 5; infrastructure, secrets, observability backends, HA/DR, dashboards, and alerting remain in the production-readiness track. |
-| **4E** | Stage 4 governance and conformance closure | **Approved, not started.** Documentation and register reconciliation only; no new capability. |
+| **4E** | Stage 4 governance and conformance closure | **Complete.** Documentation and register reconciliation only; no new capability. |
 
 Stage 4 scope was resolved by decision D-A-004 (Architecture Board,
 2026-08-01; accountable owner: Chief Data Officer). This package records that
 resolution; it does not create or amend an ADR.
+
+ADR-027 Revision 5 Stage 4 is complete. Its evidence and D-A-004 conformance
+mapping are recorded in
+`docs/specifications/ADR-027/ADR-027_STAGE4_CLOSURE_RECORD.md`.
 
 ## 12. Definition of Done
 *   All five approved mutation endpoints fully functional, authorized, and compliant.
@@ -144,7 +153,7 @@ resolution; it does not create or amend an ADR.
 *   Supported-schema discovery surface, after its transport contract is ratified (T-A-002; outside Stage 4 per D-A-004, BD-7).
 
 ## 14. Appendix
-*   **Governing delivery ADR:** ADR-027 Revision 5, Stage 4 Phase 4A.
+*   **Governing delivery ADR:** ADR-027 Revision 5, Stage 4. Phase 4A and Phase 4B are implemented; Phases 4C and 4D are closed as not required; Phase 4E and Stage 4 are complete.
 *   **Consumed schema ADR:** ADR-033 Revision 2, implemented through its Phase 3. Its distinct Phase 4—the first genuine second schema version and production normalizer—has not started and is outside this package.
 *   **Other referenced ADRs:** ADR-025, ADR-026, ADR-029, ADR-030 Revision 4, and ADR-032.
 *   **Referenced Modules:** `emg-knowledge-graph-api`, `emg-auth-client`, `emg-policy-engine`, `emg-persistence`.
