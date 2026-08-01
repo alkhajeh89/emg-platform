@@ -68,7 +68,9 @@ Preface
 
 # Preface
 
-Architecture Phase is closed. Architecture Baseline v1.0 — the Product Vision through ADR-017 — is frozen and is not reopened, redesigned, or modified by this document. This plan answers a different question than the baseline documents: not "what is the architecture" but "in what order, by whom, and to what standard do we build it." Every technology, sequencing, and staffing decision below is a build-execution decision made *within* the frozen baseline's contracts (Modules 1–10, ADR-012 through ADR-017); none of it redefines a contract those documents already settled. Where this plan names a specific technology (Section 4), it does so because Technology Stack Selection is an engineering-execution decision the architecture baseline deliberately left open — consistent with ADR-014 through ADR-017 and every module's technology-agnostic design.
+Architecture Phase is closed. Architecture Baseline v1.0 — the Product Vision through the ADRs accepted at
+baseline publication — is frozen and is not reopened, redesigned, or modified by this document. This plan answers a different question than the baseline documents: not "what is the architecture" but "in what order, by whom, and to what standard do we build it." Every technology, sequencing, and staffing decision below is a build-execution decision made *within* the frozen baseline's contracts (Modules 1–10 and the accepted ADRs recorded in
+`EMG_ARCHITECTURE_DECISION_REGISTER.md`); none of it redefines a contract those documents already settled. Where this plan names a specific technology (Section 4), it does so because Technology Stack Selection is an engineering-execution decision the architecture baseline deliberately left open — consistent with ADR-014 through ADR-017 and every module's technology-agnostic design.
 
 # 1. Engineering Strategy
 

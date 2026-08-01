@@ -900,13 +900,12 @@ sequenceDiagram
 
 ## 43. MVP — Enterprise Readiness
 
-The MVP is the first version deployable into a **controlled pilot** for a real regulated use case, single tenant, private-cloud (air-gap-ready design).
-
-**Included:** full **bitemporal** memory + as-of across engines · **entity resolution** with reversible human review · **provenance/lineage** UI · **ABAC + RBAC + labels** to property level with redaction · **Data Fabric** (virtualization + metadata + MDM + lineage + quality) · **Knowledge Fabric** (knowledge-product lifecycle) · **Decision Intelligence + Decision Replay** (production-grade) · **core Digital Twins** (organization, operations, risk, incident) · **Agent Ecosystem** (Executive, Investigation, Risk, Compliance, Audit, at minimum) · **Enterprise Copilot** · **Command Center** (executive, operations, risk, AI-recs, investigations dashboards) · **one Predictive** category live (calibrated, monitored) · **HITL** across all consequential paths · **immutable audit** with reconstruction · **Zero-Trust** (federated identity, PAM, encryption, mesh) · observability/SLOs · backup/restore · **Integration Framework** with typed connectors (owner-authorized).
-
-**Deferred to production:** full simulation roster · confidential computing at scale · multi-tenant isolation · horizontal sharding at billions-scale · full predictive portfolio · full accreditation package · 24/7 operability.
-
-**Exit criterion:** passes a security review and a real pilot use case with complete audit trails and grounded, cited intelligence.
+MVP scope is frozen at `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §24,
+which explicitly excludes ABAC/classification enforcement, semantic/AI search,
+dashboards, SDKs, multi-tenancy, and on-prem/air-gapped deployment from MVP.
+The enterprise-readiness capabilities previously listed here describe the v1.0
+and v2.0 horizons (Freeze §25, §26), not MVP. The deferred list previously
+given here is likewise superseded by Freeze §25 and §26.
 
 ## 44. Production Platform (Governments & Large Enterprises)
 
