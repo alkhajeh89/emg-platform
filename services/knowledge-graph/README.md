@@ -107,17 +107,12 @@ needed."
   `EMG_KNOWLEDGE_GRAPH_API_POLICY_CONFIG_PATH` explicitly; it relies on the
   packaged example via the `Dockerfile` change above.
 
-**Known limitation (flagged, not fixed by this change):** unlike
-`services/audit`'s `_RECOGNIZED_CLIENTS` or `services/identity`'s
-`SERVICE_REGISTRY`, this service's `TenantServiceTokenValidator`
-(`authn.py`) does not check an inbound service token's `client_id` against
-any allow-list — any validly-signed token for the configured Keycloak
-realm/audience is accepted, and no service client is currently registered
-anywhere specifically as a Knowledge Graph API consumer. Policy rules
-granting a role (e.g. `service-account`) therefore grant that access to
-*any* service holding that realm role, not to a specifically reviewed
-Knowledge Graph consumer. Introducing a registry-based allow-list, mirroring
-`identity`/`audit`, is a follow-up task outside this ADR's authorized scope.
+**Client allow-list (updated).** `TenantServiceTokenValidator` (`authn.py`)
+now checks an inbound service token's `azp`/`client_id` against
+`_RECOGNIZED_CLIENTS` and requires the registered roles for that client, in the
+same shape as `services/audit` and `services/identity`. The broader
+platform-wide client-registry follow-up remains recorded in
+`docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md`.
 
 ## Schema negotiation (ADR-033)
 
@@ -144,3 +139,12 @@ requests, and successful responses return the same accepted contract in
 `Effective-Schema-Version`. Readiness, structured telemetry, and schema
 metrics expose the canonical version and catalog generation without exposing
 the catalog filesystem path.
+
+## Mutation deployment requirements (ADR-027 Stage 5)
+
+Deploying the five mutation routes requires the realm roles
+`knowledge-steward` and `svc-knowledge-graph-writer`, the mutation policy rules
+shipped in `config/policy.example.yaml`, and the `tenant_id` and
+`classification_clearance` token claims. Full requirements, fail-closed
+behaviour, and production prerequisites are documented in
+`docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md`.
