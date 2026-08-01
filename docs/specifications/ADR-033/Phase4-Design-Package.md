@@ -118,13 +118,17 @@ Application errors currently use the repository-standard `ApiResponse`/`ApiError
 
 ## 11. ADR-027 Stage 4 Delivery Status
 
-| Phase | Scope | Acceptance Criteria |
+| Phase | Scope | Status |
 | :--- | :--- | :--- |
-| **4A** | HTTP/API delivery conformance | **Implemented:** five ADR-027 Revision 5 routes are registered, schema negotiation runs on mutation requests, and the current conformance patch completes the always-run normalization, OpenAPI, and focused acceptance-test requirements recorded by this package. |
-| **4B** | Next ADR-027 delivery phase | **Next phase; not complete.** This package neither defines nor claims completion of its scope. |
-| **4C** | Later ADR-027 delivery phase | **Not started.** |
-| **4D** | Later ADR-027 delivery phase | **Not started.** |
-| **4E** | Later ADR-027 delivery phase | **Not started.** |
+| **4A** | HTTP/API delivery conformance | **Implemented.** Five ADR-027 Revision 5 routes registered; schema negotiation live on mutation requests; always-run normalization, OpenAPI, and focused acceptance evidence complete. Merged to `develop` at `aefc82c`. |
+| **4B** | Mutation-path observability emission | **Approved, not started.** `mutation_requests_total`, `mutation_latency_seconds`, `idempotency_hits_total`, `authorization_denials_total`, and safe structured-log field completion at the mutation boundary. No new route, no new command, no DTO change, no payload or classification content in metric labels, no metrics backend, no dashboards, no alerts, no tracing collector, no production-readiness work. Emission only; ADR-015 / FEAT-12-3 owns collection and alerting. |
+| **4C** | — | **Closed as not required (D-A-004, 2026-08-01).** A batch mutation HTTP route is rejected for the current Stage 4 scope. The five-route surface in §5 remains authoritative and complete. Batch semantics (ADR-027 §11.1, §10.5) remain accepted and unexposed; any future transport requires a new Board decision and ADR-027 Revision 6. |
+| **4D** | — | **Closed as not required (D-A-004, 2026-08-01).** Deployment documentation and rollout remain ADR-027 Stage 5; infrastructure, secrets, observability backends, HA/DR, dashboards, and alerting remain in the production-readiness track. |
+| **4E** | Stage 4 governance and conformance closure | **Approved, not started.** Documentation and register reconciliation only; no new capability. |
+
+Stage 4 scope was resolved by decision D-A-004 (Architecture Board,
+2026-08-01; accountable owner: Chief Data Officer). This package records that
+resolution; it does not create or amend an ADR.
 
 ## 12. Definition of Done
 *   All five approved mutation endpoints fully functional, authorized, and compliant.
@@ -134,10 +138,10 @@ Application errors currently use the repository-standard `ApiResponse`/`ApiError
 *   No new architectural debt created.
 
 ## 13. Future Work
-*   Bulk/Batch mutation endpoints.
+*   Bulk/Batch mutation endpoints — **rejected for the current Stage 4 scope by D-A-004 (2026-08-01)**; batch semantics remain accepted at ADR-027 §11.1 and §10.5 and unexposed. Any future transport requires a new Architecture Board decision and ADR-027 Revision 6.
 *   Advanced query capability over the mutation ledger (Stage 5).
-*   Tenant-specific self-service recovery portal.
-*   Supported-schema discovery surface, after its transport contract is ratified.
+*   Tenant-specific self-service recovery portal — no UI is authorized in ADR-027 Stage 4 (D-A-004, BD-6).
+*   Supported-schema discovery surface, after its transport contract is ratified (T-A-002; outside Stage 4 per D-A-004, BD-7).
 
 ## 14. Appendix
 *   **Governing delivery ADR:** ADR-027 Revision 5, Stage 4 Phase 4A.
