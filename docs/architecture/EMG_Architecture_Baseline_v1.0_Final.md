@@ -137,7 +137,9 @@ ADR-018 through ADR-034.
 
 # 8. Frozen Architecture Statement
 
-As of this publication, the following are frozen and constitute EMG™ Architecture Baseline v1.0: the Product Vision, PRD, Enterprise Architecture, System Architecture Design, Enterprise Data Architecture, Enterprise API Architecture, and Enterprise UX Architecture & Design System; Modules 1 through 10 in full, including Module 7 Sections 30–35; and ADR-012 through ADR-017. No document in this register may be modified, redesigned, or reopened. Any future change of any kind — enhancement, correction, or extension — must be proposed and approved as a new, additive Architecture Decision Record. This baseline does not introduce, imply, or authorize a Module 11; any future module requires its own Architecture Board-approved scoping and design process, separate from and subsequent to this publication.
+As of this publication, the following are frozen and constitute EMG™ Architecture Baseline v1.0: the Product Vision, PRD, Enterprise Architecture, System Architecture Design, Enterprise Data Architecture, Enterprise API Architecture, and Enterprise UX Architecture & Design System; Modules 1 through 10 in full, including Module 7 Sections 30–35; and the ADRs accepted at the time of this publication. ADR-012 and ADR-013 do
+not exist in this repository; the authoritative register is
+`EMG_ARCHITECTURE_DECISION_REGISTER.md`. No document in this register may be modified, redesigned, or reopened. Any future change of any kind — enhancement, correction, or extension — must be proposed and approved as a new, additive Architecture Decision Record. This baseline does not introduce, imply, or authorize a Module 11; any future module requires its own Architecture Board-approved scoping and design process, separate from and subsequent to this publication.
 
 # 9. Engineering Readiness Statement
 
@@ -160,7 +162,8 @@ The Enterprise Architecture Board resolves that: the four conditions attached to
 
 **Engineering Phase Authorized.**
 
-The Architecture Phase for the EMG™ Core Platform is officially closed. Architecture Baseline v1.0 — comprising the Product Vision, PRD, Enterprise Architecture, System Architecture Design, Enterprise Data Architecture, Enterprise API Architecture, Enterprise UX Architecture & Design System, Modules 1 through 10, and ADR-012 through ADR-017 — is frozen as the official architecture of record.
+The Architecture Phase for the EMG™ Core Platform is officially closed. Architecture Baseline v1.0 — comprising the Product Vision, PRD, Enterprise Architecture, System Architecture Design, Enterprise Data Architecture, Enterprise API Architecture, Enterprise UX Architecture & Design System, Modules 1 through 10, and the ADRs accepted at the time of this publication (see
+`EMG_ARCHITECTURE_DECISION_REGISTER.md`) — is frozen as the official architecture of record.
 
 Any future architectural change, of any kind, requires a new Architecture Decision Record reviewed and approved by the Enterprise Architecture Board; no frozen document or module may be modified, redesigned, or reopened outside that process. Engineering may now begin implementation of the EMG™ platform in full — foundation, trust, knowledge, retrieval, AI, decision, and presentation layers alike — strictly according to this approved baseline.
 
