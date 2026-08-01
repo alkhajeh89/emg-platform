@@ -383,7 +383,9 @@ Sprints 1–16 deliver Lab Prototype v1: Foundation and Trust (Sprints 1–6), a
 
 # 18. MVP Roadmap
 
-Sprints 17–24 extend the Lab Prototype to a pilot-deployable product: remaining AI agent roles and safety controls (Sprint 17), Decision Intelligence in full (Sprints 18–20), the complete presentation layer across all four canonical screen families (Sprints 21–23), and stabilization/performance validation against ADR-017 capacity targets (Sprint 24). Exit criteria match Engineering Master Plan §19: production-grade Foundation/Trust, full Module 8 retrieval, governed human-in-the-loop AI, complete Decision Lifecycle, and operational (not merely instrumented) observability with governed SLOs, live for the pilot government customer.
+Sprints 17–24 extend the Lab Prototype to a pilot-deployable product: remaining AI agent roles and safety controls (Sprint 17), Decision Intelligence in full (Sprints 18–20), the complete presentation layer across all four canonical screen families (Sprints 21–23), and stabilization/performance validation against ADR-017 capacity targets (Sprint 24). Exit criteria are the frozen MVP definition at
+`docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §24. This backlog sequences
+delivery toward that definition and does not restate or extend it.
 
 # 19. Enterprise Production Roadmap
 
