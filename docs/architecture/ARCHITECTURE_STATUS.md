@@ -6,7 +6,7 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `develop` (through PR #37, merge commit `aefc82c`)
+Current Branch: `develop` (through PR #45, merge commit `6536b73`)
 
 Current Sprint: Sprint 14 (in progress) — **EPIC-13 Enterprise Integration
 Platform**, FEAT-13-1 (Universal Connector Framework — storage/vendor/protocol-
@@ -17,21 +17,19 @@ independent, contracts-only). See "Additive roadmap" note below.
 The following delivery tracks are distinct and must not be inferred to advance
 one another:
 
-- **ADR-027 Revision 5 delivery track.** Stage 4 Phase 4A is the HTTP mutation
-  transport and conformance phase and is complete at PR #37 (merge commit
-  `aefc82c`). Stage 4 scope was resolved by decision D-A-004 (Architecture
-  Board, 2026-08-01; accountable owner: Chief Data Officer): **Phase 4B** is
-  mutation-path observability emission only — `mutation_requests_total`,
-  `mutation_latency_seconds`, `idempotency_hits_total`,
-  `authorization_denials_total`, and safe structured-log field completion —
-  with no new route, command, or DTO change. **Phases 4C and 4D are closed as
-  not required**; a batch mutation route is rejected for the current Stage 4
-  scope and would require a new Board decision and ADR-027 Revision 6.
-  **Phase 4E** is Stage 4 governance and conformance closure. Phase 4B owns
-  metric **emission**; ADR-015 / FEAT-12-3 owns collection, storage,
-  dashboards, tracing, and alerting. No UI is authorized in Stage 4. ADR-027
-  **Stage 5** (deployment documentation and rollout) remains a separate,
-  unstarted stage.
+- **ADR-027 Revision 5 delivery track.** Stage 4 is complete. Phase 4A, the
+  HTTP mutation transport and conformance phase, completed at PR #37 (merge
+  commit `aefc82c`). Phase 4B, mutation-path observability emission, was
+  implemented at `c6c28bb` and merged through PR #45 at `6536b73`; it emits
+  `mutation_requests_total`, `mutation_latency_seconds`,
+  `idempotency_hits_total`, `authorization_denials_total`, and safe structured
+  logs without adding a route, command, or DTO change. Phases 4C and 4D are
+  closed as not required. Phase 4E governance and conformance closure is
+  complete. The five-route transport surface remains unchanged and
+  authoritative. ADR-027 owns metric **emission**; ADR-015 / FEAT-12-3 owns
+  collection, storage, dashboards, tracing, and alerting. No UI is authorized
+  in Stage 4. ADR-027 **Stage 5** (deployment documentation and rollout)
+  remains a separate, unstarted stage.
 - **ADR-033 Revision 2 schema track.** Phase 3 is complete at commit `5288392`.
   ADR-033 Phase 4 is the future schema-registry phase for the first genuine
   second schema version and its production normalizer; it has not started. It
@@ -92,7 +90,7 @@ status.
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4; **first live enforcement adopter delivered (ADR-025, 2026-07-27)** | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below). ADR-025 (Knowledge Graph Integration Closure, Group C) makes `services/knowledge-graph` the first service to actually enforce (not just introspect) an authorization decision using this module's PEP/`emg-policy-engine` stack — see Module 7 row and the ADR-025 entry in the ADRs table below. |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. SRS-2 adds verified-tenant confinement and PEP-backed classification authorization to event lookup, listing, pagination, and export. |
-| Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 Phase 4A complete (PR #37, `aefc82c`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. Stage 4 scope is resolved by D-A-004 (2026-08-01): Phase 4B is observability emission only; Phases 4C and 4D are closed as not required; Phase 4E is governance closure. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. PR #37 (`aefc82c`) closes the Phase 4A governance and conformance work. ADR-027 Phase 4B and ADR-033 Phase 4 have not started. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; no second schema version or production normalizer exists. The Neo4j serving-projection binding remains deferred. |
+| Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 complete (PR #45, `6536b73`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. Phase 4A completed at PR #37 (`aefc82c`). Phase 4B observability emission was implemented at `c6c28bb` and merged through PR #45 (`6536b73`). Phases 4C and 4D are closed as not required, and Phase 4E governance and conformance closure is complete. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; its separate Phase 4 has not started, and no second schema version or production normalizer exists. ADR-027 Stage 5 remains separate and unstarted. The Neo4j serving-projection binding remains deferred. |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -133,7 +131,7 @@ Only the following Architecture Decision Records are currently present in
 | ADR-021 | Enterprise API Strategy | Proposed |
 | ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted — implemented (Group C, 2026-07-27)** |
 | ADR-026 (Revision 2) | Knowledge Graph Classification Enforcement Model | **Accepted — fully implemented (Phase 1 + Phase 2, D1–D13, 2026-07-27)** |
-| ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — Stage 4 Phase 4A implemented and conformance-complete (PR #37, merge commit `aefc82c`, 2026-08-01); Stage 4 scope resolved by D-A-004 (2026-08-01)**: Stages 0–3, authorization policy, application wiring, transport DTOs, application projection, exactly five approved HTTP mutation routes, schema negotiation, always-run normalization, and the final transport conformance checks are complete. Phase 4B is approved as mutation observability emission only; Phases 4C and 4D are closed as not required; Phase 4E is Stage 4 governance closure. The five-route transport surface is unchanged and authoritative. |
+| ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — Stage 4 complete (PR #45, merge commit `6536b73`, 2026-08-01)**: Phase 4A HTTP/API delivery conformance completed at `aefc82c`. Phase 4B mutation-path observability emission was implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required; Phase 4E governance and conformance closure is complete. Exactly five approved HTTP mutation routes remain unchanged and authoritative. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. Stage 5 remains separate and unstarted. |
 | ADR-029 (Revision 2) | Canonical Entity/Relationship Identity, Lifecycle, and Supersession Model | **Accepted — implemented (commit `97b211d`, tag `adr-029-approved-implementation`)** |
 | ADR-030 (Revision 4) | Mutation Ledger & Atomic Idempotency | **Accepted — implemented (Stage 3, commit `2dab646`, tag `adr-027-stage-3`)** |
 | ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted — mutation-path negotiation implemented; read-path adoption remains governed separately** |
@@ -478,3 +476,13 @@ evidence without changing commands, DTO semantics, domain logic, authorization
 policy, GraphStore, persistence, or the mutation ledger. This closes only
 ADR-027 Stage 4 Phase 4A: it does not start or define Phase 4B, start ADR-033
 Phase 4, claim platform-wide production readiness, or authorize any UI surface.
+
+**ADR-027 Revision 5 Stage 4 closure (2026-08-01).** Phase 4B mutation-path
+observability emission was implemented at `c6c28bb` and merged through PR #45
+at merge commit `6536b73`. Phases 4C and 4D remain closed as not required, and
+Phase 4E completes the documentation-only governance and conformance closure.
+ADR-027 Revision 5 Stage 4 is complete with exactly five mutation routes. The
+BD-5 boundary remains unchanged: ADR-027 owns metric emission; ADR-015 /
+FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. T-A-002
+and T-A-003 remain Open and outside Stage 4; ADR-033 Revision 2 Phase 4 and
+ADR-027 Stage 5 remain separate and unstarted.
