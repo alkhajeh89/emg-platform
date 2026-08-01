@@ -22,6 +22,11 @@ from ..dependencies import (
     MutationRequestPreparerDep,
 )
 from ..mutation_mapping import MutationRequest
+from ..mutation_observability import (
+    MutationObservedRoute,
+    MutationOperation,
+    record_idempotency_hit,
+)
 from ..mutation_preparation import PreparedMutation
 from ..mutation_response_mapping import mutation_response
 from ..mutation_schemas import (
@@ -42,7 +47,11 @@ PreferredSchemaVersionHeader = Annotated[
     Header(alias="Preferred-Schema-Version", min_length=1),
 ]
 
-router = APIRouter(prefix="/api/v1", tags=["knowledge-graph-mutations"])
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["knowledge-graph-mutations"],
+    route_class=MutationObservedRoute,
+)
 
 _EFFECTIVE_SCHEMA_VERSION_RESPONSE: dict[str, Any] = {
     "headers": {
@@ -112,6 +121,7 @@ def create_entity(
         preparer=preparer,
     )
     result = app.create_entity(cast(CreateEntityCommand, prepared.command))
+    record_idempotency_hit(MutationOperation.CREATE_ENTITY, replayed=result.replayed)
     return _respond(result, prepared=prepared, response=response)
 
 
@@ -141,6 +151,7 @@ def replace_entity(
         preparer=preparer,
     )
     result = app.replace_entity(cast(ReplaceEntityCommand, prepared.command))
+    record_idempotency_hit(MutationOperation.REPLACE_ENTITY, replayed=result.replayed)
     return _respond(result, prepared=prepared, response=response)
 
 
@@ -170,6 +181,7 @@ def replace_relationship(
         preparer=preparer,
     )
     result = app.replace_relationship(cast(ReplaceRelationshipCommand, prepared.command))
+    record_idempotency_hit(MutationOperation.REPLACE_RELATIONSHIP, replayed=result.replayed)
     return _respond(result, prepared=prepared, response=response)
 
 
@@ -199,6 +211,7 @@ def close_relationship(
         preparer=preparer,
     )
     result = app.close_relationship(cast(CloseRelationshipCommand, prepared.command))
+    record_idempotency_hit(MutationOperation.CLOSE_RELATIONSHIP, replayed=result.replayed)
     return _respond(result, prepared=prepared, response=response)
 
 
@@ -228,4 +241,5 @@ def merge_entities(
         preparer=preparer,
     )
     result = app.merge_entities(cast(MergeEntitiesCommand, prepared.command))
+    record_idempotency_hit(MutationOperation.MERGE_ENTITIES, replayed=result.replayed)
     return _respond(result, prepared=prepared, response=response)
