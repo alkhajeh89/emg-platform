@@ -101,6 +101,7 @@ _CLAIM_DISPATCH = (
     "WHERE tenant_id = %(tenant)s AND channel = %(channel)s "
     "AND delivered_at IS NULL "
     "AND available_at <= clock_timestamp() "
+    "AND attempt_count < %(max_attempts)s "
     "AND (claim_expires_at IS NULL OR claim_expires_at <= clock_timestamp()) "
     "ORDER BY available_at, mutation_id "
     "FOR UPDATE SKIP LOCKED LIMIT %(limit)s"
@@ -376,12 +377,15 @@ class PostgresMutationRepository:
         channel: str,
         worker: str,
         limit: int,
+        max_attempts: int,
         lease: timedelta,
     ) -> tuple[DispatchWorkItem, ...]:  # pragma: no cover - live DB
         if channel not in {"audit", "event"}:
             raise ValueError(f"unsupported mutation dispatch channel: {channel!r}")
         if limit < 1:
             raise ValueError("dispatch limit must be positive")
+        if max_attempts < 1:
+            raise ValueError("dispatch max_attempts must be positive")
         with self._connection.cursor() as cursor:
             cursor.execute(
                 _CLAIM_DISPATCH,
@@ -390,6 +394,7 @@ class PostgresMutationRepository:
                     "tenant": tenant_id,
                     "worker": worker,
                     "limit": limit,
+                    "max_attempts": max_attempts,
                     "lease": lease,
                 },
             )
