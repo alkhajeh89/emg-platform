@@ -5,6 +5,7 @@
 |---|---|
 | Document | Enterprise Data Architecture (EDA) v1.0 |
 | Derives from | Enterprise Architecture v2.0 (approved) · System Architecture Design v1.0 (approved) |
+| Governing authority | Accepted ADRs (`EMG_ARCHITECTURE_DECISION_REGISTER.md`) govern architecture; `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` governs product scope. The EA/SAD/EDA/API precedence stated below applies **only among these reference documents** and is subordinate to accepted ADRs and the Freeze. This document is L4 reference material under GR-001 §8.2. |
 | Relationship | **Complements, does not modify** the EA or SAD. Where a data structure and the SAD differ, the SAD's service contract prevails and a change request is raised. |
 | Status | **For Architecture Review Board** — no code, no SQL, no Cypher |
 | Owners | Chief Data Architect · Enterprise Information Architect · Knowledge Graph Architect · Master Data Architect · AI Data Architect |

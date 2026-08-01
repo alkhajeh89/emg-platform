@@ -4,6 +4,7 @@
 | Field | Value |
 |---|---|
 | Document | Enterprise Architecture v2.0 (Pre-Build) |
+| Governing authority | Architecture is governed exclusively by accepted ADRs (`EMG_ARCHITECTURE_DECISION_REGISTER.md`). Product scope is governed exclusively by `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md`. This document is L4 reference material under GR-001 §8.2 and creates no architecture or product authority. Where it differs from an accepted ADR or the Freeze, that authority governs. |
 | Supersedes | Architecture Package v1.0 (carried forward in Part I, not removed) |
 | Status | **Draft for Architecture-Board / Defense / Procurement Review** — no code until sign-off |
 | Owners | CTO · Chief Enterprise Architect · Chief AI Architect · CISO · Principal SW Engineer · Principal Data Architect · Knowledge Graph Architect · UX Director · Product Director · Gov Digital-Transformation Consultant · Defense Enterprise Systems Architect |
@@ -282,7 +283,11 @@ Core loop end-to-end, single tenant, security & provenance thin-but-real. *Super
 
 ## 18. MVP Scope (Foundation)
 
-v1 promoted to production-grade: full bitemporality, ER with reversible review, provenance UI, ABAC+labels to property level with redaction, HITL approvals, governance/catalog, tamper-evident audit, hardened UIs, observability/SLOs, backup/restore. *Redefined for enterprise readiness in **Ch. 43**.*
+MVP scope is frozen at `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §24,
+which explicitly excludes ABAC/classification enforcement, semantic/AI search,
+dashboards, SDKs, multi-tenancy, and on-prem/air-gapped deployment from MVP.
+The enterprise-readiness capabilities previously listed here describe the v1.0
+and v2.0 horizons (Freeze §25, §26), not MVP.
 
 ## 19. Production Scope (Foundation)
 

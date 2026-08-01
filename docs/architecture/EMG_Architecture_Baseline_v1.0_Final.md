@@ -52,9 +52,15 @@ Engineering Authorization
 
 # 1. Executive Summary
 
-EMG™'s architecture phase is complete. Beginning with the Product Vision and PRD, and proceeding through the Enterprise Architecture, System Architecture Design, Enterprise Data Architecture, Enterprise API Architecture, and Enterprise UX Architecture & Design System, the platform's foundation (Modules 1–3), trust layer (Module 4 Identity, Module 5 Authorization, Module 6 Audit/Provenance), and intelligence stack (Module 7 Knowledge Graph, Module 8 Search/GraphRAG, Module 9 AI Orchestration, Module 10 Decision Intelligence) were each designed, reviewed, and approved in sequence. The Enterprise Architecture Consolidation Review found the resulting platform internally consistent, non-duplicative, and free of circular dependencies or architectural conflict, and returned a decision of Approved with Minor ADRs, conditioned on four architecture refinements.
+EMG™'s Baseline v1.0 architecture phase concluded with the document set listed
+in §2. Architecture has continued to evolve since through accepted ADRs;
+ADR-018 through ADR-034 are not reflected in this document. For current
+architecture authority consult the ADR Register and ARCHITECTURE_STATUS.md.
+Beginning with the Product Vision and PRD, and proceeding through the Enterprise Architecture, System Architecture Design, Enterprise Data Architecture, Enterprise API Architecture, and Enterprise UX Architecture & Design System, the platform's foundation (Modules 1–3), trust layer (Module 4 Identity, Module 5 Authorization, Module 6 Audit/Provenance), and intelligence stack (Module 7 Knowledge Graph, Module 8 Search/GraphRAG, Module 9 AI Orchestration, Module 10 Decision Intelligence) were each designed, reviewed, and approved in sequence. The Enterprise Architecture Consolidation Review found the resulting platform internally consistent, non-duplicative, and free of circular dependencies or architectural conflict, and returned a decision of Approved with Minor ADRs, conditioned on four architecture refinements.
 
-Those four refinements are now complete: ADR-014 (Enterprise Presentation Architecture), ADR-015 (Unified Enterprise Observability), ADR-016 (Enterprise Ownership Registry), and ADR-017 (Enterprise Capacity & Scalability Model) close every gap the Consolidation Review identified, without modifying or redesigning any approved document or module. With their acceptance, the conditions attached to the Architecture Baseline decision are satisfied.
+Those four refinements are now complete: ADR-014 (Enterprise Presentation Architecture), ADR-015 (Unified Enterprise Observability), ADR-016 (Enterprise Ownership Registry), and ADR-017 (Enterprise Capacity & Scalability Model) close the four gaps the Consolidation Review identified. Their operational
+status is recorded in `EMG_PRODUCTION_READINESS_ROADMAP.md` and is not claimed
+here.
 
 This document is the official publication of EMG™ Architecture Baseline v1.0. It consolidates the full approved document, module, and ADR register; restates the architecture, technology, and governance principles that bind every future module and ADR; and formally authorizes engineering to begin implementation against this baseline.
 
@@ -88,14 +94,12 @@ This document is the official publication of EMG™ Architecture Baseline v1.0. 
 
 # 4. Approved ADR Register
 
-| **#** | **ADR** | **Title** | **Status** |
-| --- | --- | --- | --- |
-| 1 | ADR-012 | Shared Libraries Enhancements | Approved — Frozen |
-| 2 | ADR-013 | Identity Enhancements | Approved — Frozen |
-| 3 | ADR-014 | Enterprise Presentation Architecture | Approved — Frozen |
-| 4 | ADR-015 | Unified Enterprise Observability | Approved — Frozen |
-| 5 | ADR-016 | Enterprise Ownership Registry | Approved — Frozen |
-| 6 | ADR-017 | Enterprise Capacity & Scalability Model | Approved — Frozen |
+The authoritative register of accepted Architecture Decision Records is
+`docs/architecture/EMG_ARCHITECTURE_DECISION_REGISTER.md`, with current
+implementation status in `docs/architecture/ARCHITECTURE_STATUS.md`. This
+document does not maintain a parallel ADR register. The previous table listed
+ADR-012 and ADR-013, which do not exist in this repository, and omitted
+ADR-018 through ADR-034.
 
 # 5. Architecture Principles
 

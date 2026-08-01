@@ -5,6 +5,7 @@
 |---|---|
 | Document | System Architecture Design (SAD) v1.0 |
 | Derives from | Enterprise Architecture v2.0 (approved) |
+| Governing authority | Accepted ADRs (`EMG_ARCHITECTURE_DECISION_REGISTER.md`) govern architecture; `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` governs product scope. The EA/SAD/EDA/API precedence stated below applies **only among these reference documents** and is subordinate to accepted ADRs and the Freeze. This document is L4 reference material under GR-001 §8.2. |
 | Status | **For engineering handoff** — no application code herein |
 | Owners | Chief Systems Engineer · Lead Enterprise Architect · CISO · Principal SW Engineer · Principal Data Architect · Knowledge Graph Architect |
 | Audience | Enterprise architects, CTOs, security architects, government technical review boards, delivery team leads |
