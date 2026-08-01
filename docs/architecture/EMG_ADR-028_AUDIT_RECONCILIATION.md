@@ -240,23 +240,145 @@ reads `classification`, `source_system`, and `reason` from the submitted event.
 | `classification` | `MutationAuditIntent.classification` | Direct |
 | `reason` | `MutationAuditIntent.reason` | Direct, nullable |
 | `actor` | `MutationAuditIntent.principal` | Derivation required |
-| `event_id` | — | **No source field** — see D-9 |
-| `actor_type` | — | **No source field** — OQ-2 |
-| `module` | — | **No source field** — OQ-2 |
-| `outcome` | — | **No source field** — OQ-3 |
-| `source_system` | — | **No source field** — OQ-2 |
-| `correlation_id` | — | **No source field** — OQ-4 |
-| — | `idempotency_key` | **No target field** |
-| — | `related_resource_ids` | **No target field** |
-| — | `revision_number` | **No target field** |
-| — | `content_hash` | **No target field** |
+| `event_id` | — | Derived — D-9 |
+| `actor_type` | — | **Fixed literal `"service"`** — D-35 |
+| `module` | — | **Fixed literal `"knowledge-graph"`** — D-35 |
+| `outcome` | `mutation_ledger.status` | **`"success"` for both statuses** — D-37 |
+| `source_system` | — | **Fixed literal `"knowledge-graph"`** — D-35 |
+| `correlation_id` | — | **Omitted (`None`)** — D-38 |
+| `metadata["revision_number"]` | `MutationAuditIntent.revision_number` | **Mapped** — D-40 |
+| `metadata["content_hash"]` | `MutationAuditIntent.content_hash` | **Mapped** — D-40 |
+| `metadata["related_resource_ids"]` | `MutationAuditIntent.related_resource_ids` | **Mapped** — D-40 |
+| `metadata["ledger_status"]` | `mutation_ledger.status` | **Mapped** — D-40 |
+| — | `idempotency_key` | **Not projected** — D-41; unresolved residual OQ-6 |
 
-**Consequence.** Four ADR-030-preserved facts — `idempotency_key`,
-`related_resource_ids`, `revision_number`, and `content_hash` — have no
-destination in the current audit contract. They remain durably available in the
-ledger. **OQ-6** records whether reconciliation requires them to be delivered.
+**Consequence.** Every required target field now has a determined source or a
+fixed literal. `idempotency_key` is the only ADR-030-preserved fact that is not
+projected; it remains durably available in `mutation_ledger` (D-41).
 
-### 7.1 Event identity derivation
+### 7.1 Field derivation — resolved
+
+**Fact.** Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**,
+superseding the former Open Questions OQ-2, OQ-3, OQ-4, and the mapped portion
+of OQ-6.
+
+**Fact — bounded target vocabularies.**
+`libs/python/emg-audit-client/src/emg_audit_client/event.py:34` declares
+`AuditOutcome = Literal["success", "denied", "error"]`; `:35` declares
+`ActorType = Literal["human", "service"]`. Both are closed sets. **The value
+`"completed"` does not exist in the audit contract and must never appear.**
+
+**Fact — producer precedent.**
+`services/identity/src/emg_identity/audit_pipeline.py:48` sets
+`_SERVICE_NAME = "identity"`; `:328` passes `module="identity"` as a literal;
+`:333` passes `source_system=_SERVICE_NAME`. Fixed per-service literals are the
+established pattern for these fields.
+
+**Decision D-35 — fixed identity literals (OQ-2).** The projector supplies:
+
+| Field | Value | Basis |
+| :--- | :--- | :--- |
+| `actor_type` | `"service"` | Bounded literal; only a service projector exists |
+| `module` | `"knowledge-graph"` | Fixed literal, per the `identity` precedent |
+| `source_system` | `"knowledge-graph"` | Fixed literal, per the `identity` precedent |
+
+All three are **fixed bounded literals**. None is producer-controlled input,
+and none is derived from event content.
+
+**Decision D-36 — mandatory `actor_type` revisit (binding).** `actor_type` is
+fixed to `"service"` **only while no human authentication path exists for the
+Knowledge Graph API**. ADR-025 §8.9 records that path as future work, and
+OBS-A-005 records the tested denial of human-only operations for current service
+callers. **When the ADR-025 §8.9 human authentication path is delivered,
+`actor_type` derivation is a mandatory revisit.** Until then the projector
+**must not infer a human actor**, because none can reach the mutation path.
+
+**Consequence.** Leaving D-35 unrevisited after that path ships would cause
+human-originated mutations to be recorded with `actor_type="service"`, which
+would be false. D-36 exists so that the outcome cannot degrade silently.
+
+**Decision D-37 — outcome mapping (OQ-3).** `mutation_ledger.status` values
+**`succeeded` and `no_op` both map to `outcome = "success"`**. Both describe a
+committed governed action.
+
+**Fact.** `V004__mutation_ledger.sql:73` constrains
+`status text NOT NULL CHECK (status IN ('succeeded', 'no_op'))`. ADR-030 §4.3
+states that "Validation failures, authorization denials, domain failures,
+optimistic conflicts, and infrastructure failures do not produce ledger rows".
+`denied` and `error` are therefore structurally unreachable through this path.
+
+**Decision D-38 — correlation identifier (OQ-4).** `correlation_id` is
+**omitted**; the projector supplies `None`, the field's own default.
+
+**Fact.** `correlation_id` is absent from `MutationAuditIntent`
+(`results.py:38-56`), `mutation_ledger` (`V004:64-96`), `mutation_dispatch`
+(`V004:123-158`), and `mutation_ledger_resource`. **No durable correlation
+source exists in any accepted artefact the projector may read.**
+
+**Decision D-39 — no correlation generation (binding).** The projector **must
+never generate a correlation identifier** during projection or replay.
+`emg_common_types.new_correlation_id` exists (`identifiers.py:16`) and must not
+be used here: a value minted at projection time would misrepresent the original
+request, and would differ on each replay, contradicting D-26's replay-stability
+requirement.
+
+**Consequence.** Durable correlation is recorded as **possible future ADR-030
+work only**. This ADR neither opens nor amends ADR-030, and adds no ledger
+column.
+
+### 7.2 Metadata projection — partially resolved
+
+**Fact.** `SubmittedAuditEvent.metadata: dict[str, str]`
+(`event.py:85`) already exists and requires no contract change.
+`event.py:40-41` bounds it at `MAX_METADATA_ENTRIES = 32` and
+`MAX_METADATA_VALUE_LEN = 1024`.
+`libs/python/emg-audit-pipeline/src/emg_audit_pipeline/validation.py:133-153`
+rejects an over-count, a sensitive-looking key, or an over-length value, and
+redacts every value before persistence.
+
+**Decision D-40 — metadata contents (OQ-6, mapped portion).** Projected
+`metadata` **must include exactly these four entries**:
+
+| Key | Source | Form |
+| :--- | :--- | :--- |
+| `revision_number` | `MutationAuditIntent.revision_number` | Deterministic string |
+| `content_hash` | `MutationAuditIntent.content_hash` | Deterministic string |
+| `related_resource_ids` | `MutationAuditIntent.related_resource_ids` | Deterministic string |
+| `ledger_status` | `mutation_ledger.status` | `"succeeded"` or `"no_op"` |
+
+Every value **must be a deterministic string derived from the claimed ledger
+row**, so that replay reproduces byte-identical metadata. Four entries is well
+within the 32-entry bound, and every value is short relative to the
+1024-character bound.
+
+**Consequence.** `ledger_status` preserves the `succeeded` / `no_op` distinction
+that D-37 deliberately does not encode in `outcome`, without extending the
+bounded `AuditOutcome` vocabulary.
+
+**Decision D-41 — `idempotency_key` not projected (binding).**
+`idempotency_key` **must not be projected** into any audit field or metadata
+entry. It is client-supplied through the `X-Idempotency-Key` header and is
+therefore content of unknown shape. `validation.py` inspects metadata **key
+names** for sensitivity and redacts values by pattern; neither guarantees that
+an arbitrary client value is safe to place in an immutable, hash-covered audit
+record. **It remains only in `mutation_ledger` until separately approved.**
+The residual determination stays open under OQ-6 and is owned by
+Identity/Security per D-31.
+
+**Decision D-42 — metadata content prohibitions (binding).** Projected metadata
+**must not contain**: payload or graph content; tenant credentials; tokens;
+classification-clearance claims; or arbitrary producer-controlled values. Only
+the four deterministic entries in D-40 are authorized. This preserves D-20's
+no-enrichment rule and keeps the audit record small, as the metadata bounds
+intend.
+
+**Consequence.** No new audit field is introduced, `SubmittedAuditEvent` is
+unchanged, the audit event schema version is unchanged, and the canonical hash
+inputs are unchanged. `provenance` is deliberately not used: populating it would
+raise the persisted event to schema version 2 and alter the canonical hash
+(`hashing.py:131-135`), a behaviour change no decision here requires.
+
+### 7.3 Event identity derivation
 
 **Fact.** `mutation_dispatch` primary key is `(channel, mutation_id)` — one row
 per mutation per channel. `mutation_ledger.audit_intents` is a **collection**.
@@ -480,6 +602,18 @@ metric.
 mutation is already committed; ADR-030's atomicity guarantees are unchanged by
 any projector outcome.
 
+**Decision D-43 — delivery outcome is not an audit outcome (binding).**
+`SubmittedAuditEvent.outcome` describes the **governed action**, never the
+delivery attempt. **A delivery failure must never be mapped to
+`outcome = "error"`, or to any other `AuditOutcome` value.** A failed delivery
+produces no audit event at all: the row remains undelivered in the work set
+(D-21) and is retried.
+
+**Consequence.** Delivery failures are represented **only** by
+`mutation_dispatch` state — the four statuses in D-23. Recording a delivery
+fault as a governed-action failure would assert that a committed mutation
+failed, which is false and would corrupt the audit record's meaning.
+
 ## 13. Rollback
 
 **Decision D-25.** Rollback is a pure code and configuration revert. Stopping
@@ -593,6 +727,35 @@ projector is enabled.
 - AC-30. ADR-034, the `SubmittedAuditEvent` contract, the audit event schema
   version, and `services/audit/tests/test_reporting_api.py:510` are unchanged.
 
+**Field derivation (D-35 through D-43)**
+
+- AC-31. `actor_type` is the fixed literal `"service"` on every projected event.
+- AC-32. `module` and `source_system` are the fixed literal
+  `"knowledge-graph"` on every projected event.
+- AC-33. No projected event infers a human actor while the ADR-025 §8.9 human
+  authentication path is undelivered.
+- AC-34. `outcome` is `"success"` for ledger status `succeeded` **and** for
+  `no_op`.
+- AC-35. The value `"completed"` never appears in any projected field.
+- AC-36. No delivery failure produces an audit event, and no delivery failure
+  is mapped to `outcome = "error"` or any other `AuditOutcome` value.
+- AC-37. `correlation_id` is `None` on every projected event.
+- AC-38. No correlation identifier is generated during projection or replay;
+  `new_correlation_id` is not invoked on this path.
+- AC-39. `metadata` contains exactly the four entries `revision_number`,
+  `content_hash`, `related_resource_ids`, and `ledger_status`.
+- AC-40. Every metadata value is a deterministic string from the claimed ledger
+  row, byte-identical across replays.
+- AC-41. Metadata stays within the 32-entry and 1024-character bounds and
+  passes `validate_and_sanitize` without a `ValidationError`.
+- AC-42. `idempotency_key` appears in no projected field and no metadata entry.
+- AC-43. Metadata contains no payload or graph content, tenant credential,
+  token, classification-clearance claim, or arbitrary producer-controlled
+  value.
+- AC-44. `provenance` is not populated; every projected event remains schema
+  version 1 with respect to provenance, and the canonical hash inputs are
+  unchanged apart from the tenant value ADR-034 already includes.
+
 ## 16. Consequences
 
 **Positive**
@@ -611,9 +774,15 @@ projector is enabled.
 - At-least-once delivery makes correctness dependent on the audit service's
   existing `(source_principal, event_id)` duplicate rule. Should that rule
   change, this design's idempotency guarantee changes with it.
-- Four ledger facts — `idempotency_key`, `related_resource_ids`,
-  `revision_number`, `content_hash` — have no destination in the current audit
-  contract and are not delivered unless OQ-6 is resolved otherwise.
+- `idempotency_key` is not delivered (D-41) and remains only in
+  `mutation_ledger` until Identity/Security separately approves it. An auditor
+  correlating an audit event to a client's idempotency key must join the
+  ledger.
+- `actor_type` is fixed to `"service"` (D-35). **This becomes inaccurate the
+  moment the ADR-025 §8.9 human authentication path ships**, which is why D-36
+  makes the revisit mandatory rather than advisory.
+- `correlation_id` is always absent (D-38). A consumer cannot correlate a
+  projected audit event to the originating HTTP request through this field.
 - Per-tenant projector identities (D-28) require one credential per tenant.
   Credential provisioning and rotation burden scales with tenant count, and
   rotation is constrained by D-34.
@@ -640,35 +809,54 @@ through D-33), §13 (D-26, D-34), and acceptance criteria AC-22 through AC-30.
 ADR-034 remains unchanged; no `SubmittedAuditEvent` contract change and no
 trusted producer tenant-override role is authorized.
 
-### 17.2 Unresolved
+**OQ-2 — `actor_type`, `module`, and `source_system` derivation. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**. All three are
+fixed bounded literals: `actor_type = "service"`,
+`module = "knowledge-graph"`, `source_system = "knowledge-graph"`. See §7.1
+(D-35), the mandatory revisit obligation (D-36), and acceptance criteria AC-31
+through AC-33. No human actor is inferred while the ADR-025 §8.9 human
+authentication path is undelivered.
 
-**OQ-2 — `actor_type`, `module`, and `source_system` derivation.**
-All three are required or read by the audit contract and absent from
-`MutationAuditIntent`. Whether they are fixed constants for the mutation channel
-or derived from the principal is undecided.
+**OQ-3 — `outcome` for projected events. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**. Ledger status
+`succeeded` and `no_op` both map to `outcome = "success"`; `"completed"` is not
+in the `AuditOutcome` vocabulary and must never appear. Delivery failure is not
+an audit-event outcome and is represented only by `mutation_dispatch` state.
+See §7.1 (D-37), §12 (D-43), and acceptance criteria AC-34 through AC-36.
 
-**OQ-3 — `outcome` for projected events.**
-`SubmittedAuditEvent.outcome` is required. ADR-030 §4.3 records only `succeeded`
-and `no_op` in the ledger, and states that "Validation failures, authorization
-denials, domain failures, optimistic conflicts, and infrastructure failures do
-not produce ledger rows". Whether `no_op` maps to the same outcome as
-`succeeded` is undecided.
+**OQ-4 — Correlation identifier propagation. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**.
+`correlation_id` is omitted (`None`); no durable correlation source exists in
+any accepted artefact, and no correlation identifier is generated during
+projection or replay. Durable correlation is recorded as possible future
+ADR-030 work only; ADR-030 is neither opened nor amended. See §7.1 (D-38,
+D-39) and acceptance criteria AC-37 and AC-38.
 
-**OQ-4 — Correlation identifier propagation.**
-`SubmittedAuditEvent.correlation_id` is optional; `MutationAuditIntent` carries
-none. Whether correlation must survive from the mutation request into the
-projected event is undecided.
+### 17.2 Partially resolved
+
+**OQ-6 — Delivery of ledger facts with no audit target field. PARTIALLY
+RESOLVED.**
+Resolved in part by Architecture Board package **ADR-028-OQ2346-DP-01**.
+`revision_number`, `content_hash`, `related_resource_ids`, and the ledger
+`status` are projected as deterministic entries in the existing
+`SubmittedAuditEvent.metadata` structure, within its 32-entry and
+1024-character bounds. No new audit field and no contract change is introduced.
+See §7.2 (D-40, D-42) and acceptance criteria AC-39 through AC-44.
+
+**Residual, unresolved:** whether `idempotency_key` may be projected.
+It is client-supplied through the `X-Idempotency-Key` header and is therefore
+content of unknown shape; `validation.py` inspects metadata key names for
+sensitivity and redacts values by pattern, and neither guarantees an arbitrary
+client value is safe in an immutable, hash-covered record. D-41 forbids its
+projection until separately approved; it remains only in `mutation_ledger`.
+**Owner: Identity/Security, per D-31.**
+
+### 17.3 Unresolved
 
 **OQ-5 — Projector deployment location.**
 Whether the projector is a mode of an existing service, a new deployable, or a
 scheduled job is undecided. `services/knowledge-graph` owns the ledger writer;
 `services/audit` owns the consumer contract; neither obviously owns the bridge.
-
-**OQ-6 — Delivery of ledger facts with no audit target field.**
-Whether `idempotency_key`, `related_resource_ids`, `revision_number`, and
-`content_hash` must reach the audit store is undecided. Delivering them would
-require either an audit contract change or encoding into an existing field;
-both exceed this ADR's stated scope.
 
 **OQ-7 — Dedicated service client for the projector.**
 Whether the projector requires its own registered client and role, in the shape
@@ -700,7 +888,17 @@ cross-checking beyond shared storage is undecided.
 - `libs/python/emg-persistence/src/emg_persistence/migrations/postgres/V004__mutation_ledger.sql`
   — `:123-158`
 - `services/knowledge-graph/src/emg_knowledge_graph/results.py` — `:39-56`
-- `libs/python/emg-audit-client/src/emg_audit_client/event.py` — `:60-82`
+- `libs/python/emg-audit-client/src/emg_audit_client/event.py` — `:34`
+  (`AuditOutcome`), `:35` (`ActorType`), `:40-41` (metadata bounds), `:60-91`
+- `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/validation.py` —
+  `:133-153` (metadata validation and redaction)
+- `libs/python/emg-common-types/src/emg_common_types/identifiers.py` — `:10`,
+  `:16` (`CorrelationId`, `new_correlation_id`)
+- `services/identity/src/emg_identity/audit_pipeline.py` — `:48`, `:326-336`
+  (fixed-literal producer precedent)
+- `libs/python/emg-persistence/src/emg_persistence/migrations/postgres/V004__mutation_ledger.sql`
+  — `:73` (`status` check constraint)
+- Architecture Board package **ADR-028-OQ2346-DP-01**
 - `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/stores.py` — `:163`,
   `:177`, `:180`, `:217`, `:340` (composite idempotency key)
 - `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/hashing.py` —
