@@ -150,6 +150,9 @@ by it:
   rules, ADR-026 classification enforcement, and ADR-034 audit read
   confinement.
 - Physical erasure, which ADR-027 §9.3 keeps out of scope platform-wide.
+- **Operator alerting**, including any operator-visible signal for an exhausted
+  dispatch row. Alerting belongs to **ADR-015 / FEAT-12-3** (OQ-8, partial).
+  Whether ADR-028 emits an exhausted-row metric remains open under OQ-8.
 
 ## 6. Architecture
 
@@ -215,7 +218,12 @@ own `sequence_number`, which the audit store assigns on append.
 | Confine audit reads | **No — ADR-034** |
 | Publish graph-revision events | **No — existing revision outbox** |
 
-**Open Question OQ-5** records where the projector is deployed.
+**Deployment topology is intentionally deferred.** Where the projector is
+deployed is **not decided by this ADR** and remains **Open Question OQ-5**. The
+platform's existing outbox worker carries the same undecided question, recorded
+as **TD-002** in `docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md:191`
+("No continuous `ProjectionWorker` daemon — Open, accepted"). This ADR
+recommends no deployment model.
 
 **Fact — field inventory.** `MutationAuditIntent`
 (`services/knowledge-graph/src/emg_knowledge_graph/results.py:39-56`) carries:
@@ -421,6 +429,31 @@ the **same** producer contract that read-path and operation-level events already
 use. Reconciliation is achieved by convergence on one store, not by a second
 audit surface.
 
+**Fact.** The audit read API already filters on `module` and `source_system`.
+`services/audit/src/emg_audit_service/routers/events.py:89-117` shows
+`_build_query` accepting `actor`, `event_id`, `correlation_id`, `module`,
+`action`, `outcome`, `source_system`, `classification`, `has_provenance`,
+`start_time`, `end_time`, `cursor`, `limit`, and `scope`.
+
+**Fact.** D-35 fixes `module = "knowledge-graph"` and
+`source_system = "knowledge-graph"` on every projected event.
+
+**Decision D-44 — "alongside" is satisfied by shared storage and existing
+reads (OQ-10).** ADR-027 `:1319`'s requirement that ADR-028 account for
+mutation-sourced audit events *alongside* read-path and operation-level events
+is satisfied by three things that already exist:
+
+1. **Shared audit storage** — projected events are delivered into the same
+   audit store, through the same producer contract (D-12).
+2. **The existing audit read API** — no new read surface is introduced.
+3. **The existing `module` and `source_system` filters** — because D-35 fixes
+   both to known values, mutation-sourced events are selectable and separable
+   through filters the read API already provides.
+
+**ADR-028 introduces no reconciliation report, no cross-checking, no new API,
+no new query, and no new capability.** Reconciliation is convergence on one
+store, made selectable by filters that already exist.
+
 **Consequence.** No ADR-027 revision is required by this ADR.
 
 ## 9. Integration with ADR-030
@@ -566,8 +599,19 @@ claimed ledger row.
 **Consequence.** A compromised projector can replay or delay audit events. It
 cannot forge graph state, alter the immutable ledger, or widen a classification.
 
-**Open Question OQ-7** records whether the projector requires a dedicated
-registered service client.
+**Fact.** `services/audit/src/emg_audit_service/authn.py:62-70` defines
+`_RECOGNIZED_CLIENTS` as a module-level constant, and `:131-132` rejects a token
+whose `azp`/`client_id` is not present in it.
+
+**Decision D-45 — projector identities use the existing recognized-client
+mechanism (OQ-7, partial).** Projector identities authenticate through the
+**existing recognized-client mechanism** already enforced by the audit service.
+ADR-028 introduces no new authentication mechanism and no alternative
+registration path.
+
+**Open Question OQ-7 remains open** for the number of registered identities,
+their naming, the tenant-to-client registration strategy, and the scalability of
+that strategy. This ADR does not decide any of them.
 
 ## 12. Failure Handling
 
@@ -645,6 +689,18 @@ produces duplicate audit records that no mechanism in this design detects.
 
 **Consequence.** No persisted state outside `mutation_dispatch`'s mutable
 operational fields depends on this ADR's mechanism.
+
+**Fact — backlog (OQ-9, partial).** ADR-030 `:188-192` records that the ledger
+is not subject to the idempotency TTL and that the historical ledger row remains
+after replay-key expiry; ADR-030 §4.4 makes the ledger append-only, with
+database privileges denying `UPDATE` and `DELETE`. `V004__mutation_ledger.sql:123-158`
+defines `mutation_dispatch` with no expiry column. **The existing immutable
+ledger and dispatch rows therefore make replay technically possible.**
+
+**Open Question OQ-9 remains open** for backlog policy: whether mutations
+committed before the projector is enabled are projected, and over what window.
+This ADR records only the technical possibility above; it establishes no
+requirement, obligation, or window.
 
 ## 14. Migration
 
@@ -832,6 +888,14 @@ projection or replay. Durable correlation is recorded as possible future
 ADR-030 work only; ADR-030 is neither opened nor amended. See §7.1 (D-38,
 D-39) and acceptance criteria AC-37 and AC-38.
 
+**OQ-10 — Relationship to read-path and operation-level event volume.
+RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ5789X-DP-01**. ADR-027
+`:1319`'s "alongside" requirement is satisfied by shared audit storage, the
+existing audit read API, and the existing `module` and `source_system` filters.
+**No reconciliation report, cross-checking, new API, new query, or new
+capability is introduced.** See §8 (D-44) and acceptance criterion AC-21.
+
 ### 17.2 Partially resolved
 
 **OQ-6 — Delivery of ledger facts with no audit target field. PARTIALLY
@@ -851,31 +915,42 @@ client value is safe in an immutable, hash-covered record. D-41 forbids its
 projection until separately approved; it remains only in `mutation_ledger`.
 **Owner: Identity/Security, per D-31.**
 
+**OQ-7 — Dedicated service client for the projector. PARTIALLY RESOLVED.**
+Resolved in part by Architecture Board package **ADR-028-OQ5789X-DP-01**.
+Projector identities authenticate through the **existing recognized-client
+mechanism** already enforced by the audit service (§11, D-45). No new
+authentication mechanism and no alternative registration path is introduced.
+
+**Residual, unresolved:** the number of registered identities, their naming, the
+tenant-to-client registration strategy, and the scalability of that strategy.
+None is decided by this ADR.
+
+**OQ-8 — Operator signal for exhausted rows. PARTIALLY RESOLVED.**
+Resolved in part by Architecture Board package **ADR-028-OQ5789X-DP-01**.
+**Operator alerting belongs to ADR-015 / FEAT-12-3** and is recorded as out of
+scope in §5.
+
+**Residual, unresolved:** whether ADR-028 emits an exhausted-row metric at all.
+No accepted document assigns such a metric to ADR-028, and this ADR does not
+create one.
+
+**OQ-9 — Pre-enablement backlog. PARTIALLY RESOLVED.**
+Resolved in part by Architecture Board package **ADR-028-OQ5789X-DP-01**. The
+existing immutable ledger and dispatch rows make replay **technically
+possible** (§13).
+
+**Residual, unresolved:** backlog policy — whether mutations committed before
+the projector is enabled are projected, and over what window. This ADR
+establishes no requirement, obligation, or window.
+
 ### 17.3 Unresolved
 
 **OQ-5 — Projector deployment location.**
-Whether the projector is a mode of an existing service, a new deployable, or a
-scheduled job is undecided. `services/knowledge-graph` owns the ledger writer;
-`services/audit` owns the consumer contract; neither obviously owns the bridge.
-
-**OQ-7 — Dedicated service client for the projector.**
-Whether the projector requires its own registered client and role, in the shape
-of `svc-knowledge-graph-writer`, is undecided.
-
-**OQ-8 — Operator signal for exhausted rows.**
-Whether an exhausted dispatch row requires an operator-visible signal beyond a
-metric, and whether ADR-015 / FEAT-12-3 owns that signal, is undecided.
-
-**OQ-9 — Pre-enablement backlog.**
-Whether mutations committed before the projector is enabled are projected
-retroactively, and over what window, is undecided. `mutation_dispatch` rows
-exist for every committed mutation, so retroactive projection is mechanically
-possible; whether it is desirable is a governance question.
-
-**OQ-10 — Relationship to read-path and operation-level event volume.**
-ADR-027 `:1319` requires accounting for mutation-sourced events "alongside"
-read-path and operation-level events. Whether reconciliation implies any
-cross-checking beyond shared storage is undecided.
+**Deployment topology is intentionally deferred** (§7). Whether the projector is
+a mode of an existing service, a new deployable, or a scheduled job is
+undecided, and this ADR recommends no model. The platform's existing outbox
+worker carries the same undecided question, recorded as **TD-002** in
+`docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md:191`.
 
 ## 18. References
 
@@ -903,7 +978,15 @@ cross-checking beyond shared storage is undecided.
   `:177`, `:180`, `:217`, `:340` (composite idempotency key)
 - `libs/python/emg-audit-pipeline/src/emg_audit_pipeline/hashing.py` —
   `:136-137` (version-3 tenant inclusion)
-- `services/audit/src/emg_audit_service/authn.py` — `:62-70`, `:145-156`
+- `services/audit/src/emg_audit_service/authn.py` — `:62-70`, `:131-132`,
+  `:145-156`
+- `services/audit/src/emg_audit_service/routers/events.py` — `:89-117`
+  (`_build_query` filters, including `module` and `source_system`)
+- `libs/python/emg-persistence/src/emg_persistence/projection/worker.py` —
+  `:36` (`ProjectionWorker`, library class with no deployment decision)
+- `docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md` — `:80` (ADR-015
+  observability state), `:191` (TD-002)
+- Architecture Board package **ADR-028-OQ5789X-DP-01**
 - `services/audit/src/emg_audit_service/routers/events.py` — `:60-86`
 - `services/audit/tests/test_reporting_api.py` — `:510`
 - Architecture Board decision **ADR-028-OQ1-DP-01 — Option B**
