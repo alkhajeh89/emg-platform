@@ -29,19 +29,19 @@ not constitute approved architecture unless explicitly marked Accepted.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | D-A-001 | Module Numbering Governance | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §6 (Gap 4a), §7 (Gap 4) | Which numbering scheme is canonical? |
 | D-A-002 | Entity Resolution Ownership | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §2 (Gap 1) | Standalone service, part of `emg-memory-graph`, or shared library? |
-| D-A-004 | ADR-027 Stage 4 Phases 4B–4E Scope Definition | **Open** | TBD | `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2; `docs/specifications/ADR-033/Phase4-Design-Package.md` §11; commits `08949e0`, `f59cb4b`, `0ea7c74`; merge commit `aefc82c` | What scope, sequencing, prerequisites, boundaries, and acceptance criteria are separately approved for each of Phases 4B–4E? |
 
 ## Resolved Architecture Decisions
 
 | ID | Decision Area | Status | Owner | Evidence |
 | :--- | :--- | :--- | :--- | :--- |
 | D-A-003 | Entity/Relationship Identity, Lifecycle & Supersession Model | **Accepted — ADR-029 Revision 2 implemented (2026-07-28)** | Architecture Board / Chief Data Officer | `docs/architecture/EMG_ADR-029_ENTITY_RELATIONSHIP_IDENTITY_LIFECYCLE_SUPERSESSION_MODEL.md`; commit `97b211d`; tag `adr-029-approved-implementation` |
+| D-A-004 | ADR-027 Stage 4 Phases 4B–4E Scope Definition | **Accepted — Architecture Board, 2026-08-01** | Chief Data Officer (accountable owner); Architecture Board (approving authority) | `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2; `docs/specifications/ADR-033/Phase4-Design-Package.md` §11; commits `08949e0`, `f59cb4b`, `0ea7c74`; merge commit `aefc82c`; baseline `9588c6d` |
 
 ## Knowledge Graph ADR Implementation Status
 
 | ADR | Status | Implemented phase |
 | :--- | :--- | :--- |
-| ADR-027 Revision 5 | **Accepted** | Stage 4 Phase 4A originally implemented (`08949e0`), reconciled by the conformance package (`f59cb4b`) and patch (`0ea7c74`), and merged to `develop` (`aefc82c`); Phases 4B–4E have not started and their scope remains open under D-A-004 |
+| ADR-027 Revision 5 | **Accepted** | Stage 4 Phase 4A implemented (`08949e0`), reconciled (`f59cb4b`, `0ea7c74`), merged to `develop` (`aefc82c`). Stage 4 scope resolved by D-A-004 (2026-08-01): Phase 4B approved as mutation observability emission; Phases 4C and 4D closed as not required; Phase 4E is Stage 4 governance closure. The five-route transport surface is unchanged. Stage 5 remains a separate, unstarted stage |
 | ADR-029 Revision 2 | **Accepted** | Domain implementation complete (`97b211d`) |
 | ADR-030 Revision 4 | **Accepted** | Atomic mutation ledger complete (`2dab646`) |
 | ADR-032 | **Accepted** | Mutation-path schema negotiation implemented; read-path adoption remains separate |
@@ -121,38 +121,56 @@ answered. See `docs/devops/DEPENDENCY_GOVERNANCE.md` for the fix detail.
 
 ### D-A-004 — ADR-027 Stage 4 Phases 4B–4E Scope Definition
 
-**Current state:** ADR-027 Revision 5 Stage 4 Phase 4A was originally
-implemented at commit `08949e0`. Its final governance reconciliation and
-narrow conformance work were recorded at commits `f59cb4b` and `0ea7c74`
-and merged to `develop` at `aefc82c`. The reconciled Phase 4 Design Package
-records Phase 4A as implemented, identifies Phase 4B only as the next
-delivery phase, and states expressly that it neither defines nor claims
-completion of Phase 4B's scope. Phases 4C–4E are recorded only as later,
-not-started phases.
+**Current state:** Resolved by the Architecture Board on 2026-08-01 against
+baseline `develop` `9588c6d`. ADR-027 Revision 5 Stage 4 Phase 4A was
+implemented at commit `08949e0`, reconciled at `f59cb4b` and `0ea7c74`, and
+merged to `develop` at `aefc82c`.
 
-**Owner:** TBD.
+**Owner:** Chief Data Officer (accountable owner, Module 7, ADR-016 §1).
 
-**Evidence:**
+**Approving authority:** Architecture Board.
 
-- `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2.
-- `docs/specifications/ADR-033/Phase4-Design-Package.md` §11.
-- Original Phase 4A implementation commit `08949e0`.
-- Governance reconciliation commit `f59cb4b`.
-- Narrow conformance commit `0ea7c74`.
-- Merge commit `aefc82c`.
+**Decision date:** 2026-08-01.
 
-**Blocking question:** What scope, sequencing, prerequisites, architectural
-boundaries, and acceptance criteria are separately approved for each of
-ADR-027 Stage 4 Phases 4B–4E?
+**Resolution:**
+
+- **Phase 4B — Approved.** Mutation-path observability emission only:
+  `mutation_requests_total`, `mutation_latency_seconds`,
+  `idempotency_hits_total`, `authorization_denials_total`, and completion of
+  safe structured-log fields at the mutation boundary. Excluded: any new
+  route, any new command, any DTO change, payload or classification content
+  in metric labels, a metrics backend, dashboards, alerts, a tracing
+  collector, and production-readiness work.
+- **Phase 4C — Closed as not required.** A batch mutation HTTP route is
+  rejected for the current Stage 4 scope. The five-route ADR-027 Revision 5
+  transport surface remains authoritative and complete. Batch semantics at
+  ADR-027 §11.1 and §10.5 remain accepted and unexposed. Any future batch
+  transport requires a new Board decision and ADR-027 Revision 6.
+- **Phase 4D — Closed as not required.** Deployment documentation and
+  rollout remain ADR-027 Stage 5. IaC, secrets management, observability
+  backends, HA/DR, dashboards, and alerting remain in the
+  production-readiness track.
+- **Phase 4E — Approved.** Stage 4 governance and conformance closure;
+  documentation and register reconciliation only.
+
+**Confirmed boundaries:**
+
+- ADR-027 Phase 4B owns mutation-metric **emission**; ADR-015 / FEAT-12-3
+  owns collection, storage, dashboards, tracing, and alerting.
+- No user-interface work is authorized in ADR-027 Stage 4.
+- T-A-002 (schema discovery) and T-A-003 (durable effective-schema-version
+  recording) remain outside Stage 4 and retain their existing blocking
+  authorities.
+- ADR-033 Revision 2 Phase 4 remains a separate schema-registry track and is
+  not ADR-027 Phase 4B.
 
 **Binding constraint on future work:** phase labels and sequencing alone do
 not authorize implementation. No route, command, DTO semantic, domain,
 persistence, ledger, GraphStore, authorization-policy, or schema capability
-may be inferred for Phases 4B–4E until its scope is explicitly approved.
-This register entry records the unresolved governance requirement; it does
-not define any phase's scope and does not create or amend an ADR.
+may be inferred beyond the scope recorded above. This resolution creates no
+ADR and amends no accepted ADR.
 
-**Status:** Open.
+**Status:** Accepted.
 
 ---
 
