@@ -5,6 +5,7 @@
 |---|---|
 | Document | Enterprise API Architecture & Specification v1.0 |
 | Derives from | Enterprise Architecture v2.0 · System Architecture Design v1.0 · Enterprise Data Architecture v1.0 (all approved) |
+| Governing authority | Accepted ADRs (`EMG_ARCHITECTURE_DECISION_REGISTER.md`) govern architecture; `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` governs product scope. The EA/SAD/EDA/API precedence stated below applies **only among these reference documents** and is subordinate to accepted ADRs and the Freeze. This document is L4 reference material under GR-001 §8.2. |
 | Relationship | **Complements, does not modify** the EA, SAD, or EDA. Where an API contract and the SAD/EDA differ, those documents prevail and a governed change request is raised. |
 | Status | **For Architecture / API Governance Board** — no code, no FastAPI, no OpenAPI YAML |
 | Owners | Chief API Architect · Enterprise Integration Architect · Principal Backend Architect · Principal Platform Architect · API Governance Lead |

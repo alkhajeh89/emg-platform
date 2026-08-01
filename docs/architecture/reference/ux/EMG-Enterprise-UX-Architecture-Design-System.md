@@ -6,6 +6,7 @@
 | Document | Enterprise UX Architecture & Design System v1.0 |
 | Derives from | EA v2.0 · SAD v1.0 · EDA v1.0 · API Architecture v1.0 (all approved) |
 | Product authority | `docs/product/EMG_PRODUCT_ARCHITECTURE_FREEZE.md` §4 governs User Personas. |
+| Governing architecture authority | Accepted ADRs recorded in `docs/architecture/EMG_ARCHITECTURE_DECISION_REGISTER.md` govern architecture. The EA/SAD/EDA/API precedence used by this document applies only within the L4 reference-document set and remains subordinate to accepted ADRs and the Product Architecture Freeze. This document is L4 reference material under GR-001 §8.2 and creates no architecture or product authority. |
 | Relationship | **Complements, does not modify** the approved documents. On any conflict, EA/SAD/EDA/API prevail and a governed change request is raised. |
 | Status | **For Design & Architecture Review Board** — no code, no React |
 | Owners | Chief Experience Officer · Enterprise UX Architect · Design System Lead · Principal Product Designer · Government Digital Experience Architect · Human Factors Specialist |
