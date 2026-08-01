@@ -1,14 +1,24 @@
 # EMG ADR-028 — Audit Reconciliation
 
-Status: Draft
+Owner:
+EMG Founder
 
-Authors:
-Architecture Board
+Architect:
+EMG Founder
+
+Decision Authority:
+Project Architect
+
+Status:
+Draft
 
 Decision Date:
 TBD
 
-> **Revision 1 — Draft for Architecture Board review.** This document is not
+Current Revision:
+Revision 1
+
+> **Revision 1 — Draft for architecture review.** This document is not
 > Accepted and authorizes no implementation. It defines the reconciliation and
 > delivery contract that ADR-027 Revision 5 and ADR-030 Revision 4 both defer to
 > this ADR. It amends no accepted ADR, creates no mutation route, command, or
@@ -719,50 +729,54 @@ projector is enabled.
 
 **Decision.** An implementation satisfying this ADR must demonstrate:
 
-**Projection correctness**
+**Projection correctness (D-6, D-8, D-11, D-17, D-20)**
 
 - AC-1. Every stored `MutationAuditIntent` produces exactly one projected event.
+  *(D-6, D-8)*
 - AC-2. `action`, `resource_type`, `resource_id`, `classification`, and `reason`
-  are carried without alteration.
+  are carried without alteration. *(D-11, D-17)*
 - AC-3. No projected field is defaulted, truncated, or invented beyond the
-  derivations this ADR fixes.
+  derivations this ADR fixes. *(D-20, D-11)*
 
-**Identity and idempotency**
+**Identity and idempotency (D-4, D-9, D-10, D-22, D-26)**
 
 - AC-4. `event_id` derivation is pure and reproducible across processes and
-  releases.
-- AC-5. A multi-intent mutation produces distinct `event_id` values.
-- AC-6. Redelivering a mutation creates no second audit record.
+  releases. *(D-9, D-10)*
+- AC-5. A multi-intent mutation produces distinct `event_id` values. *(D-9)*
+- AC-6. Redelivering a mutation creates no second audit record. *(D-4, D-22)*
 - AC-7. Clearing `delivered_at` and replaying creates no second audit record.
+  *(D-4, D-26)*
 
-**Ordering and completeness**
+**Ordering and completeness (D-2, D-6, D-7)**
 
 - AC-8. Events for one `mutation_id` are delivered in stored collection order.
-- AC-9. No committed mutation with dispatch rows is skipped.
-- AC-10. No total ordering across mutations is asserted or relied upon.
+  *(D-7)*
+- AC-9. No committed mutation with dispatch rows is skipped. *(D-2, D-6)*
+- AC-10. No total ordering across mutations is asserted or relied upon. *(D-7)*
 
-**Failure and recovery**
+**Failure and recovery (D-21, D-23, D-24)**
 
-- AC-11. A delivery failure leaves the row claimable and undelivered.
-- AC-12. An expired claim becomes eligible for another worker.
-- AC-13. Attempts are bounded by `attempt_count`.
+- AC-11. A delivery failure leaves the row claimable and undelivered. *(D-21)*
+- AC-12. An expired claim becomes eligible for another worker. *(D-21)*
+- AC-13. Attempts are bounded by `attempt_count`. *(D-21, D-23)*
 - AC-14. Projector failure of any kind leaves mutation correctness unaffected.
+  *(D-24)*
 
-**Boundaries**
+**Boundaries (D-11, D-13, D-14, D-15, D-16, D-17, D-27)**
 
-- AC-15. `mutation_ledger` is never written by the projector.
+- AC-15. `mutation_ledger` is never written by the projector. *(D-14)*
 - AC-16. Only `attempt_count`, `claim_owner`, `claim_expires_at`, and
-  `delivered_at` are written on `mutation_dispatch`.
-- AC-17. No mutation route, command, or DTO changes.
-- AC-18. No ledger or dispatch schema change occurs.
-- AC-19. ADR-034 audit read confinement is unchanged by this path.
-- AC-20. No classification is downgraded or omitted in projection.
+  `delivered_at` are written on `mutation_dispatch`. *(D-14)*
+- AC-17. No mutation route, command, or DTO changes. *(D-11)*
+- AC-18. No ledger or dispatch schema change occurs. *(D-13, D-15, D-27)*
+- AC-19. ADR-034 audit read confinement is unchanged by this path. *(D-16)*
+- AC-20. No classification is downgraded or omitted in projection. *(D-17)*
 
-**Reconciliation**
+**Reconciliation (D-12, D-44)**
 
 - AC-21. Mutation-sourced events are retrievable through the existing audit
   read API alongside read-path and operation-level events, satisfying
-  ADR-027 `:1319`.
+  ADR-027 `:1319`. *(D-12, D-44)*
 
 **Tenant attribution (D-28 through D-34)**
 
@@ -825,8 +839,9 @@ projector is enabled.
 
 **Negative**
 
-- A new long-running component enters the platform, with its own failure,
-  claim-expiry, and monitoring characteristics.
+- A new component enters the platform, with its own failure, claim-expiry, and
+  monitoring characteristics. Its execution and deployment topology are not
+  determined by this ADR and remain open under OQ-5.
 - At-least-once delivery makes correctness dependent on the audit service's
   existing `(source_principal, event_id)` duplicate rule. Should that rule
   change, this design's idempotency guarantee changes with it.
