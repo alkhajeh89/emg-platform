@@ -18,6 +18,7 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
 from emg_api_contracts import reject_unknown_environment
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StoreBackend = Literal["memory", "postgres"]
@@ -29,9 +30,8 @@ class Settings(BaseSettings):
     )
 
     # Graph storage backend: "memory" (tests / local without a DB) or
-    # "postgres" (PostgresNeo4jGraphStore, PostgreSQL-authoritative, Neo4j
-    # projection left unwired here — ADR-024 §19 does not require it, and
-    # this sprint's STRICT RULES forbid touching Neo4j).
+    # "postgres" (PostgresNeo4jGraphStore, PostgreSQL-authoritative, with the
+    # optional Neo4j serving projection configured below).
     store_backend: StoreBackend = "memory"
 
     # PostgreSQL connection (used only when store_backend == "postgres").
@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     postgres_connect_timeout_seconds: float = 10.0
     postgres_pool_min_size: int = 1
     postgres_pool_max_size: int = 10
+
+    # Optional Neo4j serving projection. PostgreSQL remains authoritative.
+    neo4j_uri: str | None = None
+    neo4j_user: str | None = None
+    neo4j_password: SecretStr | None = None
+    neo4j_max_pool_size: int = 10
 
     # Inbound service-token validation (same trust path as
     # services/audit/services/identity: RS256 tokens verified against the

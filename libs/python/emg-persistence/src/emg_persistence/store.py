@@ -122,11 +122,7 @@ class _PersistentGraphTransaction:
 
 
 class PostgresNeo4jGraphStore:
-    """Persistent store with PostgreSQL-authoritative direct read/write paths.
-
-    The name reflects the complete Phase 2 adapter described by the architecture;
-    Neo4j is not constructed or consulted by this implementation.
-    """
+    """PostgreSQL-authoritative store with optional Neo4j serving reads."""
 
     def __init__(
         self,
@@ -145,16 +141,16 @@ class PostgresNeo4jGraphStore:
 
     def read(self, tenant: TenantId) -> MemoryGraph:
         """Prefer Neo4j serving projection with read-repair; fall back to PostgreSQL."""
-        pg_graph = self._read_authoritative(tenant)
-        projection = self._resolve_projection()
-        if projection is None:
-            return pg_graph
+        head = self._read_authoritative_head(tenant)
+        if head is None:
+            return EMPTY_GRAPH
         try:
-            return self._read_via_projection(tenant, projection, pg_graph)
-        except PersistenceError:
-            raise
+            projection = self._resolve_projection()
         except Exception:
-            return pg_graph
+            projection = None
+        if projection is None:
+            return self._read_authoritative_snapshot(tenant, head)[1]
+        return self._read_via_projection(tenant, projection, head)
 
     def write(
         self, tenant: TenantId, graph: MemoryGraph, *, principal: PrincipalRef
@@ -340,11 +336,26 @@ class PostgresNeo4jGraphStore:
             return self._projection.get()
         return self._projection
 
-    def _read_authoritative(self, tenant: TenantId) -> MemoryGraph:
+    def _read_authoritative_head(self, tenant: TenantId) -> RevisionHead | None:
         try:
             with self._transactions.transaction() as connection:
                 repository = self._repository_factory(connection)
-                return _read_from_repository(repository, tenant)
+                return repository.get_head(tenant)
+        except PersistenceError:
+            raise
+        except PsycopgError as exc:
+            raise PersistenceError(
+                f"failed to read authoritative graph for tenant {tenant.value!r}"
+            ) from exc
+
+    def _read_authoritative_snapshot(
+        self, tenant: TenantId, head: RevisionHead
+    ) -> tuple[Revision, MemoryGraph]:
+        try:
+            with self._transactions.transaction() as connection:
+                repository = self._repository_factory(connection)
+                revision = _load_head_revision(repository, tenant, head)
+                return revision, _deserialize_snapshot(revision)
         except PersistenceError:
             raise
         except PsycopgError as exc:
@@ -356,36 +367,59 @@ class PostgresNeo4jGraphStore:
         self,
         tenant: TenantId,
         projection: Neo4jGraphProjection,
-        pg_fallback: MemoryGraph,
+        head: RevisionHead,
     ) -> MemoryGraph:
-        pg_head = self._load_pg_head(tenant)
-        if pg_head is None:
-            return EMPTY_GRAPH
-        pg_revision, expected_hash = pg_head
+        projection_available = True
         try:
             proj_head = projection.get_projection_head(tenant)
             if (
                 proj_head is not None
-                and proj_head.revision_number == pg_revision
-                and proj_head.content_hash == expected_hash
+                and proj_head.revision_number == head.revision_number
+                and proj_head.content_hash == head.content_hash
             ):
                 graph = projection.reconstruct(tenant)
-                if graph.content_hash() == expected_hash:
+                if graph.content_hash() == head.content_hash:
                     return graph
-            return projection.read_repair(
-                tenant,
-                load_head=self._load_pg_head,
-                load_revision=self._load_revision,
-            )
-        except PersistenceError:
-            return pg_fallback
+        except Exception:
+            projection_available = False
+            proj_head = None
 
-    def _load_pg_head(self, tenant: TenantId) -> tuple[int, str] | None:
-        with self._transactions.transaction() as connection:
-            head = self._repository_factory(connection).get_head(tenant)
-            if head is None:
+        revision, fallback = self._read_authoritative_snapshot(tenant, head)
+        if projection_available and (
+            proj_head is None or proj_head.revision_number < head.revision_number
+        ):
+            self._attempt_read_repair(tenant, projection, head, revision)
+        return fallback
+
+    def _attempt_read_repair(
+        self,
+        tenant: TenantId,
+        projection: Neo4jGraphProjection,
+        head: RevisionHead,
+        head_revision: Revision,
+    ) -> None:
+        def load_head(requested_tenant: TenantId) -> tuple[int, str] | None:
+            if requested_tenant != tenant:
                 return None
             return head.revision_number, head.content_hash
+
+        def load_revision(requested_tenant: TenantId, revision_number: int) -> Revision | None:
+            if requested_tenant != tenant:
+                return None
+            if revision_number == head.revision_number:
+                return head_revision
+            return self._load_revision(requested_tenant, revision_number)
+
+        try:
+            projection.read_repair(
+                tenant,
+                load_head=load_head,
+                load_revision=load_revision,
+            )
+        except Exception:
+            # PostgreSQL fallback is already integrity-checked and remains
+            # available even when best-effort projection repair fails.
+            return
 
     def _load_revision(self, tenant: TenantId, revision_number: int) -> Revision | None:
         with self._transactions.transaction() as connection:

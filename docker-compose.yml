@@ -190,6 +190,8 @@ services:
         condition: service_completed_successfully
       keycloak:
         condition: service_started
+      neo4j:
+        condition: service_healthy
     environment:
       EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT: development
       EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND: postgres
@@ -198,6 +200,9 @@ services:
       # overrides via the centralized secrets store (Engineering Master Plan
       # §5), never via this file.
       EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN: postgresql://emg_knowledge_graph_app:emg_knowledge_graph_local_dev_only_do_not_use_in_prod@postgres:5432/emg
+      EMG_KNOWLEDGE_GRAPH_API_NEO4J_URI: bolt://neo4j:7687
+      EMG_KNOWLEDGE_GRAPH_API_NEO4J_USER: neo4j
+      EMG_KNOWLEDGE_GRAPH_API_NEO4J_PASSWORD: emg_local_dev_only
       EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_BASE_URL: http://keycloak:8080
       EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_REALM: emg
     ports:
