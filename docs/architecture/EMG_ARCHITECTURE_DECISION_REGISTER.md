@@ -20,10 +20,11 @@ not constitute approved architecture unless explicitly marked Accepted.
 | ID | Type | Status | Approval | Scope and effect |
 | :--- | :--- | :--- | :--- | :--- |
 | GR-001 | Governance Document — **not an ADR** | **Ratified and Effective (2026-08-01); C-1, C-2, and C-3 satisfied** | Jointly approved by the Office of the CTO and Architecture Board | Governs documentation authority only. It does not redefine product scope or architecture and does not amend the Product Architecture Freeze or any accepted ADR. See `docs/governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md`. |
+| PD-001 | Freeze Control record — **not an ADR** | **Accepted (2026-08-03)** | Owner: EMG Founder; Architect: EMG Founder; Decision Authority: Project Architect | Affirms the Product Architecture Freeze **without amending it**, and records that the Executive Dashboard remains outside the MVP. Records the computability status of all six frozen Freeze §23 indicators and prohibits placeholder executive metrics in MVP. Creates no architecture decision. See `docs/product/EMG_PD-001_MVP_FREEZE_CONTROL_RECORD.md`. |
 
 ---
 
-## Architecture Decision Records (ADR-014 – ADR-034)
+## Architecture Decision Records (ADR-014 – ADR-037)
 
 Canonical index of every ADR number in the current range. Added 2026-08-03 to
 close register-completeness finding DOC-4. This section records *governance
@@ -58,6 +59,9 @@ a different accountable owner — those are recorded as stated.
 | ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-032_KNOWLEDGE_GRAPH_SCHEMA_VERSIONING_AND_EVOLUTION.md` | **Partial** — mutation-path negotiation implemented; read-path adoption governed separately |
 | ADR-033 (Rev 2) | Schema Registry and Negotiation Service | **Accepted** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-033_SCHEMA_REGISTRY_AND_NEGOTIATION_SERVICE.md` | **Partial** — complete through Phase 3 (`5288392`); Phase 4 and production normalizers not started |
 | ADR-034 | Security State and Service Trust | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-30 | `EMG_ADR-034_SECURITY_STATE_AND_SERVICE_TRUST.md` | **Implemented** (SRS-2) |
+| **ADR-035** | Human Principal Authentication | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-035_HUMAN_PRINCIPAL_AUTHENTICATION.md` | **Not implemented** — discharges ADR-025 §8.9. Requires a Keycloak realm change (no client currently enables the Authorization Code flow). Authorizes no code or realm configuration |
+| **ADR-036** | Application and BFF Boundary | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-036_APPLICATION_BFF_BOUNDARY.md` | **Not implemented** — BFF is mandatory; no application layer exists (`apps/` is empty). One open sub-decision: downstream human-delegation mechanism (§5), which must close before BFF implementation. Closes D-F-006 |
+| **ADR-037** | Decision Domain Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-037_DECISION_DOMAIN_MODEL.md` | **Not implemented** — supersedes the EPIC-08 deferral at `emg-ontology/references.py:10-12`. Introduces no `NodeType`, no `EdgeType`, and no mutation route |
 
 **Numbers outside this range.** ADR-001 through ADR-013 do not exist in this
 repository and must not be treated as approved or implied.
