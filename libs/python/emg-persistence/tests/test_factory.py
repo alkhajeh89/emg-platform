@@ -10,6 +10,7 @@ from emg_persistence import (
     PostgresNeo4jGraphStore,
     build_graph_store,
 )
+from emg_persistence.neo4j.lazy import LazyNeo4jProjection
 from emg_persistence.postgres import (
     PooledConnectionProvider,
     PostgresRevisionRepository,
@@ -35,6 +36,7 @@ def test_postgres_configuration_returns_persistent_graphstore() -> None:
 
     assert isinstance(store, PostgresNeo4jGraphStore)
     assert isinstance(store, GraphStore)
+    assert store._projection is None
 
 
 def test_neo4j_only_still_in_memory() -> None:
@@ -56,7 +58,7 @@ def test_postgres_and_neo4j_configuration_does_not_construct_neo4j(
     def forbidden_driver(*args: object, **kwargs: object) -> None:
         nonlocal neo4j_calls
         neo4j_calls += 1
-        raise AssertionError("Neo4j must not be constructed by the Sprint 4 factory")
+        raise AssertionError("Neo4j must remain lazy during factory construction")
 
     monkeypatch.setattr(neo4j.GraphDatabase, "driver", forbidden_driver)
     settings = PersistenceSettings(
@@ -67,6 +69,8 @@ def test_postgres_and_neo4j_configuration_does_not_construct_neo4j(
     store = build_graph_store(settings)
 
     assert isinstance(store, PostgresNeo4jGraphStore)
+    assert isinstance(store._projection, LazyNeo4jProjection)
+    assert store._projection._settings is settings
     assert neo4j_calls == 0
 
 

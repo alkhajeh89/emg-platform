@@ -34,18 +34,19 @@ from emg_memory_graph import (
     TemporalValidity,
 )
 from emg_persistence import PersistenceSettings
+from emg_persistence.factory import build_graph_store
 from emg_persistence.migrate import run_migrations
+from emg_persistence.neo4j.lazy import LazyNeo4jProjection
 from emg_persistence.neo4j.projection import Neo4jGraphProjection
 from emg_persistence.postgres import (
-    DirectConnectionProvider,
+    PooledConnectionProvider,
     PostgresMigrationExecutor,
     PostgresRevisionRepository,
-    PostgresTransactionProvider,
     connect,
 )
 from emg_persistence.revisions import Revision
 from emg_persistence.store import PostgresNeo4jGraphStore
-from emg_platform_core import GraphStore, PrincipalRef, TenantId
+from emg_platform_core import PrincipalRef, TenantId
 
 _PG_DSN = os.environ.get("EMG_PERSISTENCE_TEST_POSTGRES_DSN")
 _NEO4J_URI = os.environ.get("EMG_PERSISTENCE_TEST_NEO4J_URI")
@@ -61,6 +62,7 @@ requires_both = pytest.mark.skipif(
 )
 
 TENANT = TenantId.of("acme")
+TENANT_B = TenantId.of("other")
 PRINCIPAL = PrincipalRef.service("ingest")
 NOW = datetime(2026, 7, 25, 12, 0, tzinfo=timezone.utc)
 
@@ -162,10 +164,12 @@ def revision_repository(pg_settings: PersistenceSettings) -> Iterator[PostgresRe
         connection.close()
 
 
-def _clear_neo4j_tenant(driver: object) -> None:  # pragma: no cover - live DB only
+def _clear_neo4j_tenant(
+    driver: object, tenant: TenantId = TENANT
+) -> None:  # pragma: no cover - live DB only
     with driver.session() as session:  # type: ignore[attr-defined]
         for statement in _CLEAR_TENANT_CYPHER:
-            session.run(statement, {"tenant_id": TENANT.value})
+            session.run(statement, {"tenant_id": tenant.value})
 
 
 @pytest.fixture
@@ -176,16 +180,37 @@ def neo4j_driver(neo4j_settings: PersistenceSettings) -> Iterator[object]:
     driver = create_driver(neo4j_settings)
     run_migrations(Neo4jMigrationExecutor(driver))
     _clear_neo4j_tenant(driver)
+    _clear_neo4j_tenant(driver, TENANT_B)
     try:
         yield driver
     finally:
         _clear_neo4j_tenant(driver)
+        _clear_neo4j_tenant(driver, TENANT_B)
         driver.close()
 
 
 @pytest.fixture
 def projection(neo4j_driver: object) -> Neo4jGraphProjection:  # pragma: no cover - live DB only
     return Neo4jGraphProjection(neo4j_driver)
+
+
+def _factory_store_settings() -> PersistenceSettings:  # pragma: no cover - live DB only
+    return PersistenceSettings(
+        postgres_dsn=_PG_DSN,
+        neo4j_uri=_NEO4J_URI,
+        neo4j_user=_NEO4J_USER,
+        neo4j_password=_NEO4J_PASSWORD,
+    )
+
+
+def _close_factory_store(store: PostgresNeo4jGraphStore) -> None:
+    # pragma: no cover - live DB only
+    projection_source = store._projection
+    if isinstance(projection_source, LazyNeo4jProjection):
+        projection_source.close()
+    connections = store._transactions._connections
+    assert isinstance(connections, PooledConnectionProvider)
+    connections.close()
 
 
 # --------------------------------------------------------------------------
@@ -405,31 +430,137 @@ def test_rebuild_projection_clears_stale_state_and_replays(
 def test_store_read_falls_back_to_postgresql_when_neo4j_is_unreachable(
     pg_settings: PersistenceSettings,
 ) -> None:  # pragma: no cover - live DB only
-    from emg_persistence.neo4j import create_driver
-
     connection = connect(pg_settings)
     run_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()
 
-    transactions = PostgresTransactionProvider(DirectConnectionProvider(pg_settings))
-    # A real neo4j driver aimed at a port nothing listens on -- genuinely
-    # unreachable, not a fake/mock, proving the fix against real driver
-    # exception types (e.g. neo4j.exceptions.ServiceUnavailable).
-    unreachable_settings = PersistenceSettings(neo4j_uri="neo4j://127.0.0.1:1")
-    unreachable_projection = Neo4jGraphProjection(create_driver(unreachable_settings))
-    store: GraphStore = PostgresNeo4jGraphStore(
-        transactions, projection=unreachable_projection, clock=lambda: NOW
+    store = build_graph_store(
+        PersistenceSettings(
+            postgres_dsn=_PG_DSN,
+            neo4j_uri="neo4j://127.0.0.1:1",
+            connect_timeout_seconds=0.1,
+        )
     )
+    assert isinstance(store, PostgresNeo4jGraphStore)
 
-    graph = _graph(_node("n1"))
-    store.write(TENANT, graph, principal=PRINCIPAL)
-    result = store.read(TENANT)
+    try:
+        graph = _graph(_node("n1"))
+        store.write(TENANT, graph, principal=PRINCIPAL)
+        result = store.read(TENANT)
 
-    assert result.content_hash() == graph.content_hash()
+        assert result.content_hash() == graph.content_hash()
+    finally:
+        _close_factory_store(store)
 
     connection = connect(pg_settings)
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()
+
+
+# --------------------------------------------------------------------------
+# 8. Factory and live-composition serving-read coverage (P-01)
+# --------------------------------------------------------------------------
+
+
+@requires_both
+def test_factory_store_serves_matching_projection_without_loading_postgresql_snapshot(
+    revision_repository: PostgresRevisionRepository,
+    projection: Neo4jGraphProjection,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # pragma: no cover - live DB only
+    del revision_repository
+    store = build_graph_store(_factory_store_settings())
+    assert isinstance(store, PostgresNeo4jGraphStore)
+    assert isinstance(store._projection, LazyNeo4jProjection)
+    graph = _graph(_node("factory-serving"))
+
+    try:
+        store.write(TENANT, graph, principal=PRINCIPAL)
+
+        # Mutation persistence is PostgreSQL-only; the first read repairs the
+        # absent serving projection from the authoritative snapshot.
+        assert projection.get_projection_head(TENANT) is None
+        assert store.read(TENANT).content_hash() == graph.content_hash()
+        projected_head = projection.get_projection_head(TENANT)
+        assert projected_head is not None
+        assert projected_head.content_hash == graph.content_hash()
+
+        def fail_if_snapshot_loaded(
+            _repository: PostgresRevisionRepository,
+            _tenant: TenantId,
+            _revision_number: int,
+        ) -> Revision | None:
+            pytest.fail("matching projection must not load PostgreSQL graph_json")
+
+        monkeypatch.setattr(PostgresRevisionRepository, "get_revision", fail_if_snapshot_loaded)
+
+        served = store.read(TENANT)
+
+        assert served.content_hash() == graph.content_hash()
+    finally:
+        _close_factory_store(store)
+
+
+@requires_both
+def test_factory_store_repairs_lagging_projection_and_keeps_mutations_postgresql_only(
+    revision_repository: PostgresRevisionRepository,
+    projection: Neo4jGraphProjection,
+) -> None:  # pragma: no cover - live DB only
+    del revision_repository
+    store = build_graph_store(_factory_store_settings())
+    assert isinstance(store, PostgresNeo4jGraphStore)
+    first = _graph(_node("first"))
+    second = _graph(_node("first"), _node("second"))
+
+    try:
+        first_receipt = store.write(TENANT, first, principal=PRINCIPAL)
+        assert first_receipt.revision_number == 1
+        assert projection.get_projection_head(TENANT) is None
+        assert store.read(TENANT).content_hash() == first.content_hash()
+
+        second_receipt = store.write(TENANT, second, principal=PRINCIPAL)
+        assert second_receipt.revision_number == 2
+        lagging_head = projection.get_projection_head(TENANT)
+        assert lagging_head is not None
+        assert lagging_head.revision_number == 1
+
+        fallback = store.read(TENANT)
+
+        assert fallback.content_hash() == second.content_hash()
+        repaired_head = projection.get_projection_head(TENANT)
+        assert repaired_head is not None
+        assert repaired_head.revision_number == 2
+        assert projection.reconstruct(TENANT).content_hash() == second.content_hash()
+    finally:
+        _close_factory_store(store)
+
+
+@requires_both
+def test_factory_store_serving_reads_remain_tenant_isolated(
+    revision_repository: PostgresRevisionRepository,
+    neo4j_driver: object,
+) -> None:  # pragma: no cover - live DB only
+    del revision_repository, neo4j_driver
+    store = build_graph_store(_factory_store_settings())
+    assert isinstance(store, PostgresNeo4jGraphStore)
+    graph_a = _graph(_node("tenant-a"))
+    graph_b = _graph(_node("tenant-b-1"), _node("tenant-b-2"))
+
+    try:
+        store.write(TENANT, graph_a, principal=PRINCIPAL)
+        store.write(TENANT_B, graph_b, principal=PRINCIPAL)
+
+        assert store.read(TENANT).content_hash() == graph_a.content_hash()
+        assert store.read(TENANT_B).content_hash() == graph_b.content_hash()
+
+        projection_source = store._projection
+        assert isinstance(projection_source, LazyNeo4jProjection)
+        live_projection = projection_source.get()
+        assert live_projection is not None
+        assert live_projection.reconstruct(TENANT).content_hash() == graph_a.content_hash()
+        assert live_projection.reconstruct(TENANT_B).content_hash() == graph_b.content_hash()
+    finally:
+        _close_factory_store(store)

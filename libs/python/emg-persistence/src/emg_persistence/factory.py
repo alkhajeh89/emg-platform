@@ -16,6 +16,7 @@ from __future__ import annotations
 from emg_platform_core import GraphStore, InMemoryGraphStore
 
 from .config import PersistenceSettings
+from .neo4j.lazy import LazyNeo4jProjection
 from .postgres import (
     PooledConnectionProvider,
     PostgresOutboxRepository,
@@ -29,10 +30,12 @@ def _build_persistent_store(settings: PersistenceSettings) -> GraphStore:
     """Assemble the lazy, PostgreSQL-authoritative Sprint 4 store."""
     connections = PooledConnectionProvider(settings)
     transactions = PostgresTransactionProvider(connections)
+    projection = LazyNeo4jProjection(settings) if settings.neo4j_uri is not None else None
     return PostgresNeo4jGraphStore(
         transactions,
         repository_factory=PostgresRevisionRepository,
         outbox_repository_factory=PostgresOutboxRepository,
+        projection=projection,
     )
 
 
