@@ -17,7 +17,7 @@ from emg_platform_core import GraphStore, InMemoryGraphStore
 
 from .config import PersistenceSettings
 from .postgres import (
-    DirectConnectionProvider,
+    PooledConnectionProvider,
     PostgresOutboxRepository,
     PostgresRevisionRepository,
     PostgresTransactionProvider,
@@ -27,7 +27,7 @@ from .store import PostgresNeo4jGraphStore
 
 def _build_persistent_store(settings: PersistenceSettings) -> GraphStore:
     """Assemble the lazy, PostgreSQL-authoritative Sprint 4 store."""
-    connections = DirectConnectionProvider(settings)
+    connections = PooledConnectionProvider(settings)
     transactions = PostgresTransactionProvider(connections)
     return PostgresNeo4jGraphStore(
         transactions,

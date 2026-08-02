@@ -11,7 +11,7 @@ from emg_persistence import (
     build_graph_store,
 )
 from emg_persistence.postgres import (
-    DirectConnectionProvider,
+    PooledConnectionProvider,
     PostgresRevisionRepository,
     PostgresTransactionProvider,
 )
@@ -100,6 +100,6 @@ def test_dependencies_are_wired_from_the_exact_settings_instance() -> None:
     transactions = store._transactions
     assert isinstance(transactions, PostgresTransactionProvider)
     connections = transactions._connections
-    assert isinstance(connections, DirectConnectionProvider)
+    assert isinstance(connections, PooledConnectionProvider)
     assert connections._settings is settings
     assert store._repository_factory is PostgresRevisionRepository
