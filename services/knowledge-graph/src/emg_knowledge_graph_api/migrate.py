@@ -34,7 +34,7 @@ import logging
 from emg_persistence.config import PersistenceSettings
 from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres.migration_executor import PostgresMigrationExecutor
-from emg_persistence.postgres.pool import connect
+from emg_persistence.postgres.pool import DirectConnectionProvider
 
 from .config import get_settings
 
@@ -60,12 +60,10 @@ def run_startup_migrations() -> None:
         postgres_dsn=settings.migration_postgres_dsn,
         connect_timeout_seconds=settings.postgres_connect_timeout_seconds,
     )
-    connection = connect(persistence_settings)
-    try:
+    connections = DirectConnectionProvider(persistence_settings)
+    with connections.acquire() as connection:
         executor = PostgresMigrationExecutor(connection)
         applied = run_migrations(executor)
-    finally:
-        connection.close()
 
     if applied:
         logger.info(

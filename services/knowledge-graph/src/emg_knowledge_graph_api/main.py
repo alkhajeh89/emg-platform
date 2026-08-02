@@ -25,6 +25,7 @@ from .errors import error_headers, error_status, public_error_message
 from .routers.health import router as health_router
 from .routers.knowledge_graph import router as knowledge_graph_router
 from .routers.mutations import router as mutation_router
+from .store import close_store_runtime
 
 _log = get_logger("knowledge_graph.api")
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(HttpRequestSecurityMiddleware)
     app.router.add_event_handler("startup", validate_schema_runtime_configuration)
+    app.router.add_event_handler("shutdown", close_store_runtime)
 
     @app.middleware("http")
     async def correlation_id_middleware(

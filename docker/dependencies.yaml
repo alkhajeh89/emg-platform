@@ -46,6 +46,7 @@ services:
       - emg-platform-core
       - neo4j
       - psycopg
+      - psycopg-pool
 
 
   memory-graph:
