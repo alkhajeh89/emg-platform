@@ -16,8 +16,10 @@ wires both `KnowledgeGraphApplication` constructor arguments.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from threading import Lock
 from typing import Annotated, Protocol, runtime_checkable
 
 from emg_knowledge_graph import (
@@ -53,6 +55,18 @@ class StoreRuntime:
 
     store: GraphStoreAndRevisionReader
     atomic_mutations: AtomicMutationExecutionPort
+    close_connections: Callable[[], None]
+
+    def close(self) -> None:
+        self.close_connections()
+
+
+def _no_op_close() -> None:
+    return None
+
+
+_runtime_registry_lock = Lock()
+_active_runtimes: dict[tuple[StoreBackend, str, float, int, int], StoreRuntime] = {}
 
 
 @lru_cache
@@ -72,52 +86,110 @@ def _build_runtime(settings: Settings) -> StoreRuntime:
         # emg_audit_service.store's lazy `import psycopg`).
         from emg_knowledge_graph_infrastructure import PostgresAtomicMutationExecution
         from emg_persistence.config import PersistenceSettings
-        from emg_persistence.postgres.pool import DirectConnectionProvider
+        from emg_persistence.postgres.pool import PooledConnectionProvider
         from emg_persistence.postgres.transactions import ContextBoundTransactionProvider
         from emg_persistence.store import PostgresNeo4jGraphStore
 
         persistence_settings = PersistenceSettings(
             postgres_dsn=settings.postgres_dsn,
             connect_timeout_seconds=settings.postgres_connect_timeout_seconds,
+            postgres_pool_min_size=settings.postgres_pool_min_size,
+            postgres_pool_max_size=settings.postgres_pool_max_size,
         )
-        connections = DirectConnectionProvider(persistence_settings)
+        connections = PooledConnectionProvider(persistence_settings)
         transactions = ContextBoundTransactionProvider(connections)
         return StoreRuntime(
             store=PostgresNeo4jGraphStore(transactions),
             atomic_mutations=PostgresAtomicMutationExecution(transactions),
+            close_connections=connections.close,
         )
     return StoreRuntime(
         store=_memory_store_singleton(),
         atomic_mutations=_memory_atomic_mutations_singleton(),
+        close_connections=_no_op_close,
     )
 
 
-@lru_cache
-def _runtime_singleton_for(backend: StoreBackend, dsn: str) -> StoreRuntime:
+def _runtime_singleton_for(
+    backend: StoreBackend,
+    dsn: str,
+    connect_timeout_seconds: float,
+    pool_min_size: int,
+    pool_max_size: int,
+) -> StoreRuntime:
     # Cache keyed by the config that determines the store, so the app reuses
-    # one store/connection-provider per configuration (mirrors
-    # emg_audit_service.store._store_singleton_for exactly).
-    return _build_runtime(Settings(store_backend=backend, postgres_dsn=dsn))
+    # one store/connection-provider per configuration.
+    key = (backend, dsn, connect_timeout_seconds, pool_min_size, pool_max_size)
+    with _runtime_registry_lock:
+        runtime = _active_runtimes.get(key)
+        if runtime is None:
+            # Pool construction is lazy, so holding the lock here performs no
+            # datastore I/O and prevents duplicate pools under concurrent first use.
+            runtime = _build_runtime(
+                Settings(
+                    store_backend=backend,
+                    postgres_dsn=dsn,
+                    postgres_connect_timeout_seconds=connect_timeout_seconds,
+                    postgres_pool_min_size=pool_min_size,
+                    postgres_pool_max_size=pool_max_size,
+                )
+            )
+            _active_runtimes[key] = runtime
+        return runtime
 
 
-def _store_singleton_for(backend: str, dsn: str) -> GraphStoreAndRevisionReader:
-    return _runtime_singleton_for(backend, dsn).store
+def _store_singleton_for(
+    backend: StoreBackend,
+    dsn: str,
+    connect_timeout_seconds: float,
+    pool_min_size: int,
+    pool_max_size: int,
+) -> GraphStoreAndRevisionReader:
+    return _runtime_singleton_for(
+        backend,
+        dsn,
+        connect_timeout_seconds,
+        pool_min_size,
+        pool_max_size,
+    ).store
 
 
 def graph_store_dependency(settings: SettingsDep) -> GraphStoreAndRevisionReader:
-    return _store_singleton_for(settings.store_backend, settings.postgres_dsn)
+    return _store_singleton_for(
+        settings.store_backend,
+        settings.postgres_dsn,
+        settings.postgres_connect_timeout_seconds,
+        settings.postgres_pool_min_size,
+        settings.postgres_pool_max_size,
+    )
 
 
 GraphStoreDep = Annotated[GraphStoreAndRevisionReader, Depends(graph_store_dependency)]
 
 
 def atomic_mutation_execution_dependency(settings: SettingsDep) -> AtomicMutationExecutionPort:
-    return _runtime_singleton_for(settings.store_backend, settings.postgres_dsn).atomic_mutations
+    return _runtime_singleton_for(
+        settings.store_backend,
+        settings.postgres_dsn,
+        settings.postgres_connect_timeout_seconds,
+        settings.postgres_pool_min_size,
+        settings.postgres_pool_max_size,
+    ).atomic_mutations
 
 
 AtomicMutationExecutionDep = Annotated[
     AtomicMutationExecutionPort, Depends(atomic_mutation_execution_dependency)
 ]
+
+
+def close_store_runtime() -> None:
+    """Close every constructed runtime pool and clear the process-local cache."""
+
+    with _runtime_registry_lock:
+        runtimes = tuple(_active_runtimes.values())
+        _active_runtimes.clear()
+    for runtime in runtimes:
+        runtime.close()
 
 
 def store_health(store: GraphStoreAndRevisionReader, settings: Settings) -> StoreHealth:

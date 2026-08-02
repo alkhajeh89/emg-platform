@@ -45,6 +45,8 @@ class Settings(BaseSettings):
         "@localhost:5432/emg"
     )
     postgres_connect_timeout_seconds: float = 10.0
+    postgres_pool_min_size: int = 1
+    postgres_pool_max_size: int = 10
 
     # Inbound service-token validation (same trust path as
     # services/audit/services/identity: RS256 tokens verified against the
