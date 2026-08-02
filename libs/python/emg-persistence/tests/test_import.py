@@ -15,6 +15,7 @@ def test_public_api_exports() -> None:
         "build_graph_store",
         "PersistenceError",
         "PersistenceConflictError",
+        "EvidenceLedgerIntegrityError",
         "ProjectionLagError",
         "PostgresNeo4jGraphStore",
     }

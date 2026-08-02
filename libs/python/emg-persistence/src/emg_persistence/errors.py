@@ -38,3 +38,7 @@ class ProjectionLagError(PersistenceError):
     it is **never** surfaced from ``GraphStore.write()`` or ``read()`` — reads
     fall back to PostgreSQL when the projection is unavailable or lagging.
     """
+
+
+class EvidenceLedgerIntegrityError(PersistenceError):
+    """Stored evidence-ledger content failed non-retryable integrity checks."""

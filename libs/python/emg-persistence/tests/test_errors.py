@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from emg_errors import EMGError
-from emg_persistence import PersistenceConflictError, PersistenceError, ProjectionLagError
+from emg_persistence import (
+    EvidenceLedgerIntegrityError,
+    PersistenceConflictError,
+    PersistenceError,
+    ProjectionLagError,
+)
 
 
 def test_base_derives_from_emg_error() -> None:
@@ -11,6 +16,7 @@ def test_base_derives_from_emg_error() -> None:
 
 
 def test_subclasses_derive_from_persistence_error() -> None:
+    assert issubclass(EvidenceLedgerIntegrityError, PersistenceError)
     assert issubclass(PersistenceConflictError, PersistenceError)
     assert issubclass(ProjectionLagError, PersistenceError)
 
