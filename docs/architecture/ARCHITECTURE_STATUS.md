@@ -92,7 +92,7 @@ status.
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4; **first live enforcement adopter delivered (ADR-025, 2026-07-27)** | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below). ADR-025 (Knowledge Graph Integration Closure, Group C) makes `services/knowledge-graph` the first service to actually enforce (not just introspect) an authorization decision using this module's PEP/`emg-policy-engine` stack — see Module 7 row and the ADR-025 entry in the ADRs table below. |
 | Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. SRS-2 adds verified-tenant confinement and PEP-backed classification authorization to event lookup, listing, pagination, and export. |
-| Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 complete (PR #45, `6536b73`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. Phase 4A completed at PR #37 (`aefc82c`). Phase 4B observability emission was implemented at `c6c28bb` and merged through PR #45 (`6536b73`). Phases 4C and 4D are closed as not required, and Phase 4E governance and conformance closure is complete. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; its separate Phase 4 has not started, and no second schema version or production normalizer exists. ADR-027 Stage 5 remains separate and unstarted. The Neo4j serving-projection binding remains deferred. |
+| Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 complete (PR #45, `6536b73`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. Phase 4A completed at PR #37 (`aefc82c`). Phase 4B observability emission was implemented at `c6c28bb` and merged through PR #45 (`6536b73`). Phases 4C and 4D are closed as not required, and Phase 4E governance and conformance closure is complete. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; its separate Phase 4 has not started, and no second schema version or production normalizer exists. ADR-027 Stage 5 documentation is complete at `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md` and claims no production readiness; Stage 5 production rollout remains open. **Updated 2026-08-03:** the Neo4j serving-projection binding is no longer deferred — `services/knowledge-graph` now composes the lazy Neo4j projection and the bounded PostgreSQL pool with explicit lifecycle ownership (P-01, P-04). |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -113,6 +113,30 @@ fallback when Neo4j is unavailable. Proven in the `persistence` CI job
 final test counts live in `docs/phases/phase-2/PHASE2_COMPLETION.md`, which
 is the authoritative source for Phase 2 status — this entry is a summary
 pointer only and is not kept in sync line-by-line with that document.
+
+**Post-Phase-2 hardening (P-01 … P-05), merged 2026-08-02.** Five narrow
+changes landed after the Phase 2 completion record was written. They add no
+architecture decision and change no ADR:
+
+- **P-01** (`cdbf0ca`, PR #52) — current reads now prefer the Neo4j serving
+  projection with read-repair, falling back to PostgreSQL. The authoritative
+  head is still read from PostgreSQL first.
+- **P-02** (`9d464ed`, `c9ce138`, PR #55) — `EvidenceLedgerRepository` is
+  implemented as an internal `emg-persistence` capability under the accepted
+  P-02 contract addendum. No ingestion wiring, API, worker, UI, or product
+  capability was introduced, and it has no production caller.
+- **P-03** (`b99b9af`, PR #50) — migration V006 narrows the runtime role's
+  `UPDATE` grants to specific columns.
+- **P-04** (`8afadb9`, `78a3919`, PR #51) — lazy bounded PostgreSQL pooling
+  with explicit lifecycle ownership at the service boundary.
+- **P-05** (`8972aa7`, PR #48) — mutation-dispatch claims are bounded by an
+  explicit `max_attempts`.
+
+Current implementation detail now lives in two living documents:
+`docs/engineering/persistence-architecture.md` and
+`docs/engineering/persistence-operations.md`. Deferred items — the continuous
+`ProjectionWorker` daemon (TD-002), the P-02 EL-10 evidence-ledger schema
+hardening, and audit dispatch delivery — remain open and are recorded there.
 
 ---
 

@@ -32,12 +32,21 @@ This directory contains the authoritative documentation for the EMG Platform.
 
 - [Phase 2 Architecture](phases/phase-2/PHASE2_ARCHITECTURE.md)
 - [Phase 2 Plan](phases/phase-2/PHASE2_PLAN.md)
+- [Phase 2 Completion](phases/phase-2/PHASE2_COMPLETION.md)
 - [Project Understanding](phases/phase-2/PROJECT_UNDERSTANDING.md)
 - [Implementation Rules](phases/phase-2/IMPLEMENTATION_RULES.md)
+
+The Phase 2 documents above are dated records of that phase. For the **current**
+persistence implementation and its operation, see the two living documents under
+Engineering below.
 
 ## Engineering
 
 - [Engineering Documentation](engineering/)
+- [Persistence Architecture](engineering/persistence-architecture.md) — current implemented persistence design
+- [Persistence Operations](engineering/persistence-operations.md) — running, configuring, and troubleshooting persistence
+- [Storage Ports](engineering/storage-ports.md)
+- [Technical Debt](engineering/technical-debt.md)
 - [Repository Structure](repo-structure.md)
 
 ## Sprints
