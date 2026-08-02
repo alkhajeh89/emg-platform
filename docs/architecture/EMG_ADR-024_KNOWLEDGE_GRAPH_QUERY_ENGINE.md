@@ -6,8 +6,49 @@ Knowledge Graph Query Engine — Application-Layer Read Architecture (Sprint 7.3
 
 ## 2. Status
 
-**Proposed.** Implementation may begin only after architecture approval, following the
-same governance pattern ADR-022 and ADR-023 established for Sprints 7.1 and 7.2.
+**Accepted.**
+
+**Owner:** EMG Founder
+**Architect:** EMG Founder
+**Decision Authority:** Project Architect
+**Decision Date:** 2026-08-03
+
+> **Ratification note — 2026-08-03.** This ADR originally read *"Proposed.
+> Implementation may begin only after architecture approval, following the same
+> governance pattern ADR-022 and ADR-023 established for Sprints 7.1 and 7.2."*
+> It was implemented without that status ever being changed — recorded by the
+> Architecture Baseline Review as finding MAJ-1, a GR-001 Rule 2 and Rule 6
+> defect.
+>
+> **Acceptance is retrospective ratification of the decisions exactly as
+> written. No architectural decision is added, removed, or altered, and no new
+> implementation authority is created.** The §27 compliance checklist was
+> verified against the repository before ratification:
+>
+> - No query method was added to `GraphStore` or `GraphRevisionReader`; no
+>   `GraphQueryReader` port and no separate query-domain package exist.
+> - The five-step §9 flow is applied identically by every query method
+>   (`services/knowledge-graph/src/emg_knowledge_graph/service.py:696-989`).
+> - `GraphQueryScope` contains exactly `tenant` and `revision_number`, and its
+>   docstring records that a timestamp selector is deferred per §20.10.
+> - `MAX_QUERY_PAGE_SIZE = 200` and `MAX_TRAVERSAL_DEPTH = 64` are code-level
+>   constants (`commands.py:45`, `:47`), asserted by
+>   `tests/test_query_contracts.py:232`, `:254`, `:551`.
+> - Cursor pagination is implemented; offset pagination is absent.
+> - Only service-owned DTOs are returned; no `MemoryNode`, `MemoryEdge`,
+>   persistence row, or repository-internal type crosses the boundary.
+> - `CrossTenantAccessError` does not exist, and
+>   `tests/test_query_contracts.py:502` actively asserts its absence.
+> - `tests/test_dependency_boundary.py` exists and passes in CI.
+>
+> **One later change, assessed and found consistent.** P-01 (`cdbf0ca`) made
+> `GraphStore.read()` prefer the Neo4j serving projection with PostgreSQL
+> fallback. This does **not** conflict with §8.9: the query engine still never
+> queries Neo4j directly — it calls `GraphStore.read(tenant)` — and §19 already
+> describes Neo4j as a current-head accelerator, which is precisely the role
+> P-01 realized. §8.10's "no change to `GraphStore`" scoped what *this ADR*
+> authorized; P-01 changed the store under Phase 2 authority, not under
+> ADR-024.
 
 **Date:** 2026-07-26
 **Deciders:** Product / Architecture (EMG Platform)

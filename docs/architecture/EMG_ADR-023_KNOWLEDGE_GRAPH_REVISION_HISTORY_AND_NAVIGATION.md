@@ -6,8 +6,49 @@ Knowledge Graph Revision History & Navigation (Sprint 7.2)
 
 ## 2. Status
 
-**Proposed.** Implementation may begin only after architecture approval, following the
-same governance pattern ADR-022 established for Sprint 7.1.
+**Accepted.**
+
+**Owner:** EMG Founder
+**Architect:** EMG Founder
+**Decision Authority:** Project Architect
+**Decision Date:** 2026-08-03
+
+> **Ratification note — 2026-08-03.** This ADR originally read *"Proposed.
+> Implementation may begin only after architecture approval, following the same
+> governance pattern ADR-022 established for Sprint 7.1."* It was implemented
+> without that status ever being changed — recorded by the Architecture
+> Baseline Review as finding MAJ-1, a GR-001 Rule 2 and Rule 6 defect.
+>
+> **Acceptance is retrospective ratification of the decisions exactly as
+> written. No architectural decision is added, removed, or altered, and no new
+> implementation authority is created.** Every item in the §28 compliance
+> checklist was verified against the repository before ratification:
+>
+> - `GraphRevisionReader`, `RevisionMetadata`, and `HistoricalGraphRevision`
+>   exist in `emg-platform-core` and are imported by
+>   `services/knowledge-graph/src/emg_knowledge_graph/service.py:24`.
+> - `WriteReceipt` carries `revision_number`, `committed_at`, and
+>   `revision_created`, consumed at `service.py:509`, `:519`, and `:692-693`.
+> - `KnowledgeGraphApplication` gained thin orchestrator methods only
+>   (`service.py:588`, `:600`, `:619`, `:649`).
+> - `list_revisions` reads metadata only and never deserializes `graph_json`.
+> - Historical reads raise `SnapshotIntegrityError` on hash mismatch.
+> - Restore opens exactly one transaction and stages the historical graph
+>   unmodified (`service.py:674-681`).
+> - No PostgreSQL migration was added for this ADR; the schema set is V001–V006,
+>   none of which serves it.
+> - `CrossTenantAccessError` does not exist, and
+>   `services/knowledge-graph/tests/test_query_contracts.py:502` actively
+>   asserts its absence.
+> - `RestoreRevisionCommand` carries no `as_of` field, and its docstring cites
+>   §12 and §15 as the reason.
+>
+> **One documented naming inconsistency, disclosed rather than corrected.**
+> §8.4 names the application method `read_revision` while §13 refers to
+> `get_revision`; the implementation uses `get_revision` at the application
+> layer and `read_revision` on the port. This is an inconsistency internal to
+> this ADR's own prose, not implementation drift, and the decision text is left
+> unchanged.
 
 **Date:** 2026-07-26
 **Deciders:** Product / Architecture (EMG Platform)
