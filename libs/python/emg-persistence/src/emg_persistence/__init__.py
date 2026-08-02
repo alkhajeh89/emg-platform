@@ -12,13 +12,19 @@ errors, and concrete persistent GraphStore adapter.
 from __future__ import annotations
 
 from .config import PersistenceSettings
-from .errors import PersistenceConflictError, PersistenceError, ProjectionLagError
+from .errors import (
+    EvidenceLedgerIntegrityError,
+    PersistenceConflictError,
+    PersistenceError,
+    ProjectionLagError,
+)
 from .factory import build_graph_store
 from .store import PostgresNeo4jGraphStore
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "EvidenceLedgerIntegrityError",
     "PersistenceConflictError",
     "PersistenceError",
     "PersistenceSettings",
