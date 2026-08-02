@@ -96,6 +96,16 @@ boundary of Freeze §11.
   (the additive retrofit named in Freeze §9), shipped with a real migration.
 - Schema migrations.
 
+> **Reconciliation note — 2026-08-03.** This document is a Phase 1 record and
+> its deferral list above is preserved as written. Phase 2 has since been
+> delivered, and it resolved the first bullet differently: **PostgreSQL is the
+> authoritative record and Neo4j is a rebuildable serving projection** (ADR-1 /
+> ADR-5, `PHASE2_ARCHITECTURE.md:26`) — not "Neo4j as graph of record" — and it
+> shipped one adapter, `PostgresNeo4jGraphStore`, rather than two. Schema
+> migrations V001–V006 exist. Nothing in `emg-platform-core` changed as a
+> result; the port seam described here held. For the implemented persistence
+> design see `docs/engineering/persistence-architecture.md`.
+
 ## Guarantees
 
 - **Determinism:** the in-memory adapter returns identical `content_hash` for

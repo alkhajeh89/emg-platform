@@ -97,3 +97,14 @@ adapter-independent.
 Any new adapter must satisfy the obligations above; the in-memory adapter's test
 suite (`libs/python/emg-platform-core/tests`) is the executable contract those
 adapters should also be tested against in Phase 2.
+
+> **Reconciliation note — 2026-08-03.** The Phase 1 expectation recorded in the
+> table above ("Neo4j adapter — Graph of record") is **not** how Phase 2 was
+> built, and the original row is preserved only as a record of that expectation.
+> Phase 2 deliberately refined it (`PHASE2_ARCHITECTURE.md:26`, ADR-1/ADR-5):
+> **PostgreSQL is the authoritative record** for revisions, head pointer,
+> outbox, mutation ledger, and evidence ledger; **Neo4j is a rebuildable
+> serving projection** and is never on the write path. There is one adapter,
+> `PostgresNeo4jGraphStore`, not two. Current reads prefer Neo4j with
+> read-repair and fall back to PostgreSQL when it is unavailable (P-01).
+> See `docs/engineering/persistence-architecture.md` for the implemented design.

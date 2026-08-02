@@ -7,6 +7,27 @@
 **Base:** `develop` (Phase 1 merged: `38ffcf7`, `5373009`).
 **Governing baseline:** `EMG_PRODUCT_ARCHITECTURE_FREEZE.md` (v1.0-FROZEN) and the Phase 1 `GraphStore` port (`libs/python/emg-platform-core`).
 
+> **Reconciliation note — 2026-08-03.** This document remains the **governing
+> Phase 2 architecture**; ADR-1 … ADR-6 and D1–D3 below are unchanged and are
+> not amended by this note. Two implementation facts have moved on since it was
+> written, and neither reverses a decision here:
+>
+> 1. **§5.1 read path.** Current reads now *prefer* the Neo4j serving projection
+>    with read-repair and fall back to PostgreSQL (P-01, `cdbf0ca`). ADR-5 is
+>    upheld — the authoritative head is still read from PostgreSQL first and
+>    Neo4j remains off the write path.
+> 2. **§ ADR-4 evidence ledger.** The line at `:109` — "Phase 2 only defines the
+>    ledger schema + repository capability … it is not wired into
+>    `GraphStore.write`" — was accurate for Phase 2. The
+>    `EvidenceLedgerRepository` has since been **implemented** under the
+>    separately accepted P-02 contract addendum
+>    (`docs/architecture/EMG_P02_EVIDENCE_LEDGER_CONTRACT_ADDENDUM.md`,
+>    Accepted 2026-08-02). ADR-4's boundary holds: it remains independent of
+>    `GraphStore`, is still not on the write path, and introduced **no ingestion
+>    wiring or product capability**.
+>
+> Implemented detail lives in `docs/engineering/persistence-architecture.md`.
+
 > **Approved decisions carried into rev 2:**
 > - **D1 — Tenant scoping stays at the `GraphStore`/storage boundary.** `MemoryGraph` is explicitly **single-tenant**; every *persisted* datum is tenant-scoped. The frozen `emg-memory-graph` models are not modified.
 > - **D2 — PostgreSQL authoritative log + Neo4j projection** (no distributed/2PC transaction).

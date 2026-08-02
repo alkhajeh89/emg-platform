@@ -5,6 +5,16 @@
 **Base:** `develop` (Phase 1 merged: `38ffcf7`, `5373009`).
 **Package:** `libs/python/emg-persistence` (D3) — implemented.
 
+> **Reconciliation note — 2026-08-03.** This is the Phase 2 **plan** and its
+> sprint scope below is preserved as written. Five narrow hardening changes
+> (P-01 … P-05) merged on 2026-08-02, after this plan's sprints closed; they are
+> outside its scope and add no sprint. In particular, the evidence-ledger
+> repository this plan deliberately left as **schema only** (§ Sprint 2, ADR-4)
+> has since been implemented under the separately accepted P-02 contract
+> addendum, with no ingestion wiring or product capability. See
+> `PHASE2_COMPLETION.md`'s reconciliation note for the full list and
+> `docs/engineering/persistence-architecture.md` for the current design.
+
 ## Non-negotiable architectural invariants (every sprint must uphold)
 
 1. **PostgreSQL is authoritative** (ADR-1). Neo4j is a **serving projection only**, rebuildable from PostgreSQL.
