@@ -7,6 +7,41 @@
 
 ---
 
+> ## Reconciliation note — 2026-08-03
+>
+> **This document is a dated completion record and its original claims below are
+> preserved as written.** It was authored at Phase 2 closure and does not
+> describe five narrow changes merged afterwards on 2026-08-02 (`develop` at
+> `e578d31`). None of them altered a Phase 2 architecture decision; all were
+> additive hardening.
+>
+> - **P-01** (`cdbf0ca`, PR #52) — current reads now **prefer the Neo4j serving
+>   projection** with read-repair, falling back to PostgreSQL. §1's "PostgreSQL
+>   fallback when Neo4j is unavailable" remains true; the preferred path
+>   changed. The authoritative head is still read from PostgreSQL first.
+> - **P-02** (`9d464ed`, `c9ce138`, PR #55) — `EvidenceLedgerRepository` is now
+>   **implemented** as an internal `emg-persistence` capability. §1 did not list
+>   it because Phase 2 delivered only the `evidence_ledger` schema (ADR-4). No
+>   ingestion wiring, API, worker, UI, or product capability exists.
+> - **P-03** (`b99b9af`, PR #50) — migration **V006** narrows the runtime role's
+>   `UPDATE` grants to specific columns.
+> - **P-04** (`8afadb9`, `78a3919`, PR #51) — **lazy bounded PostgreSQL
+>   pooling** with explicit lifecycle ownership. Phase 2 shipped
+>   `DirectConnectionProvider` only.
+> - **P-05** (`8972aa7`, PR #48) — mutation-dispatch claims are bounded by an
+>   explicit `max_attempts`.
+>
+> Additionally, **TD-003** (`neo4j/lazy.py` unit coverage), recorded as accepted
+> debt at Phase 2 closure, was **resolved** by P-01. **TD-002** (continuous
+> `ProjectionWorker` daemon) remains open and accepted.
+>
+> For the current implemented design and its operation, see the living documents
+> `docs/engineering/persistence-architecture.md` and
+> `docs/engineering/persistence-operations.md`. This record is not maintained
+> against `develop`.
+
+---
+
 ## 1. Implemented capabilities
 
 - **PostgreSQL authoritative persistence** (ADR-1, ADR-5) — `store.py::PostgresNeo4jGraphStore`; transaction open and commit read/write only `graph_head` and `graph_revisions.graph_json`; Neo4j is never on the write path.

@@ -10,7 +10,7 @@ markers in `src`; debt is documented, not scattered.)
 |----|-------|----------|--------|--------------|
 | TD-001 | `mypy --strict` not enforced in `make lint` / CI | Low | **RESOLVED in Phase 1** | — |
 | TD-002 | Continuous `ProjectionWorker` daemon/lifecycle deferred | Low | Open, accepted (Phase 2) | Future — when continuous projection is needed |
-| TD-003 | `neo4j/lazy.py` driver-construction path lacks unit coverage | Low | Open, accepted (Phase 2) | Next `emg-persistence` touch |
+| TD-003 | `neo4j/lazy.py` driver-construction path lacks unit coverage | Low | **RESOLVED 2026-08-02 (P-01, `cdbf0ca`)** | — |
 | TD-004 | Parallel project-status tracking systems (`docs/phases/` vs. `ARCHITECTURE_STATUS.md`/`services/README.md`) | Low | Open, accepted — documentation debt only | Unscheduled |
 
 ---
@@ -165,23 +165,27 @@ phase today.
 path) is covered; the `.get()`/`.close()` driver-construction path (16 of 24
 statements) is not exercised by any unit test today.
 
-**Status:** Open, accepted (Phase 2).
+**Status:** **RESOLVED 2026-08-02** by P-01 (`cdbf0ca`, PR #52).
 
 ### Root cause
 
-No test file imports `LazyNeo4jProjection` directly; it is only exercised
-indirectly through `store.py`, and no fake/monkeypatched `create_driver` has
+No test file imported `LazyNeo4jProjection` directly; it was only exercised
+indirectly through `store.py`, and no fake/monkeypatched `create_driver` had
 been written to cover its lazy-construction branch.
 
-### Recommended future solution
+### Resolution
+
+`libs/python/emg-persistence/tests/test_lazy_neo4j_projection.py` now
+monkeypatches `emg_persistence.neo4j.driver.create_driver` with a fake and
+asserts the lazy-construction and teardown behaviour the recommended solution
+below described. No live database is required, and the test runs in the
+standard unit job.
+
+### Original recommended solution (for the record)
 
 Add a small unit test that monkeypatches `emg_persistence.neo4j.driver.create_driver`
 with a fake, asserting `.get()` constructs exactly once and caches the result,
 and that `.close()` tears the fake driver down. No live database required.
-
-### Expected implementation phase
-
-Next `emg-persistence` touch (low priority, not blocking).
 
 ---
 

@@ -33,6 +33,56 @@ not re-audit or restate unrelated roadmap findings.
   projection binding remain open integration work. Phase 4A completion does
   not imply that either binding is complete.
 
+## Persistence Reconciliation Addendum — 2026-08-03
+
+**Reconciliation baseline:** `develop` at `e578d31` (PR #55).
+
+Deliberately narrow, in the same style as the 2026-08-01 addendum above. It
+re-verifies only the persistence facts changed since they were last recorded and
+re-audits nothing else. The original 2026-07-27 findings and the table below are
+preserved as written.
+
+**Now closed:**
+
+- **Neo4j serving-projection binding** — no longer open. `services/knowledge-graph`
+  composes the lazy Neo4j projection and current reads prefer it with
+  read-repair, falling back to PostgreSQL (P-01, `cdbf0ca`, PR #52). This
+  supersedes the 2026-08-01 bullet above naming it open integration work. The
+  `emg-knowledge-pipeline` service binding remains open.
+- **PostgreSQL connection pooling** — implemented as a lazy, bounded pool with
+  explicit lifecycle ownership at the service boundary (P-04, `8afadb9`,
+  `78a3919`, PR #51).
+- **Runtime privilege breadth** — migration V006 narrows the runtime role's
+  `UPDATE` grants to specific columns (P-03, `b99b9af`, PR #50).
+- **Unbounded dispatch retry** — mutation-dispatch claims are bounded by an
+  explicit `max_attempts` (P-05, `8972aa7`, PR #48).
+- **TD-003** (`neo4j/lazy.py` unit coverage) — resolved by P-01.
+
+**Status corrections to the table below:**
+
+- The **ADR-028** row states "Referenced, not written, not begun". That was
+  accurate at `aefc82c`. ADR-028 Revision 1 has since been written and merged
+  (`96702a2` … `9b9d2ab`, PRs #47 and #49). Its repository status is
+  **Draft — not Accepted, `Decision Date: TBD`**. Its decisions are unchanged by
+  this addendum. The underlying readiness finding stands: **no consumer of the
+  `mutation_dispatch` `audit` channel exists**, so cross-service audit
+  reconciliation is still not delivered.
+
+**New and unchanged open items:**
+
+- **P-02 evidence ledger.** The `EvidenceLedgerRepository` is implemented
+  (PR #55) under an accepted contract that authorized the repository contract
+  **only**. There is no ingestion wiring, API, worker, UI, or product
+  capability, and no production caller. Its EL-10 schema hardening — a
+  database-enforced append-only trigger, `prev_hash NOT NULL`, `seq >= 1`, and
+  hash-format checks — is **required before the ledger is relied upon as an
+  evidentiary record** and is not yet applied.
+- **TD-002** (continuous `ProjectionWorker` daemon) remains open and accepted.
+- Backup, restore, PITR, and disaster-recovery procedure remain unspecified.
+
+Current persistence detail: `docs/engineering/persistence-architecture.md` and
+`docs/engineering/persistence-operations.md`.
+
 ---
 
 ## 1. Architecture vs. Engineering Status
