@@ -48,6 +48,17 @@ not constitute approved architecture unless explicitly marked Accepted.
 | ADR-033 Revision 2 | **Accepted** | Infrastructure Foundation complete through Phase 3 (`5288392`); Phase 4 and normalizers not started |
 | ADR-034 | **Accepted** | SRS-2 security state, audit confinement, database-role separation, and service-token trust implemented |
 
+## Phase Contract Addenda
+
+Accepted contract addenda that bind a single internal capability defined by a
+completed phase architecture. They are not ADRs and do not amend one. Listing
+here records approval; it does not confer it (GR-001 Rule 3) — authority rests
+on the explicit status and approval recorded in each governing document.
+
+| ID | Title | Status | Approval | Scope and effect | Implementation status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| P-02 | Evidence Ledger Contract Addendum | **Accepted (2026-08-02)** | Owner: EMG Founder; Architect: EMG Founder; Decision Authority: Project Architect | Binds the internal `EvidenceLedgerRepository` contract inside `emg-persistence` only, resolving eleven previously open items as decisions EL-1 through EL-11. Authorizes **no** ingestion wiring, API route, worker, UI, `GraphStore` change, ADR-028 capability, or product capability. Depends on Phase 2 ADR-4 (`docs/phases/phase-2/PHASE2_ARCHITECTURE.md`) and Product Architecture Freeze §12. See `docs/architecture/EMG_P02_EVIDENCE_LEDGER_CONTRACT_ADDENDUM.md`. | **Not started** |
+
 ### D-A-001 — Module Numbering Governance
 
 **Current conflicting schemes:**
