@@ -83,6 +83,72 @@ preserved as written.
 Current persistence detail: `docs/engineering/persistence-architecture.md` and
 `docs/engineering/persistence-operations.md`.
 
+## Security Reconciliation Addendum — 2026-08-03
+
+**Reconciliation baseline:** `develop` at `47cbeac` (PR #56).
+
+Deliberately narrow, matching the convention of the two addenda above. It
+corrects only §4 "Known Security Limitations", which the Architecture Baseline
+Review found **overstates** remaining risk because three of its four
+production-blocking findings have since been closed in code. **The original §4
+findings below are preserved as written; nothing is erased.**
+
+**Closed since the 2026-07-27 audit:**
+
+- **§4 item 1 — audit clearance-based read authorization is now PEP-enforced.**
+  `services/audit/src/emg_audit_service/authorization.py` defines
+  `AuditReadAuthorizer` ("Ask the PEP which classifications this verified
+  principal may read"), producing an `AuditReadScope` of allowed
+  classifications. `routers/events.py:121` passes
+  `allowed_classifications=scope.classifications` into the query path, so the
+  caller cannot widen its own clearance. The original finding — "classification
+  *filtering* ships in FEAT-04-4; classification *enforcement* does not" — no
+  longer describes the repository.
+- **§4 item 2 — the Knowledge Graph recognized-client allow-list exists.**
+  `services/knowledge-graph/src/emg_knowledge_graph_api/authn.py:63-74` defines
+  `_RECOGNIZED_CLIENTS`, mapping four registered client identifiers to their
+  required realm roles, and `validate()` rejects any unrecognized `azp`/
+  `client_id` and any token missing its registered roles. This is the same
+  shape as `services/audit` and `services/identity`. The claim that "any
+  validly-signed token for the configured realm/audience is accepted" is no
+  longer accurate.
+- **§4 item 3, second clause — audit is now a second PEP-enforcing resource
+  server.** The statement "no resource server besides `services/knowledge-graph`
+  currently calls the PEP for enforcement" is superseded by item 1 above. The
+  first clause stands: `/authz/check` on the identity service remains
+  introspection by deliberate design and is not a PEP gate.
+- **§4 item 4 — CI security and container scanning exist.**
+  `.github/workflows/ci.yml` runs a `security` job (dependency vulnerability
+  scanning via `pip-audit` against the hash-locked production lockfile, secret
+  scanning, and SBOM generation with uploaded artifacts), a
+  `container-security` job (Trivy, action pinned by commit SHA, with
+  `security-events: write`), and a `release-provenance` job. The claim of
+  "**zero** SAST, DAST, dependency/SCA vulnerability scanning, secret scanning,
+  or container/IaC scanning" is no longer accurate. DAST and IaC scanning
+  remain absent.
+
+**Explicitly unchanged and still open:**
+
+- **§4 item 5 — production secrets management.** Every secret in the repository
+  remains an explicitly labelled local-development placeholder; `SecretStr` is
+  used so values are not rendered in logs or tracebacks. There is still no
+  centralized secrets platform. FEAT-11-3 is not started. **This gap is open.**
+- Every other production-readiness gap recorded in §5, §6, §7, §8, and §9 is
+  unchanged by this addendum: observability collection, dashboards and alerting;
+  deployment topology and IaC; backup, restore, PITR and DR; data retention;
+  the continuous `ProjectionWorker` daemon (TD-002); the audit dispatch
+  consumer; the P-02 EL-10 evidence-ledger schema hardening; and ADR-027
+  Stage 5 production rollout.
+
+**Governance corrections applied the same day (context only, not a readiness
+change).** ADR-022, ADR-023, and ADR-024 were ratified as Accepted after
+verification that the implementation already conformed; ADR-028 was registered
+at its true **Draft** status; the ADR-014/015/016/017 baseline-publication
+condition was discharged; and the dangling ADR-031 citation in ADR-032 was
+replaced with an explicit open dependency now tracked as **D-A-005** (backup,
+PITR, and recovery-metadata governance). None of these changed any
+architectural decision or any production-readiness position.
+
 ---
 
 ## 1. Architecture vs. Engineering Status

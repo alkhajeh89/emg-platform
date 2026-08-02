@@ -23,12 +23,59 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 ---
 
+## Architecture Decision Records (ADR-014 – ADR-034)
+
+Canonical index of every ADR number in the current range. Added 2026-08-03 to
+close register-completeness finding DOC-4. This section records *governance
+metadata only* — it confers no authority (GR-001 Rule 3) and creates no
+authority hierarchy; each ADR's own document remains authoritative for its
+decisions. Absent numbers are listed explicitly rather than silently omitted.
+
+**Owner / Architect / Decision Authority defaults** are EMG Founder, EMG
+Founder, and Project Architect respectively, except where the ADR itself names
+a different accountable owner — those are recorded as stated.
+
+| ADR | Title | Status | Owner | Architect | Decision Authority | Decision Date | Governing document | Implementation status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| ADR-014 | Enterprise Presentation Architecture | **Accepted** | CIO function jointly with the design-system owner (per ADR-014 §Governance) | EMG Founder | Project Architect | 2026-07-15; publication condition discharged 2026-08-03 | `EMG_ADR-014_Enterprise_Presentation_Architecture.md` | **Not implemented** — `apps/` contains no client surface |
+| ADR-015 | Unified Enterprise Observability | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-15; discharged 2026-08-03 | `EMG_ADR-015_Unified_Enterprise_Observability.md` | **Partial** — ADR-027 emits structured mutation metrics; no collection, storage, dashboards, tracing, or alerting exists |
+| ADR-016 | Enterprise Ownership Registry | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-15; discharged 2026-08-03 | `EMG_ADR-016_Enterprise_Ownership_Registry.md` | **Partial** — per-service `service.yaml` owner/steward fields exist; no consolidated platform-wide registry |
+| ADR-017 | Enterprise Capacity & Scalability Model | **Accepted** | CTO function jointly with each layer's Accountable Owner (per ADR-017 §1) | EMG Founder | Project Architect | 2026-07-15; discharged 2026-08-03 | `EMG_ADR-017_Enterprise_Capacity_Scalability_Model.md` | **Not implemented** — no capacity model, HA, or DR procedure exists |
+| ADR-018 | Bilingual Enterprise Architecture (Arabic + English) | **Accepted** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-018_Bilingual_Enterprise_Architecture.md` | **Implemented** — bilingual content round-trips verified in Phase 2 projection tests |
+| ADR-019 | AI Orchestration Layer | **Proposed** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-019_AI_ORCHESTRATION.md` | **Not started** — `services/ai-orchestration` is an empty scaffold |
+| ADR-020 | Knowledge Ingestion Layer | **Proposed** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-020_KNOWLEDGE_INGESTION.md` | **Not started** — `emg-knowledge-pipeline` exists but is not reconciled with this ADR and is not wired |
+| ADR-021 | Enterprise API Strategy | **Proposed** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-021_ENTERPRISE_API_STRATEGY.md` | **Not started** — no API gateway exists |
+| ADR-022 | Knowledge Graph Revision Build Workflow | **Accepted (ratified 2026-08-03)** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-022_KNOWLEDGE_GRAPH_REVISION_BUILD_WORKFLOW.md` | **Implemented** — `KnowledgeGraphApplication.build_revision`; internal orchestration only, not a production mutation ingress (§5.9) |
+| ADR-023 | Knowledge Graph Revision History & Navigation | **Accepted (ratified 2026-08-03)** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-023_KNOWLEDGE_GRAPH_REVISION_HISTORY_AND_NAVIGATION.md` | **Implemented** — `GraphRevisionReader`, `RevisionMetadata`, extended `WriteReceipt`, four orchestrator methods |
+| ADR-024 | Knowledge Graph Query Engine | **Accepted (ratified 2026-08-03)** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-024_KNOWLEDGE_GRAPH_QUERY_ENGINE.md` | **Implemented** — application-layer query engine with seven HTTP query routes |
+| ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-27 | `EMG_ADR-025_KNOWLEDGE_GRAPH_TENANT_AUTHORIZATION_MODEL.md` | **Implemented** (Group C, 2026-07-27) |
+| ADR-026 (Rev 2) | Knowledge Graph Classification Enforcement Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-27 | `EMG_ADR-026_KNOWLEDGE_GRAPH_CLASSIFICATION_ENFORCEMENT_MODEL.md` | **Implemented** (Phase 1 + Phase 2, D1–D13) |
+| ADR-027 (Rev 5) | Knowledge Graph Mutation API | **Accepted** | Chief Data Officer (accountable owner, per D-A-004) | EMG Founder | Project Architect | 2026-08-01 | `EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` | **Implemented through Stage 4**; Stage 5 documentation complete, production rollout open |
+| **ADR-028** | **Audit Reconciliation** | **Draft — authorizes no implementation** | EMG Founder | EMG Founder | Project Architect | **TBD** | `EMG_ADR-028_AUDIT_RECONCILIATION.md` | **Not started** — no consumer of the `mutation_dispatch` `audit` channel exists. Depends on ADR-027, ADR-030, ADR-034 |
+| ADR-029 (Rev 2) | Entity/Relationship Identity, Lifecycle & Supersession Model | **Accepted** | Architecture Board / Chief Data Officer (per D-A-003) | EMG Founder | Project Architect | 2026-07-28 | `EMG_ADR-029_ENTITY_RELATIONSHIP_IDENTITY_LIFECYCLE_SUPERSESSION_MODEL.md` | **Implemented** (`97b211d`) |
+| ADR-030 (Rev 4) | Mutation Ledger & Atomic Idempotency | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-30 (SRS-2 amendment) | `EMG_ADR-030_MUTATION_LEDGER_ATOMIC_IDEMPOTENCY.md` | **Implemented** (`2dab646`) |
+| **ADR-031** | — | **Absent — no document exists** | — | — | — | — | — | Cited once by ADR-032 §Future Compatibility for backup/PITR schema-version metadata. Verified absent repository-wide on 2026-08-03; the citation has been replaced with an explicit open dependency. Tracked as **D-A-005**. No ADR-031 is authored |
+| ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-032_KNOWLEDGE_GRAPH_SCHEMA_VERSIONING_AND_EVOLUTION.md` | **Partial** — mutation-path negotiation implemented; read-path adoption governed separately |
+| ADR-033 (Rev 2) | Schema Registry and Negotiation Service | **Accepted** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-033_SCHEMA_REGISTRY_AND_NEGOTIATION_SERVICE.md` | **Partial** — complete through Phase 3 (`5288392`); Phase 4 and production normalizers not started |
+| ADR-034 | Security State and Service Trust | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-30 | `EMG_ADR-034_SECURITY_STATE_AND_SERVICE_TRUST.md` | **Implemented** (SRS-2) |
+
+**Numbers outside this range.** ADR-001 through ADR-013 do not exist in this
+repository and must not be treated as approved or implied.
+
+**Supporting documents, not ADRs.** `EMG_ADR-027_STAGE_0_1_GRAPHSTORE_UNIFICATION_ANALYSIS.md`
+(blocking analysis) and `EMG_ADR-027_STAGE_1_IMPLEMENTATION_PLAN.md` (plan only)
+are ADR-027 support artifacts. They carry no independent decision authority
+(GR-001 Rule 8).
+
+---
+
 ## Open Architecture Decisions
 
 | ID | Decision Area | Status | Owner | Evidence | Blocking Questions |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | D-A-001 | Module Numbering Governance | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §6 (Gap 4a), §7 (Gap 4) | Which numbering scheme is canonical? |
 | D-A-002 | Entity Resolution Ownership | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §2 (Gap 1) | Standalone service, part of `emg-memory-graph`, or shared library? |
+| D-A-005 | Backup, PITR, and Recovery Metadata Governance | **Open** (recorded 2026-08-03) | TBD | `EMG_ADR-032_…md` §Future Compatibility (formerly citing a non-existent ADR-031); ADR-017 §5 governs DR *strategy* only; no backup, PITR, retention, or schema-version-in-backup decision exists | Which decision governs backup content, PITR procedure, retention, and schema-version metadata in backups? Does it extend ADR-017 or require a new ADR? |
 
 ## Resolved Architecture Decisions
 
