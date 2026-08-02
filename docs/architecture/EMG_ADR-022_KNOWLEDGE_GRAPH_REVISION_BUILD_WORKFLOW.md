@@ -1,10 +1,52 @@
 # ADR-022 — Knowledge Graph Revision Build Workflow
 
-**Status:** Proposed
+**Status:** Accepted
 
-**Date:** 2026-07-26
+**Owner:** EMG Founder
+**Architect:** EMG Founder
+**Decision Authority:** Project Architect
+**Decision Date:** 2026-08-03
+
+**Date:** 2026-07-26 (original proposal)
 
 **Deciders:** Product / Architecture (EMG Platform)
+
+> **Ratification note — 2026-08-03.** This ADR was authored as a proposal on
+> 2026-07-26 and implemented without its status ever being changed. The
+> Architecture Baseline Review recorded that omission as finding MAJ-1: live
+> code was operating under a document still marked *Proposed*, contrary to
+> GR-001 Rules 2 and 6.
+>
+> **Acceptance is retrospective ratification of the decisions exactly as
+> written below. No architectural decision is added, removed, or altered by
+> this note, and no new implementation authority is created.** Each of the nine
+> §5 decisions was verified against the repository before ratification:
+>
+> - §5.1 — `emg_platform_core.ports.graph_store.GraphStore` is the sole port
+>   implemented by `emg-persistence` and consumed by `services/knowledge-graph`.
+> - §5.2 — `emg_knowledge_pipeline.graph_store` remains present but is used by
+>   no service; `services/knowledge-graph/tests/test_dependency_boundary.py:57`
+>   actively forbids importing it.
+> - §5.4 — `KnowledgeGraphApplication.build_revision`
+>   (`services/knowledge-graph/src/emg_knowledge_graph/service.py:303`) performs
+>   validate → transaction → `from_ontology` → stage → receipt, exactly as
+>   specified.
+> - §5.5 — `BuildRevisionCommand` carries an explicit `TenantId`; no default or
+>   implicit tenant substitution exists.
+> - §5.6 — the application never writes revision, head, or outbox rows; the
+>   adapter's `transaction()` owns the commit.
+> - §5.7 — `MemoryGraphBuilder.from_ontology()` is the sole translation step and
+>   receives the transaction's current graph as `base` (`service.py:312-317`).
+> - §5.8 — mutation-audit intents and `graph.revision.committed` outbox events
+>   remain distinct artifacts.
+> - §5.9 — `build_revision` has no HTTP route and is not a production mutation
+>   ingress. The five ADR-027 mutation routes are governed by ADR-027, whose
+>   Stage 5 record states it claims no production readiness.
+>
+> The one divergence found is naming only and changes no behaviour: §5.3's
+> narrowing of `emg-knowledge-pipeline` is enforced by boundary test rather than
+> by removal of the legacy module, which §5.2 expressly permits ("remains
+> temporarily so current pipeline behavior and tests continue to work").
 
 **Supersedes:** none
 
@@ -492,7 +534,15 @@ production-enabled until audit reconciliation is resolved.
 
 ## 20. Approval
 
-This ADR is **Proposed**. Implementation may begin only after architecture
-approval. Production enablement additionally requires the mutation-audit
-condition in sections 5, 10, 14, and 16 to be resolved or explicitly waived by
-the designated deciders.
+This ADR is **Accepted** — ratified 2026-08-03 by the Project Architect; see the
+ratification note in the header. *(This section originally read "This ADR is
+**Proposed**. Implementation may begin only after architecture approval." It is
+corrected here solely to remove a factual contradiction with the ratified
+status; the approval conditions below are unchanged.)*
+
+**Production enablement is unchanged and still conditional.** It additionally
+requires the mutation-audit condition in sections 5, 10, 14, and 16 to be
+resolved or explicitly waived by the designated deciders. That condition is
+**not** resolved: ADR-028 (Audit Reconciliation) remains Draft and no consumer
+of the `mutation_dispatch` `audit` channel exists. Ratification of this ADR
+grants no production enablement.
