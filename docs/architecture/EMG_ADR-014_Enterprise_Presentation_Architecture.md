@@ -12,9 +12,28 @@ Document Type: Architecture Decision Record
 
 ADR Number: ADR-014
 
-Status: Accepted — Pending Architecture Baseline v1.0 Publication
+Status: Accepted
 
-Date: 2026-07-15
+Decision Authority: Project Architect
+
+Decision Date: 2026-08-03 (publication condition discharged)
+
+Date: 2026-07-15 (original acceptance)
+
+> **Governance note — 2026-08-03.** This ADR was originally recorded as
+> *"Accepted — Pending Architecture Baseline v1.0 Publication"*. That
+> publication condition is **satisfied**: `docs/architecture/EMG_Architecture_Baseline_v1.0_Final.md`
+> exists in the repository, is typed "Official Architecture Baseline" and
+> classified "Internal — Architecture Board Publication". The conditional
+> qualifier is therefore discharged and the status is now unqualified
+> **Accepted**.
+>
+> **No architectural decision in this document is added, removed, or
+> altered by this note, and no implementation status is claimed or
+> implied beyond what the repository already supports.** Accountable
+> ownership remains exactly as this ADR's own governance section assigns
+> it; the Decision Authority line above records who discharged the
+> condition, not a change of owner.
 
 **Prepared For:**
 
