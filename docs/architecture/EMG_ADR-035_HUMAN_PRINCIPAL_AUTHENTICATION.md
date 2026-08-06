@@ -8,8 +8,11 @@
 **Baseline:** `develop` at `dd84fa9`.
 **Discharges:** ADR-025 §8.9 — *"Human `Principal` login path for the Knowledge
 Graph API"*.
-**Related:** ADR-025 (tenant + operation authorization), ADR-026 Revision 2
-(classification enforcement), ADR-034 (service trust), ADR-036 (BFF boundary),
+**Related:** ADR-025 (tenant + operation authorization),
+ADR-026 Revision 2 (classification enforcement),
+ADR-034 (service trust),
+ADR-036 (Application and BFF Boundary),
+ADR-038 (Human Identity Delegation Architecture),
 Product Architecture Freeze §16, §17, §22.
 
 > **This ADR authorizes an authentication contract only.** It implements no
@@ -140,19 +143,26 @@ sufficient.
 
 ## 3. Non-goals
 
-This ADR does **not**: implement authentication code; configure or modify any
-Keycloak realm; define UI screens; introduce a new identity provider; change
-`Principal`, `ServicePrincipal`, or `AuthorizedIdentity`; alter any policy rule;
-introduce API keys or machine-to-machine flows (ADR-034 governs those);
-authorize any product capability; or decide the BFF-to-service delegation
-mechanism (ADR-036 §Open sub-decision).
+This ADR does **not**:
+
+- implement authentication code;
+- configure or modify any Keycloak realm;
+- define UI screens;
+- introduce a new identity provider;
+- change `Principal`, `ServicePrincipal`, or `AuthorizedIdentity`;
+- alter any authorization policy rule;
+- introduce API keys or machine-to-machine authentication flows (governed by ADR-034);
+- govern the Browser-to-BFF boundary (governed by ADR-036);
+- govern delegated human identity beyond the BFF boundary, which is defined exclusively by ADR-038 (Human Identity Delegation Architecture);
+- authorize any product capability.
+
 
 ## 4. Consequences
 
 **Positive.** Discharges a reserved extension point without reopening ADR-025.
 Every human persona in Freeze §4 becomes reachable. The browser holds no
 credential of value. Enterprise SSO and MFA become possible because the flow is
-delegated to the identity provider.
+delegated to the identity provider. The downstream delegated human identity architecture is governed separately by ADR-038.
 
 **Negative — accepted.** A Keycloak realm change is a hard prerequisite; no
 human can authenticate until it lands. Two divergent realm artifacts exist
