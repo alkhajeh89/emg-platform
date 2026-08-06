@@ -6,11 +6,9 @@ Architecture Phase: Frozen
 
 Engineering Phase: Active
 
-Current Branch: `develop` (through PR #45, merge commit `6536b73`)
+Current Branch: See repository branch and release records; this document is not the authoritative source for the active Git branch.
 
-Current Sprint: Sprint 14 (in progress) — **EPIC-13 Enterprise Integration
-Platform**, FEAT-13-1 (Universal Connector Framework — storage/vendor/protocol-
-independent, contracts-only). See "Additive roadmap" note below.
+Current Delivery Focus: Studio Phase 2B security enablement — ADR-038 accepted; implementation remains gated by mandatory non-production delegation capability verification.
 
 ## Delivery Track Taxonomy
 
@@ -95,7 +93,7 @@ status.
 | Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 complete (PR #45, `6536b73`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. Phase 4A completed at PR #37 (`aefc82c`). Phase 4B observability emission was implemented at `c6c28bb` and merged through PR #45 (`6536b73`). Phases 4C and 4D are closed as not required, and Phase 4E governance and conformance closure is complete. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; its separate Phase 4 has not started, and no second schema version or production normalizer exists. ADR-027 Stage 5 documentation is complete at `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md` and claims no production readiness; Stage 5 production rollout remains open. **Updated 2026-08-03:** the Neo4j serving-projection binding is no longer deferred — `services/knowledge-graph` now composes the lazy Neo4j projection and the bounded PostgreSQL pool with explicit lifecycle ownership (P-01, P-04). |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
-| Module 10 (Decision Intelligence) | Scaffolded | `services/decision-intelligence/service.yaml`: `status: scaffolded`. No implementation yet. |
+| Module 10 (Decision Intelligence) | Partially implemented — Decision domain, authoritative query service, read-only HTTP API, and Studio aggregate backend delivered | ADR-037 defines the Decision ontology model. Decision reads reconstruct entities from PostgreSQL revision history through the ontology registry; Neo4j remains projection-only. Studio dashboard, workspace, timeline, navigation, graph summary, and permission-aware GET-only aggregates are implemented. Broader Decision Intelligence capabilities remain outside the delivered scope. |
 
 A module's engineering status only advances when this repository proves it —
 by committed, tested code — never by this document alone.
@@ -167,9 +165,11 @@ Only the following Architecture Decision Records are currently present in
 | ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted — mutation-path negotiation implemented; read-path adoption remains governed separately** |
 | ADR-033 (Revision 2) | Schema Registry and Negotiation Service | **Accepted — implemented through Phase 3 (commit `5288392`)**: the canonical-only production catalog and mutation-path negotiation are active. ADR-033 Phase 4—the first genuine second schema version and its production normalizer—has not started. Supported-schema discovery remains governance-blocked pending an approved transport contract. |
 | ADR-034 | Security State and Service Trust Hardening | **Accepted — implemented by SRS-2 (2026-07-30)** |
-| ADR-035 | Human Principal Authentication | **Accepted (2026-08-03) — not implemented.** Discharges the ADR-025 §8.9 reserved extension point. OIDC Authorization Code + PKCE S256 through a confidential BFF client; ROPC rejected for browser use. The existing authorization call site is unchanged. **Requires a Keycloak realm change** — no client currently enables the Authorization Code flow. Authorizes no code or realm configuration |
-| ADR-036 | Application and BFF Boundary | **Accepted (2026-08-03) — not implemented.** A BFF is mandatory: the browser can never hold a service token without breaking the ADR-034 trust model. The BFF is **not** a PEP; service-side authorization and ADR-026 denial shapes are preserved unchanged. No application layer exists yet (`apps/` is empty). One open sub-decision — the downstream human-delegation mechanism — must close before BFF implementation. Closes frontend decision D-F-006 |
+| ADR-035 | Human Principal Authentication | **Accepted (2026-08-03) — not implemented.** Discharges the ADR-025 §8.9 reserved extension point. Defines OIDC Authorization Code with PKCE S256 through a confidential BFF client and rejects ROPC for browser use. The existing authorization call site remains unchanged. Requires Keycloak realm configuration because no client currently enables the Authorization Code flow. Downstream delegated human identity is governed separately by ADR-038. This ADR authorizes no code or realm configuration. |
+| ADR-036 | Application and BFF Boundary | **Accepted (2026-08-03) — partially implemented.** A BFF remains mandatory: the browser can never hold a service token without violating the ADR-034 trust model. The BFF is **not** a PEP; service-side authorization and ADR-026 denial shapes remain authoritative. Studio Frontend Phase 2A exists as a read-only presentation layer, but the production BFF and delegated human-identity path are not yet implemented. ADR-038 resolves the downstream human-delegation sub-decision formerly recorded in §5. Closes frontend decision D-F-006. |
 | ADR-037 | Decision Domain Model | **Accepted (2026-08-03) — not implemented.** Defines `Decision`, `DecisionOption`, `DecisionRationale`, and `Approval` at the ontology layer, superseding the EPIC-08 deferral at `emg-ontology/references.py:10-12`. Introduces **no new `NodeType`, no new `EdgeType`, and no new mutation route** — the frozen graph vocabulary already carries every required relationship, so Freeze §14 is untouched. Every `Decision` requires at least one `EvidenceRef`. Unblocks four of six frozen Freeze §23 dashboard indicators and completes a fifth |
+| ADR-038 | Human Identity Delegation Architecture | **Accepted (2026-08-07) — not implemented.** Selects OAuth 2.0 Token Exchange (RFC 8693) as the authoritative downstream human-identity delegation architecture. Preserves the authenticated human as the authorization subject and the Studio BFF as an independently identifiable acting service. Requires single-audience credentials, scope reduction, tenant and clearance integrity, bounded credential lifetime, independent downstream validation, fail-closed behaviour, and complete audit attribution. Resolves ADR-036 §5. Phase 2B remains gated by the mandatory non-production capability verification and conformance criteria defined by ADR-038. |
+
 
 *Implementation Notes (Authorization/Policy):*
 - Mutation authorization policy: implemented (commit `78108c9`)
@@ -180,8 +180,7 @@ be described as approved, frozen, or existing until they are actually added
 under `docs/architecture/`. ADR-022/023/024 (Knowledge Graph Revision Build
 Workflow / Revision History & Navigation / Query Engine) are referenced
 elsewhere in this document's Module 7 notes but are not repeated in this
-table. The Knowledge Graph decision chain from ADR-025 onward is recorded
-here through the current ADR-033 Phase 3 baseline.
+table. The Knowledge Graph and application-security decision chain is recorded here through ADR-038. Engineering implementation status remains tracked separately and SHALL NOT be inferred solely from ADR acceptance.
 
 ADR-019/020/021 accompany `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` and
 `IMPLEMENTATION_GAP_ANALYSIS.md` (2026-07-25). They are architecture-only —

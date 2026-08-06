@@ -24,7 +24,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 ---
 
-## Architecture Decision Records (ADR-014 – ADR-037)
+## Architecture Decision Records (ADR-014 – ADR-038)
 
 Canonical index of every ADR number in the current range. Added 2026-08-03 to
 close register-completeness finding DOC-4. This section records *governance
@@ -60,8 +60,9 @@ a different accountable owner — those are recorded as stated.
 | ADR-033 (Rev 2) | Schema Registry and Negotiation Service | **Accepted** | EMG Founder | EMG Founder | Project Architect | — | `EMG_ADR-033_SCHEMA_REGISTRY_AND_NEGOTIATION_SERVICE.md` | **Partial** — complete through Phase 3 (`5288392`); Phase 4 and production normalizers not started |
 | ADR-034 | Security State and Service Trust | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-07-30 | `EMG_ADR-034_SECURITY_STATE_AND_SERVICE_TRUST.md` | **Implemented** (SRS-2) |
 | **ADR-035** | Human Principal Authentication | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-035_HUMAN_PRINCIPAL_AUTHENTICATION.md` | **Not implemented** — discharges ADR-025 §8.9. Requires a Keycloak realm change (no client currently enables the Authorization Code flow). Authorizes no code or realm configuration |
-| **ADR-036** | Application and BFF Boundary | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-036_APPLICATION_BFF_BOUNDARY.md` | **Not implemented** — BFF is mandatory; no application layer exists (`apps/` is empty). One open sub-decision: downstream human-delegation mechanism (§5), which must close before BFF implementation. Closes D-F-006 |
-| **ADR-037** | Decision Domain Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-037_DECISION_DOMAIN_MODEL.md` | **Not implemented** — supersedes the EPIC-08 deferral at `emg-ontology/references.py:10-12`. Introduces no `NodeType`, no `EdgeType`, and no mutation route |
+| **ADR-036** | Application and BFF Boundary | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-036_APPLICATION_BFF_BOUNDARY.md` | **Partially implemented** — A BFF remains mandatory; the browser can never hold a service token without violating ADR-034. Studio Frontend Phase 2A provides the read-only presentation layer. The production BFF and delegated human-identity path are not yet implemented. The BFF is not a PEP; service-side authorization remains authoritative. ADR-038 resolves the former downstream human-delegation sub-decision in §5. Closes D-F-006. |
+| **ADR-037** | Decision Domain Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-037_DECISION_DOMAIN_MODEL.md` | **Partially implemented** — the Decision ontology model, authoritative PostgreSQL-backed query service, read-only Decision HTTP API, and Studio aggregate backend are delivered. Registry-driven reconstruction remains authoritative and Neo4j remains projection-only. Broader Decision Intelligence capabilities remain future work. Introduces no new `NodeType`, `EdgeType`, or mutation route. |
+| **ADR-038** | Human Identity Delegation Architecture | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-07 | `EMG_ADR-038_Human_Identity_Delegation_Architecture.md` | **Not implemented** — selects OAuth 2.0 Token Exchange (RFC 8693) as the authoritative delegated-human-identity architecture. Preserves the human authorization subject and independently identifiable BFF acting service, with audience isolation, scope reduction, tenant and clearance integrity, bounded lifetime, independent validation, fail-closed behaviour, and complete audit attribution. Resolves ADR-036 §5. Phase 2B remains gated by mandatory non-production capability verification and ADR-038 conformance criteria. |
 
 **Numbers outside this range.** ADR-001 through ADR-013 do not exist in this
 repository and must not be treated as approved or implied.
