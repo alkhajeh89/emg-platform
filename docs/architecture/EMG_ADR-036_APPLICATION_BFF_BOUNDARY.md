@@ -6,9 +6,13 @@
 **Decision Authority:** Project Architect
 **Decision Date:** 2026-08-03
 **Baseline:** `develop` at `dd84fa9`.
-**Related:** ADR-025 (authorization placement), ADR-026 Revision 2 (denial
-shapes), ADR-034 (service trust), ADR-035 (human authentication), ADR-014
-(presentation architecture), Freeze §16, §17, §19, §22.
+**Related:** ADR-014 (presentation architecture),
+ADR-025 (authorization placement),
+ADR-026 Revision 2 (denial shapes),
+ADR-034 (service trust),
+ADR-035 (human authentication),
+ADR-038 (Human Identity Delegation Architecture),
+Freeze §16, §17, §19, §22.
 **Closes:** frontend decision **D-F-006** (BFF Integration).
 
 > **This ADR authorizes an application boundary contract only.** It implements
@@ -24,8 +28,10 @@ four registered **service** clients and requires each client's registered realm
 roles (`authn.py:63-74`, `:201-213`). ADR-034 establishes that a service token
 denotes a reviewed, registered backend service.
 
-**FACT.** No application layer exists: `apps/` contains only `.gitkeep` and a
-README.
+**FACT AT THE ACCEPTED BASELINE.** No application layer existed: `apps/`
+contained only `.gitkeep` and a README. Current implementation status is
+recorded separately in `ARCHITECTURE_STATUS.md` and the architecture decision
+register.
 
 **INFERENCE.** A browser cannot become a registered service client without
 granting a client-side artifact the trust level of a backend service, which
@@ -49,19 +55,18 @@ service API directly is rejected.
 - Every state-changing request carries CSRF protection (ADR-035 D-10).
 - The browser sends no tenant, no clearance, and no principal identity.
 
-### D-3 — BFF-to-service boundary
+### D-3 — Boundary handoff beyond the BFF
 
-The BFF calls services over HTTP only, using the platform's existing service
-authentication (ADR-034). The BFF holds its own registered service identity.
+The BFF calls services over HTTP only. It authenticates its own registered
+Service Principal under ADR-034 and, for delegated human execution, uses the
+Delegated Credential governed by ADR-038.
 
-**The BFF must not impersonate the human as a service.** The human identity is
-propagated as identity, not substituted by a service identity, so that
-service-side authorization and audit attribute the action to the human.
+**The BFF must not impersonate the Human Principal as a Service Principal.**
+The Human Principal and Acting Service remain independently attributable.
 
-**Open sub-decision — see §5.** The exact downstream delegation mechanism
-(OAuth 2.0 Token Exchange versus a signed propagated identity assertion) is
-**not** resolved by this ADR, because the repository contains no implementation
-of either and no accepted ADR selects one.
+ADR-036 does not govern the Delegated Principal or Delegated Credential beyond
+the BFF. Those downstream delegation semantics are governed exclusively by
+accepted ADR-038, which resolves the former open sub-decision recorded in §5.
 
 ### D-4 — The BFF is NOT a Policy Enforcement Point
 
@@ -157,38 +162,34 @@ mechanism. Closes D-F-006 with real authority.
 
 **Negative — accepted.** A new deployable component the platform does not
 currently operate, with its own session store, availability, and scaling
-profile. One additional network hop on every request. The delegation mechanism
-in §5 remains open and must be closed before implementation.
+profile. One additional network hop on every request. Downstream delegation is
+governed separately by ADR-038. Phase 2B remains blocked until ADR-038's
+mandatory capability verification succeeds; acceptance of ADR-038 does not
+constitute implementation.
 
 **Neutral.** No existing service changes. No existing API contract changes.
 
-## 5. Open sub-decision — downstream human delegation mechanism
+## 5. Historical Note — Downstream Human Delegation
 
-**Deliberately left open. Repository evidence does not resolve it.**
+This section records the architectural context that existed when ADR-036 was originally accepted.
 
-The BFF must call services **as the BFF** while attributing the action to the
-human. Two mechanisms are viable:
+At the time of publication, the downstream human delegation mechanism had not yet been selected. Two candidate approaches were identified for future evaluation:
 
-- **Option A — OAuth 2.0 Token Exchange (RFC 8693).** The BFF exchanges the
-  human's token for a downstream token carrying both identities. Standards-based
-  and centrally revocable, but requires Keycloak token-exchange support and
-  configuration, and adds an identity-provider round trip per call.
-- **Option B — Signed propagated identity assertion.** The BFF calls with its
-  own service credential and attaches a signed assertion carrying the human
-  subject, tenant, roles, and clearance. Fewer round trips, but introduces a new
-  signed artifact, its key management, and its verification path — none of which
-  exists today.
+- OAuth 2.0 Token Exchange (RFC 8693).
+- Cryptographically signed propagated identity assertions.
 
-**FACT.** Neither mechanism is implemented, and no accepted ADR selects one.
+That architectural decision has subsequently been completed.
 
-**Constraints binding whichever is chosen:** the human identity must reach the
-service-side PEP unmodified; tenant and clearance must remain token-derived and
-non-forgeable; the audit record must attribute the action to the human, not the
-BFF; and the mechanism must fail closed.
+The authoritative delegation architecture is now defined by **ADR-038 — Human Identity Delegation Architecture**, which formally adopts OAuth 2.0 Token Exchange (RFC 8693), subject to the capability verification requirements and architectural constraints defined therein.
 
-**Governance.** This sub-decision requires its own narrow decision record before
-BFF implementation begins. It does **not** block MVP wireframes, because it is
-invisible above the BFF boundary.
+Accordingly:
+
+- ADR-036 continues to govern the Browser-to-BFF architectural boundary.
+- ADR-038 exclusively governs delegated human identity beyond the BFF boundary.
+- All delegation semantics, trust requirements, security invariants, credential requirements, capability verification, audit semantics, and implementation constraints are defined exclusively by ADR-038.
+
+This section is retained solely for historical traceability and shall not be interpreted as defining the current delegated identity architecture.
+
 
 ## 6. Acceptance criteria
 
@@ -207,7 +208,6 @@ invisible above the BFF boundary.
 - **AC-9.** The degraded-mode matrix in D-9 is implemented as specified,
   including the "access configuration unavailable" wording.
 - **AC-10.** All six D-10 prohibitions hold.
-- **AC-11.** The §5 sub-decision is recorded as open and is closed before BFF
-  implementation begins.
+- **AC-11.** The downstream human delegation mechanism is governed exclusively by ADR-038. No alternative delegation mechanism may be implemented outside ADR-038.
 - **AC-12.** No frontend framework, design system, or build decision is made
   here.
