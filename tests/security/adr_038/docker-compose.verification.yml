@@ -1,0 +1,42 @@
+name: emg-adr038-verification
+
+# ADR-038 non-production capability verification environment ONLY.
+# This file is intentionally isolated from ./docker-compose.yml at the repo
+# root: separate compose project name, separate container names, separate
+# network, separate port (8180, not the shared emg-keycloak's 8080). It must
+# never be started alongside, or instead of, the shared dev stack, and it
+# holds no product code and no persistent product data.
+#
+# All client/user secrets below are environment-variable placeholders
+# resolved by Keycloak's own $(env:VAR) substitution at import time. No
+# usable secret is committed. See README.md for how to generate them.
+
+services:
+  keycloak-verification:
+    image: quay.io/keycloak/keycloak:25.0@sha256:82c5b7a110456dbd42b86ea572e728878549954cc8bd03cd65410d75328095d2
+    container_name: emg-adr038-verification-keycloak
+    command: start-dev --import-realm --features=token-exchange,admin-fine-grained-authz
+    environment:
+      KEYCLOAK_ADMIN: verification-admin
+      KEYCLOAK_ADMIN_PASSWORD: ${EMG_VERIFICATION_KC_ADMIN_PASSWORD:?set in tests/security/adr_038/.env.verification.local}
+      EMG_VERIFICATION_HUMAN_A_PASSWORD: ${EMG_VERIFICATION_HUMAN_A_PASSWORD:?set in .env.verification.local}
+      EMG_VERIFICATION_HUMAN_B_PASSWORD: ${EMG_VERIFICATION_HUMAN_B_PASSWORD:?set in .env.verification.local}
+      EMG_VERIFICATION_ROPC_SECRET: ${EMG_VERIFICATION_ROPC_SECRET:?set in .env.verification.local}
+      EMG_VERIFICATION_BFF_SECRET: ${EMG_VERIFICATION_BFF_SECRET:?set in .env.verification.local}
+      EMG_VERIFICATION_BFF_UNAUTHORIZED_SECRET: ${EMG_VERIFICATION_BFF_UNAUTHORIZED_SECRET:?set in .env.verification.local}
+      EMG_VERIFICATION_KG_WRITER_SECRET: ${EMG_VERIFICATION_KG_WRITER_SECRET:?set in .env.verification.local}
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./realm:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - adr038-verification
+
+networks:
+  adr038-verification:
+    name: emg-adr038-verification-net

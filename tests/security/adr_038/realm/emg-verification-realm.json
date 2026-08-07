@@ -1,0 +1,397 @@
+{
+  "realm": "emg-verification",
+  "enabled": true,
+  "displayName": "EMG ADR-038 Capability Verification (non-production, throwaway)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "accessTokenLifespan": 60,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 3600,
+  "roles": {
+    "realm": [
+      {
+        "name": "platform-user",
+        "description": "Baseline human role (mirrors seed realm)."
+      },
+      {
+        "name": "investigator",
+        "description": "Human role used by Human Principal A."
+      },
+      {
+        "name": "decision-maker",
+        "description": "Human role used by Human Principal B."
+      },
+      {
+        "name": "service-account",
+        "description": "Baseline machine role (mirrors seed realm)."
+      },
+      {
+        "name": "svc-knowledge-graph-writer",
+        "description": "Required role for the emg-svc-knowledge-graph-writer recognized client (mirrors seed realm exactly, needed to exercise the real unmodified audit _RECOGNIZED_CLIENTS allowlist)."
+      },
+      {
+        "name": "svc-verification-bff",
+        "description": "Required role for the authorized test Acting Service (verification-only, no production equivalent)."
+      }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "emg-verification-tenant-claim",
+      "protocol": "openid-connect",
+      "description": "Projects the tenant_id user/client attribute into the verified token, mirroring the seed realm's tenant-claim convention.",
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-verification-classification-claim",
+      "protocol": "openid-connect",
+      "description": "Projects the classification_clearance user attribute into the verified token, mirroring ADR-026 Part E's human-side protocol-mapper requirement.",
+      "protocolMappers": [
+        {
+          "name": "classification_clearance",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "classification_clearance",
+            "claim.name": "classification_clearance",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-verification-writer-service-claims",
+      "protocol": "openid-connect",
+      "description": "Hardcoded tenant/clearance claims for the emg-svc-knowledge-graph-writer service-account identity used only to exercise the real audit ingest allowlist.",
+      "protocolMappers": [
+        {
+          "name": "tenant_id-hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "tenant_id",
+            "claim.value": "tenant-verification-a",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "classification_clearance-hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "classification_clearance",
+            "claim.value": "UNCLASSIFIED",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "realm-access-roles-hardcoded",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access",
+            "claim.value": "{\"roles\":[\"service-account\",\"svc-knowledge-graph-writer\"]}",
+            "jsonType.label": "JSON",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-verification-subject-claim",
+      "protocol": "openid-connect",
+      "description": "Restores RFC 8693 sub preservation, absent by default in Keycloak 25 legacy token exchange. See docs/security/adr-038/02_KEYCLOAK_VERIFICATION_CONFIG.md.",
+      "protocolMappers": [
+        {
+          "name": "subject-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "id",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-verification-roles-claim",
+      "protocol": "openid-connect",
+      "description": "Projects realm_access.roles, mirroring production authn.py's realm_access.roles convention -- needed to test AC-5 / Security Invariant 9.4 (no privilege escalation) directly.",
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-verification-audit-audience",
+      "protocol": "openid-connect",
+      "description": "Audience claim required by the audit-service Settings used in the in-process attribution test.",
+      "protocolMappers": [
+        {
+          "name": "audit-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "emg-verification-audit-audience",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "human-principal-a",
+      "enabled": true,
+      "realmRoles": [
+        "platform-user",
+        "investigator"
+      ],
+      "attributes": {
+        "tenant_id": [
+          "tenant-verification-a"
+        ],
+        "classification_clearance": [
+          "CONFIDENTIAL"
+        ]
+      },
+      "firstName": "Human",
+      "lastName": "PrincipalA",
+      "email": "human-principal-a@verification.emg.test",
+      "emailVerified": true
+    },
+    {
+      "username": "human-principal-b",
+      "enabled": true,
+      "realmRoles": [
+        "platform-user",
+        "decision-maker"
+      ],
+      "attributes": {
+        "tenant_id": [
+          "tenant-verification-b"
+        ],
+        "classification_clearance": [
+          "INTERNAL"
+        ]
+      },
+      "firstName": "Human",
+      "lastName": "PrincipalB",
+      "email": "human-principal-b@verification.emg.test",
+      "emailVerified": true
+    },
+    {
+      "username": "service-account-emg-verification-bff",
+      "enabled": true,
+      "serviceAccountClientId": "emg-verification-bff",
+      "realmRoles": [
+        "service-account",
+        "svc-verification-bff"
+      ]
+    },
+    {
+      "username": "service-account-emg-verification-bff-unauthorized",
+      "enabled": true,
+      "serviceAccountClientId": "emg-verification-bff-unauthorized",
+      "realmRoles": [
+        "service-account"
+      ]
+    },
+    {
+      "username": "service-account-emg-svc-knowledge-graph-writer",
+      "enabled": true,
+      "serviceAccountClientId": "emg-svc-knowledge-graph-writer",
+      "realmRoles": [
+        "service-account",
+        "svc-knowledge-graph-writer"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "emg-verification-ropc",
+      "name": "EMG Verification \u2014 Human ROPC test client",
+      "description": "Confidential client used ONLY by this verification harness to obtain a Human Principal access token via Resource Owner Password Credentials, per ADR-035 D-2's explicit reservation of ROPC for service/test purposes. Never a browser path.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "emg-verification-tenant-claim",
+        "emg-verification-classification-claim",
+        "emg-verification-subject-claim",
+        "emg-verification-roles-claim"
+      ],
+      "attributes": {
+        "access.token.lifespan": "60"
+      }
+    },
+    {
+      "clientId": "emg-verification-bff",
+      "name": "EMG Verification \u2014 Authorized Acting Service (test BFF)",
+      "description": "Acting Service (Trust Domain B) test client. Authenticates via client-credentials, performs RFC 8693 token exchange. Exchange permission granted by provision.py (see README.md).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "emg-verification-tenant-claim",
+        "emg-verification-classification-claim"
+      ],
+      "attributes": {
+        "access.token.lifespan": "60"
+      }
+    },
+    {
+      "clientId": "emg-verification-bff-unauthorized",
+      "name": "EMG Verification \u2014 Unauthorized Acting Service",
+      "description": "Confidential client structurally identical to emg-verification-bff but deliberately NEVER granted token-exchange permission (Phase 6 negative test #5/#9 \u2014 unauthorized Acting Service / unauthenticated exchange).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [],
+      "attributes": {
+        "access.token.lifespan": "60"
+      }
+    },
+    {
+      "clientId": "emg-verification-audience-a",
+      "name": "EMG Verification \u2014 Downstream Audience A",
+      "description": "Bearer-only client representing one downstream Platform Service audience (Trust Domain D). Never used for any grant flow itself; exists solely as a token-exchange audience target and to independently validate exchanged tokens.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "defaultClientScopes": [
+        "emg-verification-tenant-claim",
+        "emg-verification-classification-claim",
+        "emg-verification-subject-claim",
+        "emg-verification-roles-claim"
+      ]
+    },
+    {
+      "clientId": "emg-verification-audience-b",
+      "name": "EMG Verification \u2014 Downstream Audience B",
+      "description": "Second, independent downstream audience \u2014 used to prove single-audience restriction and reject cross-audience credential reuse (AC-4).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "defaultClientScopes": [
+        "emg-verification-tenant-claim",
+        "emg-verification-classification-claim",
+        "emg-verification-subject-claim",
+        "emg-verification-roles-claim"
+      ]
+    },
+    {
+      "clientId": "emg-svc-knowledge-graph-writer",
+      "name": "EMG Verification \u2014 recognized-allowlist identity clone (isolated realm only)",
+      "description": "Client ID intentionally matches a production _RECOGNIZED_CLIENTS entry. Isolated realm, own random secret; shares only the ID string. See docs/security/adr-038/04_FINDINGS_AND_EXTERNAL_CONCERNS.md.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [],
+      "webOrigins": [],
+      "fullScopeAllowed": false,
+      "defaultClientScopes": [
+        "emg-verification-writer-service-claims",
+        "emg-verification-audit-audience"
+      ],
+      "attributes": {
+        "access.token.lifespan": "60"
+      }
+    }
+  ]
+}
