@@ -28,8 +28,10 @@ four registered **service** clients and requires each client's registered realm
 roles (`authn.py:63-74`, `:201-213`). ADR-034 establishes that a service token
 denotes a reviewed, registered backend service.
 
-**FACT.** No application layer exists: `apps/` contains only `.gitkeep` and a
-README.
+**FACT AT THE ACCEPTED BASELINE.** No application layer existed: `apps/`
+contained only `.gitkeep` and a README. Current implementation status is
+recorded separately in `ARCHITECTURE_STATUS.md` and the architecture decision
+register.
 
 **INFERENCE.** A browser cannot become a registered service client without
 granting a client-side artifact the trust level of a backend service, which
@@ -53,19 +55,18 @@ service API directly is rejected.
 - Every state-changing request carries CSRF protection (ADR-035 D-10).
 - The browser sends no tenant, no clearance, and no principal identity.
 
-### D-3 — BFF-to-service boundary
+### D-3 — Boundary handoff beyond the BFF
 
-The BFF calls services over HTTP only, using the platform's existing service
-authentication (ADR-034). The BFF holds its own registered service identity.
+The BFF calls services over HTTP only. It authenticates its own registered
+Service Principal under ADR-034 and, for delegated human execution, uses the
+Delegated Credential governed by ADR-038.
 
-**The BFF must not impersonate the human as a service.** The human identity is
-propagated as identity, not substituted by a service identity, so that
-service-side authorization and audit attribute the action to the human.
+**The BFF must not impersonate the Human Principal as a Service Principal.**
+The Human Principal and Acting Service remain independently attributable.
 
-**Open sub-decision — see §5.** The exact downstream delegation mechanism
-(OAuth 2.0 Token Exchange versus a signed propagated identity assertion) is
-**not** resolved by this ADR, because the repository contains no implementation
-of either and no accepted ADR selects one.
+ADR-036 does not govern the Delegated Principal or Delegated Credential beyond
+the BFF. Those downstream delegation semantics are governed exclusively by
+accepted ADR-038, which resolves the former open sub-decision recorded in §5.
 
 ### D-4 — The BFF is NOT a Policy Enforcement Point
 
@@ -161,7 +162,10 @@ mechanism. Closes D-F-006 with real authority.
 
 **Negative — accepted.** A new deployable component the platform does not
 currently operate, with its own session store, availability, and scaling
-profile. One additional network hop on every request. The downstream delegation mechanism is governed separately by ADR-038 and remains a prerequisite for Phase 2B implementation.
+profile. One additional network hop on every request. Downstream delegation is
+governed separately by ADR-038. Phase 2B remains blocked until ADR-038's
+mandatory capability verification succeeds; acceptance of ADR-038 does not
+constitute implementation.
 
 **Neutral.** No existing service changes. No existing API contract changes.
 

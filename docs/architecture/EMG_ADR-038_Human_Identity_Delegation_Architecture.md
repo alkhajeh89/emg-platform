@@ -20,7 +20,7 @@ ADR-036 (Application and BFF Boundary)
 
 **Supersedes:** None
 
-**Closes:** ADR-036 §5 Open Delegation Sub-Decision (upon acceptance)
+**Closes:** Former ADR-036 §5 Delegation Sub-Decision
 
 ---
 
@@ -30,7 +30,7 @@ ADR-036 (Application and BFF Boundary)
 
 This Architecture Decision Record establishes the authoritative architecture governing delegated human identity throughout the Enterprise Memory Graph (EMG) platform.
 
-Its purpose is to define the security semantics, trust model, authorization semantics, audit semantics, and architectural invariants governing delegated execution of authenticated human users through the mandatory Backend-for-Frontend (BFF) architecture.
+Its purpose is to define the security semantics, trust model, authorization semantics, audit semantics, and architectural invariants governing delegated execution of Human Principals through the mandatory Backend-for-Frontend (BFF) architecture.
 
 This ADR closes the intentional architectural gap left unresolved by ADR-035 (Human Principal Authentication) and ADR-036 (Application and BFF Boundary).
 
@@ -66,11 +66,16 @@ This ADR does **not** redefine:
 
 Those concerns remain governed by their respective accepted ADRs.
 
+This ADR complements ADR-035 (Human Principal Authentication) and ADR-036
+(Application and BFF Boundary). ADR-035 governs browser authentication,
+ADR-036 governs the application and BFF boundary, and this ADR governs only
+the downstream delegation of Human Principal identity beyond the BFF.
+
 ---
 
 ## 1.3 Architectural Authority
 
-This ADR becomes the authoritative architectural specification governing delegated human execution throughout EMG.
+This ADR is the authoritative architectural specification governing delegated human execution throughout EMG.
 
 No service, application, gateway, middleware, adapter, plugin, transport, connector, or Backend-for-Frontend implementation may introduce an alternative delegated identity model outside the constraints defined herein.
 
@@ -82,29 +87,23 @@ Future delegation technologies SHALL conform to the semantics defined by this AD
 
 ## 2.1 Existing Architecture
 
-The accepted EMG architecture currently consists of:
+The accepted EMG architecture defines the following target request path.
+Implementation status for each element is recorded separately and is not
+implied by this diagram:
 
 ```text
 Browser
     ↓
-Studio UI
+Backend-for-Frontend (ADR-035 and ADR-036 boundary)
     ↓
-StudioDataAdapter
+Delegated Credential (ADR-038 boundary)
     ↓
-Backend-for-Frontend
-    ↓
-Knowledge Graph
-    ↓
-Decision Query Service
-    ↓
-Registry Reconstruction
-    ↓
-PostgreSQL Revision History
+Platform Service
 ```
 
-PostgreSQL remains the sole authoritative persistence layer.
-
-Neo4j remains a derived non-authoritative projection.
+This trust path does not add a product surface or change any service's
+persistence model. Where persistence is used, PostgreSQL remains authoritative
+and Neo4j remains a derived non-authoritative projection.
 
 ---
 
@@ -112,7 +111,7 @@ Neo4j remains a derived non-authoritative projection.
 
 Repository analysis confirms that EMG already provides:
 
-- authenticated Human Principals;
+- the Human Principal model and existing non-browser session machinery;
 - authenticated Service Principals;
 - transport-neutral application services;
 - service-to-service authentication;
@@ -128,25 +127,28 @@ These capabilities remain unchanged.
 
 ## 2.3 Architectural Gap
 
-Current repository analysis confirms one unresolved trust boundary.
+Before ADR-038 was accepted, repository analysis confirmed one unresolved
+trust boundary.
 
-Platform services currently authenticate only registered service principals.
+Platform services currently authenticate only registered Service Principals.
 
-Application services already support authenticated human principals internally.
+Application services already support authenticated Human Principals internally.
 
-However, no accepted architecture specifies how an authenticated browser session securely delegates authenticated human identity through the mandatory Backend-for-Frontend into downstream platform services.
+At that time, no accepted architecture specified how an authenticated browser
+session securely delegated Human Principal identity through the mandatory
+Backend-for-Frontend into downstream platform services.
 
-Consequently, no accepted architecture currently defines:
+Consequently, the following semantics were previously undefined and are now
+governed by this ADR:
 
 - delegated identity construction;
 - delegated execution semantics;
 - delegated authorization subject propagation;
 - delegated audit attribution;
-- delegated credential semantics.
+- Delegated Credential semantics.
 
-Implementation of Phase 2B without resolving this gap would introduce undocumented security architecture.
-
-Such implementation is prohibited.
+Implementation of Phase 2B before the mandatory capability verification
+succeeds would violate this accepted architecture and remains prohibited.
 
 ---
 
@@ -154,11 +156,13 @@ Such implementation is prohibited.
 
 This ADR establishes the authoritative delegated execution architecture for EMG.
 
-OAuth 2.0 Token Exchange (RFC 8693) is the preferred architectural direction.
+OAuth 2.0 Token Exchange (RFC 8693) is the accepted authoritative delegation
+architecture, subject to the complete EMG Delegation Profile and every
+constraint defined by this ADR.
 
-However, this recommendation SHALL NOT become Accepted until the complete EMG Delegation Profile has been successfully verified against the selected Authorization Authority.
-
-Until successful verification has completed, Phase 2B implementation SHALL remain blocked.
+Acceptance records the architecture decision; it does not establish capability
+or implementation. Until successful verification has completed, Phase 2B
+implementation SHALL remain blocked.
 
 ---
 
@@ -216,8 +220,8 @@ Delegation mechanisms SHALL NOT alter Policy Engine semantics.
 
 Every protected operation SHALL remain attributable to:
 
-- authenticated human;
-- authenticated acting service;
+- authenticated Human Principal;
+- authenticated Acting Service;
 - authorization subject;
 - protected resource;
 - authorization decision.
@@ -279,10 +283,10 @@ The delegated execution architecture consists of six trust domains.
 
 The Browser is an untrusted execution environment.
 
-It SHALL:
+Browser authentication is governed exclusively by ADR-035, and the Browser-to-
+BFF boundary is governed exclusively by ADR-036. For the downstream delegation
+model governed by this ADR, the Browser SHALL:
 
-- authenticate the human;
-- maintain only the opaque authenticated session;
 - never issue delegated identities;
 - never issue platform credentials;
 - never evaluate authorization.
@@ -293,17 +297,18 @@ It SHALL:
 
 The Studio BFF is the only trusted browser application boundary.
 
-The BFF SHALL:
+Its session and Browser-boundary responsibilities are governed exclusively by
+ADR-035 and ADR-036. For downstream delegation governed by this ADR, the BFF
+SHALL:
 
-- terminate browser sessions;
-- validate sessions;
 - establish delegated execution;
-- authenticate itself downstream;
-- request delegated credentials;
+- authenticate its Acting Service identity downstream;
+- request Delegated Credentials;
 - propagate correlation identifiers.
 
 The BFF SHALL NOT:
 
+- issue Delegated Credentials;
 - evaluate authorization;
 - access persistence;
 - become an identity provider.
@@ -312,11 +317,11 @@ The BFF SHALL NOT:
 
 ### Trust Domain C — Authorization Authority
 
-The Authorization Authority SHALL be the only component permitted to issue delegated credentials.
+The Authorization Authority SHALL be the only component permitted to issue Delegated Credentials.
 
 It SHALL validate:
 
-- authenticated session;
+- the approved delegation input representing the authenticated Human Principal;
 - requesting application;
 - delegation policy;
 - audience;
@@ -348,7 +353,7 @@ The Policy Engine SHALL remain independent of transport and delegation technolog
 
 PostgreSQL remains the sole authoritative persistence boundary.
 
-Neo4j SHALL never become an authorization authority.
+Neo4j SHALL never become an Authorization Authority.
 
 ---
 
@@ -369,7 +374,7 @@ Identity ambiguity is prohibited.
 
 ## 5.2 Principal Types
 
-This ADR governs delegated execution initiated by authenticated humans.
+This ADR governs delegated execution initiated by Human Principals.
 
 Accordingly, the following principal types participate in the delegated identity model.
 
@@ -403,8 +408,8 @@ Represents delegated execution of one authenticated Human Principal through one 
 
 A Delegated Principal SHALL preserve:
 
-- authenticated human identity;
-- authenticated acting service;
+- authenticated Human Principal identity;
+- authenticated Acting Service;
 - tenant context;
 - authorization context;
 - classification clearance.
@@ -441,13 +446,13 @@ No Browser, Studio BFF, Platform Service, gateway, middleware, or transport comp
 
 For the purposes of this ADR, a delegated execution context is defined as:
 
-> the complete authorization context established for one authenticated human request targeting one downstream audience through one authenticated acting service.
+> the complete authorization context established for one authenticated Human Principal request targeting one downstream audience through one authenticated Acting Service.
 
 A delegated execution context MAY include multiple internal processing steps within the same downstream service.
 
 It SHALL NOT span multiple downstream audiences.
 
-Whenever execution requires access to an additional downstream audience, a new delegated execution context SHALL be established using a newly issued delegated credential.
+Whenever execution requires access to an additional downstream audience, a new delegated execution context SHALL be established using a newly issued Delegated Credential.
 
 ---
 
@@ -455,7 +460,7 @@ Whenever execution requires access to an additional downstream audience, a new d
 
 Delegated Principals SHALL exist only for the lifetime of their delegated execution context.
 
-Their lifetime SHALL NOT exceed the validity of the delegated credential under which they were established.
+Their lifetime SHALL NOT exceed the validity of the Delegated Credential under which they were established.
 
 ---
 
@@ -475,27 +480,27 @@ No implementation may merge these concepts into a mutable identity object.
 
 ---
 
-# Chapter VI — Proposed Delegation Architecture
+# Chapter VI — Delegation Architecture
 
-## 6.1 Proposed Architectural Direction
+## 6.1 Accepted Architectural Direction
 
-The preferred architectural direction for EMG is OAuth 2.0 Token Exchange (RFC 8693).
+The accepted architectural direction for EMG is OAuth 2.0 Token Exchange (RFC 8693).
 
-This recommendation is based upon the completed architectural assessment, repository analysis, standards review, and security evaluation.
+This decision is based upon the completed architectural assessment, repository analysis, standards review, and security evaluation.
 
 The selection of RFC 8693 does not alter the architectural semantics defined by this ADR.
 
 This ADR governs architectural behaviour rather than protocol-specific implementation.
 
-RFC 8693 represents the preferred implementation mechanism for satisfying the architectural requirements defined herein, but does not replace or redefine those requirements.
+RFC 8693 is the adopted implementation mechanism for satisfying the architectural requirements defined herein, but does not replace or redefine those requirements.
 
 ---
 
 ## 6.2 Architectural Decision
 
-EMG SHALL adopt OAuth 2.0 Token Exchange conforming to RFC 8693 as the preferred delegated identity architecture, subject to successful verification of the complete EMG Delegation Profile defined by this ADR.
+EMG SHALL adopt OAuth 2.0 Token Exchange conforming to RFC 8693 as the authoritative delegated identity architecture. Any implementation remains subject to successful verification of the complete EMG Delegation Profile defined by this ADR.
 
-This decision SHALL remain in Proposed status until capability verification has successfully completed.
+This ADR is Accepted. Acceptance records the architecture decision and does not imply implementation. Phase 2B SHALL remain blocked until capability verification has successfully completed.
 
 ---
 
@@ -503,8 +508,8 @@ This decision SHALL remain in Proposed status until capability verification has 
 
 The Authorization Authority SHALL demonstrate support for:
 
-- authenticated human preservation;
-- independently identifiable acting service;
+- authenticated Human Principal preservation;
+- independently identifiable Acting Service;
 - audience restriction;
 - scope reduction only;
 - tenant integrity;
@@ -528,10 +533,7 @@ No proprietary delegation mechanism may replace the adopted architecture without
 
 Capability verification SHALL be completed in a dedicated non-production environment.
 
-Successful verification is mandatory before:
-
-- ratification of this ADR;
-- implementation of Phase 2B.
+Successful verification is mandatory before implementation of Phase 2B.
 
 Until successful verification has completed, Phase 2B SHALL remain blocked.
 
@@ -539,11 +541,11 @@ Until successful verification has completed, Phase 2B SHALL remain blocked.
 
 ## 6.6 Relationship to ADR-036
 
-Upon acceptance of this ADR, the open delegation sub-decision recorded in ADR-036 Section 5 SHALL be considered resolved.
+Acceptance of this ADR resolves the open delegation sub-decision recorded in ADR-036 Section 5.
 
 ADR-036 continues to govern the Browser-to-BFF architectural boundary.
 
-ADR-038 becomes the authoritative specification governing delegated human identity beyond that boundary.
+ADR-038 is the authoritative specification governing delegated human identity beyond that boundary.
 
 ---
 
@@ -551,26 +553,26 @@ ADR-038 becomes the authoritative specification governing delegated human identi
 
 ## 7.1 Objective
 
-This chapter defines the mandatory properties that every delegated credential SHALL satisfy, regardless of the delegation technology selected by the EMG platform.
+This chapter defines the mandatory properties that every Delegated Credential SHALL satisfy, regardless of the delegation technology selected by the EMG platform.
 
-A delegated credential represents the authenticated execution context of one authenticated Human Principal acting through one authenticated Service Principal.
+A Delegated Credential represents the authenticated execution context of one authenticated Human Principal acting through one authenticated Service Principal.
 
 ---
 
 ## 7.2 Credential Authority
 
-Delegated credentials SHALL be issued only by the designated Authorization Authority.
+Delegated Credentials SHALL be issued only by the designated Authorization Authority.
 
-No Browser, Studio BFF, Platform Service, gateway, middleware, transport component, or intermediary may independently issue delegated credentials.
+No Browser, Studio BFF, Platform Service, gateway, middleware, transport component, or intermediary may independently issue Delegated Credentials.
 
 ---
 
 ## 7.3 Mandatory Credential Properties
 
-Every delegated credential SHALL contain, directly or through cryptographically verifiable claims:
+Every Delegated Credential SHALL contain, directly or through cryptographically verifiable claims:
 
-- authenticated human subject;
-- authenticated acting service;
+- authenticated Human Principal;
+- authenticated Acting Service;
 - intended downstream audience;
 - tenant identity;
 - authorization scope;
@@ -586,9 +588,9 @@ No mandatory property SHALL be inferred from transport metadata.
 
 ## 7.4 Audience Restriction
 
-Every delegated credential SHALL be issued for exactly one downstream audience.
+Every Delegated Credential SHALL be issued for exactly one downstream audience.
 
-A delegated credential SHALL NOT be accepted by services outside its intended audience.
+A Delegated Credential SHALL NOT be accepted by services outside its intended audience.
 
 Cross-audience credential reuse is prohibited.
 
@@ -596,11 +598,11 @@ Cross-audience credential reuse is prohibited.
 
 ## 7.5 Credential Lifetime
 
-Delegated credentials SHALL possess a bounded lifetime independent of browser sessions.
+Delegated Credentials SHALL possess a bounded lifetime independent of browser sessions.
 
 Credential lifetime SHALL remain as short as operationally practical.
 
-Delegated credentials SHALL expire automatically.
+Delegated Credentials SHALL expire automatically.
 
 ---
 
@@ -621,7 +623,7 @@ Validation SHALL complete successfully before authorization evaluation begins.
 
 ## 7.7 Credential Confidentiality
 
-Delegated credentials SHALL never be exposed to:
+Delegated Credentials SHALL never be exposed to:
 
 - browsers;
 - JavaScript;
@@ -631,26 +633,26 @@ Delegated credentials SHALL never be exposed to:
 - client-side logging;
 - browser developer tools through application logic.
 
-Delegated credentials SHALL remain server-side throughout their lifetime.
+Delegated Credentials SHALL remain server-side throughout their lifetime.
 
 ---
 
 ## 7.8 Credential Reuse
 
-A delegated credential MAY be reused only while all of the following conditions remain true:
+A Delegated Credential MAY be reused only while all of the following conditions remain true:
 
 - the downstream audience is identical;
 - the authenticated Human Principal is identical;
-- the authenticated acting Service Principal is identical;
+- the authenticated Acting Service is identical;
 - the tenant identity is identical;
 - the classification clearance is identical;
-- the delegated credential remains valid and unexpired.
+- the Delegated Credential remains valid and unexpired.
 
 Credential reuse SHALL NOT extend the credential lifetime.
 
 Credential reuse SHALL NOT bypass credential validation.
 
-Any change to one or more of these attributes SHALL require issuance of a new delegated credential.
+Any change to one or more of these attributes SHALL require issuance of a new Delegated Credential.
 
 ---
 
@@ -664,7 +666,7 @@ Where credential caching is implemented for performance reasons, the cache SHALL
 - tenant identity;
 - classification clearance.
 
-Credential caches SHALL never return a delegated credential issued for a different downstream audience.
+Credential caches SHALL never return a Delegated Credential issued for a different downstream audience.
 
 Credential caches SHALL never extend credential validity beyond its original expiration time.
 
@@ -674,11 +676,11 @@ Credential caches SHALL remain entirely server-side.
 
 ## 7.10 Credential Revocation
 
-Where immediate revocation is supported by the Authorization Authority, revoked delegated credentials SHALL immediately cease to authorize downstream requests.
+Where immediate revocation is supported by the Authorization Authority, revoked Delegated Credentials SHALL immediately cease to authorize downstream requests.
 
-Where immediate revocation is unavailable, delegated credentials SHALL rely upon their bounded lifetime together with mandatory revalidation of newly issued credentials.
+Where immediate revocation is unavailable, Delegated Credentials SHALL rely upon their bounded lifetime together with mandatory revalidation of newly issued credentials.
 
-Delegated credentials SHALL never become an alternative source of authorization state.
+Delegated Credentials SHALL never become an alternative source of authorization state.
 
 ---
 
@@ -694,20 +696,20 @@ Delegation SHALL never modify authorization behaviour.
 
 ## 8.2 Authorization Subject
 
-The authenticated human SHALL remain the authorization subject.
+The authenticated Human Principal SHALL remain the authorization subject.
 
-The acting service SHALL never become the authorization subject.
+The Acting Service SHALL never become the authorization subject.
 
 ---
 
 ## 8.3 Acting Service
 
-The acting service SHALL remain independently identifiable.
+The Acting Service SHALL remain independently identifiable.
 
 Platform services SHALL distinguish between:
 
 - authorization subject;
-- authenticated acting service.
+- authenticated Acting Service.
 
 These identities SHALL never be merged.
 
@@ -741,8 +743,8 @@ Delegated execution SHALL neither bypass nor modify classification decisions.
 
 Every delegated operation SHALL record:
 
-- authenticated human subject;
-- authenticated acting service;
+- authenticated Human Principal;
+- authenticated Acting Service;
 - authorization decision;
 - protected resource;
 - tenant;
@@ -805,7 +807,7 @@ Violation of any invariant renders an implementation non-conformant.
 
 ## 9.2 Invariant — Immutable Human Subject
 
-The authenticated human subject SHALL remain unchanged throughout delegated execution.
+The authenticated Human Principal SHALL remain unchanged throughout delegated execution.
 
 No component SHALL replace or modify the authorization subject.
 
@@ -813,9 +815,9 @@ No component SHALL replace or modify the authorization subject.
 
 ## 9.3 Invariant — Independent Acting Service
 
-Every delegated credential SHALL independently identify the authenticated acting service.
+Every Delegated Credential SHALL independently identify the authenticated Acting Service.
 
-The authenticated human and acting service SHALL remain independently distinguishable.
+The authenticated Human Principal and Acting Service SHALL remain independently distinguishable.
 
 ---
 
@@ -834,7 +836,7 @@ Delegation MAY reduce privilege only.
 
 ## 9.5 Invariant — Audience Isolation
 
-Delegated credentials SHALL be valid for one downstream audience only.
+Delegated Credentials SHALL be valid for one downstream audience only.
 
 Cross-audience credential reuse is prohibited.
 
@@ -858,7 +860,7 @@ Clearance elevation is prohibited.
 
 ## 9.8 Invariant — Cryptographic Validation
 
-Every delegated credential SHALL be cryptographically validated.
+Every Delegated Credential SHALL be cryptographically validated.
 
 Network trust SHALL never replace identity validation.
 
@@ -888,9 +890,9 @@ Fallback to anonymous, service-only, or inferred identity is prohibited.
 
 ## 9.11 Invariant — Bounded Lifetime
 
-Delegated credentials SHALL expire automatically.
+Delegated Credentials SHALL expire automatically.
 
-Expired delegated credentials SHALL never be accepted.
+Expired Delegated Credentials SHALL never be accepted.
 
 ---
 
@@ -898,7 +900,7 @@ Expired delegated credentials SHALL never be accepted.
 
 Every delegated operation SHALL remain reconstructable using audit records alone.
 
-Human subject, acting service, authorization decision, tenant, and protected resource SHALL remain attributable.
+Human Principal, Acting Service, authorization decision, tenant, and protected resource SHALL remain attributable.
 
 ---
 
@@ -914,7 +916,7 @@ Where conflict exists, the Security Invariant SHALL prevail.
 
 ## 9.14 Privilege Change Invalidation
 
-Whenever the originating authenticated human session experiences:
+Whenever the originating authenticated Human Principal session experiences:
 
 - privilege change,
 - role modification,
@@ -922,13 +924,13 @@ Whenever the originating authenticated human session experiences:
 - tenant reassignment,
 - session revocation,
 
-previously issued delegated credentials SHALL NOT continue to authorize requests beyond their bounded lifetime.
+previously issued Delegated Credentials SHALL NOT continue to authorize requests beyond their bounded lifetime.
 
-The Authorization Authority SHALL ensure that delegated credentials cannot be relied upon as an alternative to current authorization state.
+The Authorization Authority SHALL ensure that Delegated Credentials cannot be relied upon as an alternative to current authorization state.
 
 Where immediate revocation is supported, it SHALL be preferred.
 
-Where immediate revocation is unavailable, delegated credential lifetime SHALL remain sufficiently bounded to minimize residual authorization risk.
+Where immediate revocation is unavailable, Delegated Credential lifetime SHALL remain sufficiently bounded to minimize residual authorization risk.
 
 ---
 
@@ -948,14 +950,14 @@ Every identified threat SHALL be mitigated through mandatory architectural contr
 
 ### Threat
 
-An attacker attempts to impersonate an authenticated human principal.
+An attacker attempts to impersonate an authenticated Human Principal.
 
 ### Mitigation
 
-- cryptographically verifiable delegated credentials;
+- cryptographically verifiable Delegated Credentials;
 - authenticated Authorization Authority;
-- immutable human subject;
-- independently validated delegated credentials;
+- immutable Human Principal;
+- independently validated Delegated Credentials;
 - fail-closed delegation.
 
 ---
@@ -970,7 +972,7 @@ An attacker attempts to impersonate the authenticated Studio BFF.
 
 - confidential-client authentication;
 - registered service identity;
-- cryptographically verifiable acting-service identity;
+- cryptographically verifiable Acting Service identity;
 - independent downstream validation.
 
 ---
@@ -979,7 +981,7 @@ An attacker attempts to impersonate the authenticated Studio BFF.
 
 ### Threat
 
-The authenticated acting service possesses privileges exceeding those required for delegated execution, including administrative or impersonation capabilities capable of bypassing delegated identity semantics.
+The authenticated Acting Service possesses privileges exceeding those required for delegated execution, including administrative or impersonation capabilities capable of bypassing delegated identity semantics.
 
 ### Mitigation
 
@@ -989,7 +991,7 @@ The authenticated acting service possesses privileges exceeding those required f
 - independent authorization validation;
 - continuous configuration verification.
 
-The acting service SHALL possess only those privileges required to perform delegated execution.
+The Acting Service SHALL possess only those privileges required to perform delegated execution.
 
 ---
 
@@ -997,11 +999,11 @@ The acting service SHALL possess only those privileges required to perform deleg
 
 ### Threat
 
-A delegated credential issued for one downstream audience is presented to another downstream service.
+A Delegated Credential issued for one downstream audience is presented to another downstream service.
 
 ### Mitigation
 
-- audience-restricted delegated credentials;
+- audience-restricted Delegated Credentials;
 - mandatory audience validation;
 - prohibition of cross-audience credential reuse.
 
@@ -1017,7 +1019,7 @@ Delegation attempts to increase:
 - authorization scope;
 - tenant access;
 - classification clearance;
-- acting-service authority.
+- Acting Service authority.
 
 ### Mitigation
 
@@ -1033,7 +1035,7 @@ Delegation attempts to increase:
 
 ### Threat
 
-Previously issued delegated credentials continue to authorize requests after the originating authenticated session has experienced:
+Previously issued Delegated Credentials continue to authorize requests after the originating authenticated session has experienced:
 
 - privilege modification;
 - role modification;
@@ -1043,12 +1045,12 @@ Previously issued delegated credentials continue to authorize requests after the
 
 ### Mitigation
 
-- bounded delegated credential lifetime;
-- delegated credential expiration;
+- bounded Delegated Credential lifetime;
+- Delegated Credential expiration;
 - session-state revalidation where supported;
 - immediate revocation where supported.
 
-Delegated credentials SHALL never become an alternative source of authorization state.
+Delegated Credentials SHALL never become an alternative source of authorization state.
 
 ---
 
@@ -1056,7 +1058,7 @@ Delegated credentials SHALL never become an alternative source of authorization 
 
 ### Threat
 
-Previously issued delegated credentials are replayed by an unauthorized party.
+Previously issued Delegated Credentials are replayed by an unauthorized party.
 
 ### Mitigation
 
@@ -1088,15 +1090,15 @@ Browser-controlled values attempt to influence delegated identity or authorizati
 
 Audit records fail to distinguish:
 
-- authenticated human;
-- authenticated acting service;
+- authenticated Human Principal;
+- authenticated Acting Service;
 - authorization subject;
 - protected resource.
 
 ### Mitigation
 
-- independent attribution of human subject;
-- independent attribution of acting service;
+- independent attribution of the Human Principal;
+- independent attribution of Acting Service;
 - immutable audit records;
 - cryptographically attributable delegated identity.
 
@@ -1140,7 +1142,7 @@ The request SHALL be rejected.
 
 The request SHALL be rejected.
 
-A new delegated credential SHALL be obtained.
+A new Delegated Credential SHALL be obtained.
 
 ---
 
@@ -1200,13 +1202,13 @@ Delegation SHALL NOT modify:
 
 ## 12.5 Service Independence
 
-Platform services SHALL validate delegated credentials independently.
+Platform services SHALL validate Delegated Credentials independently.
 
 ---
 
 ## 12.6 Browser Constraints
 
-The Browser SHALL never receive delegated credentials.
+The Browser SHALL never receive Delegated Credentials.
 
 ---
 
@@ -1244,15 +1246,15 @@ Prior to implementation, the selected Authorization Authority SHALL successfully
 
 Capability verification SHALL demonstrate successful conformance with every mandatory requirement defined by the EMG Delegation Profile (Chapter VI), including at minimum:
 
-- preservation of the authenticated human subject;
-- independently identifiable acting service;
+- preservation of the authenticated Human Principal;
+- independently identifiable Acting Service;
 - audience restriction;
 - scope reduction only;
 - tenant integrity;
 - classification-clearance integrity;
 - confidential-client authentication;
 - independent downstream credential validation;
-- bounded delegated credential lifetime;
+- bounded Delegated Credential lifetime;
 - complete audit attribution.
 
 Security-critical properties SHALL be verified through both positive and negative testing.
@@ -1263,7 +1265,7 @@ Negative testing SHALL demonstrate that:
 - audience misuse is rejected;
 - tenant substitution is rejected;
 - clearance elevation is rejected;
-- unauthorized acting-service impersonation is rejected.
+- unauthorized Acting Service impersonation is rejected.
 
 Capability verification SHALL be performed in a dedicated non-production environment.
 
@@ -1281,33 +1283,33 @@ Partial implementation, vendor defaults, or deployment-specific configuration SH
 
 ## 14.1 Current State
 
-Current EMG architecture authenticates registered service principals only.
+The currently implemented EMG authentication path authenticates registered Service Principals only.
 
 ---
 
 ## 14.2 Transitional State
 
-ADR-038 remains Proposed until capability verification completes.
+ADR-038 is Accepted and not implemented. Acceptance does not imply implementation.
 
-Phase 2B remains blocked.
+Capability verification remains mandatory, and Phase 2B remains blocked until it succeeds.
 
 ---
 
-## 14.3 Target State
+## 14.3 Verified Implementation State
 
-Upon acceptance:
+After successful capability verification and conformant implementation:
 
-- ADR-036 Section 5 becomes resolved;
-- OAuth 2.0 Token Exchange becomes the authoritative delegation architecture;
+- ADR-036 Section 5 remains resolved by this Accepted ADR;
+- OAuth 2.0 Token Exchange remains the authoritative delegation architecture;
 - delegated human execution becomes available.
 
 ---
 
-# Chapter XV — Acceptance Criteria and Final Provisions
+# Chapter XV — Capability Verification Criteria and Final Provisions
 
-## 15.1 Acceptance Criteria
+## 15.1 Capability Verification Criteria
 
-This ADR SHALL NOT transition from **Proposed** to **Accepted** until every one of the following Acceptance Criteria has been satisfied.
+These criteria govern capability verification and implementation readiness. ADR-038 is already **Accepted**; acceptance does not satisfy these criteria or authorize implementation. Phase 2B SHALL NOT begin until every criterion has been satisfied.
 
 ### AC-1 — Complete Delegation Profile
 
@@ -1315,15 +1317,15 @@ The selected Authorization Authority SHALL successfully demonstrate every mandat
 
 ### AC-2 — Human Subject Preservation
 
-Capability verification SHALL demonstrate that the authenticated human subject remains unchanged throughout delegated execution.
+Capability verification SHALL demonstrate that the authenticated Human Principal remains unchanged throughout delegated execution.
 
 ### AC-3 — Acting Service Identification
 
-Capability verification SHALL demonstrate that the authenticated acting service remains independently and cryptographically identifiable.
+Capability verification SHALL demonstrate that the authenticated Acting Service remains independently and cryptographically identifiable.
 
 ### AC-4 — Audience Restriction
 
-Capability verification SHALL demonstrate that delegated credentials are restricted to exactly one downstream audience.
+Capability verification SHALL demonstrate that Delegated Credentials are restricted to exactly one downstream audience.
 
 Cross-audience credential reuse SHALL be rejected.
 
@@ -1347,22 +1349,22 @@ Clearance elevation SHALL be rejected.
 
 ### AC-8 — Confidential Client Authentication
 
-Capability verification SHALL demonstrate that delegated credentials are issued only to authenticated confidential clients.
+Capability verification SHALL demonstrate that Delegated Credentials are issued only to authenticated confidential clients.
 
 ### AC-9 — Independent Downstream Validation
 
-Capability verification SHALL demonstrate that downstream Platform Services independently validate delegated credentials before authorization evaluation.
+Capability verification SHALL demonstrate that downstream Platform Services independently validate Delegated Credentials before authorization evaluation.
 
 ### AC-10 — Bounded Credential Lifetime
 
-Capability verification SHALL demonstrate that delegated credentials possess an independently bounded lifetime and automatically expire.
+Capability verification SHALL demonstrate that Delegated Credentials possess an independently bounded lifetime and automatically expire.
 
 ### AC-11 — Audit Completeness
 
 Capability verification SHALL demonstrate complete attribution of:
 
-- authenticated human subject;
-- authenticated acting service;
+- authenticated Human Principal;
+- authenticated Acting Service;
 - authorization decision;
 - protected resource;
 - tenant;
@@ -1383,7 +1385,7 @@ All capability verification SHALL be completed in a dedicated non-production env
 
 ### AC-15 — Governance Approval
 
-Formal architectural approval SHALL occur only after successful completion of every preceding Acceptance Criterion.
+Formal governance confirmation of capability verification SHALL occur before implementation begins and only after successful completion of every preceding capability verification criterion.
 
 ---
 
@@ -1393,9 +1395,9 @@ ADR-035 continues to govern Human Principal Authentication.
 
 ADR-036 continues to govern the Browser-to-BFF architectural boundary.
 
-Upon acceptance of this ADR, the open delegation sub-decision recorded in ADR-036 Section 5 SHALL be considered resolved.
+Acceptance of this ADR resolves the open delegation sub-decision recorded in ADR-036 Section 5.
 
-ADR-038 becomes the authoritative specification governing delegated human identity beyond the BFF boundary.
+ADR-038 is the authoritative specification governing delegated human identity beyond the BFF boundary.
 
 ---
 
@@ -1403,13 +1405,13 @@ ADR-038 becomes the authoritative specification governing delegated human identi
 
 Future delegation technologies MAY replace OAuth 2.0 Token Exchange only through a future accepted Architecture Decision Record.
 
-Any future delegation mechanism SHALL preserve every architectural principle, trust boundary, identity requirement, credential requirement, authorization semantic, audit semantic, security invariant, implementation constraint, and acceptance criterion defined by this ADR.
+Any future delegation mechanism SHALL preserve every architectural principle, trust boundary, identity requirement, credential requirement, authorization semantic, audit semantic, security invariant, implementation constraint, and capability verification criterion defined by this ADR.
 
 ---
 
 ## 15.4 Final Authority
 
-Upon acceptance, this ADR becomes the sole authoritative architectural specification governing delegated human identity throughout the Enterprise Memory Graph (EMG) platform.
+This Accepted ADR is the sole authoritative architectural specification governing delegated human identity throughout the Enterprise Memory Graph (EMG) platform.
 
 Any implementation inconsistent with this ADR SHALL be considered architecturally non-conformant.
 
@@ -1423,7 +1425,7 @@ Any implementation inconsistent with this ADR SHALL be considered architecturall
 | Service Principal | Authenticated machine identity. |
 | Delegated Principal | Human executing through an authenticated Service Principal. |
 | Acting Service | The authenticated BFF performing delegated execution. |
-| Authorization Authority | The only authority permitted to issue delegated credentials. |
+| Authorization Authority | The only authority permitted to issue Delegated Credentials. |
 | Delegated Credential | Credential representing delegated execution. |
 | Delegated Execution Context | Defined in Chapter V. |
 
@@ -1435,8 +1437,8 @@ This ADR was reviewed by the EMG Architecture Review Board.
 
 Review Outcome:
 
-**Architecture Approved for Ratification**
+**Accepted**
 
 No blocking architectural issues were identified.
 
-Upon approval, this ADR becomes the authoritative specification governing delegated human identity throughout the EMG platform and formally resolves the open delegation sub-decision recorded in ADR-036.
+Acceptance records the architecture decision only and does not imply implementation. This ADR is the authoritative specification governing delegated human identity throughout the EMG platform and resolves the open delegation sub-decision recorded in ADR-036. Capability verification remains mandatory, and Phase 2B remains blocked until verification succeeds.
