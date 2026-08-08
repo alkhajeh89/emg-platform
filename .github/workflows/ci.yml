@@ -72,9 +72,9 @@ jobs:
         run: |
           bash -n tools/backup/*.sh
           shellcheck tools/backup/*.sh
-          python -c "import json, pathlib; [json.loads(p.read_text()) for p in pathlib.Path('infra/backup').glob('*.json')]"
-          python -c "import pathlib, yaml; [yaml.safe_load(p.read_text()) for p in pathlib.Path('infra/backup').glob('*.yaml')]"
-          python tools/backup/backup_manifest.py validate infra/backup/sample-manifest.json
+          .venv/bin/python -c "import json, pathlib; [json.loads(p.read_text()) for p in pathlib.Path('infra/backup').glob('*.json')]"
+          .venv/bin/python -c "import pathlib, yaml; [yaml.safe_load(p.read_text()) for p in pathlib.Path('infra/backup').glob('*.yaml')]"
+          .venv/bin/python tools/backup/backup_manifest.py validate infra/backup/sample-manifest.json
           .venv/bin/python tools/backup/backup_manifest.py schema-validate infra/backup/sample-manifest.json infra/backup/manifest.schema.json
           .venv/bin/pytest tests/infrastructure/test_backup_recovery.py -q
 
