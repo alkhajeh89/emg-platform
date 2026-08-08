@@ -12,6 +12,7 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
 from emg_api_contracts import reject_unknown_environment
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StoreBackend = Literal["memory", "postgres"]
@@ -32,6 +33,14 @@ class Settings(BaseSettings):
         "postgresql://emg_audit_app:emg_audit_local_dev_only_do_not_use_in_prod"
         "@localhost:5432/emg"
     )
+    postgres_connect_timeout_seconds: float = Field(default=10.0, gt=0)
+    postgres_pool_acquisition_timeout_seconds: float = Field(default=5.0, gt=0)
+    postgres_statement_timeout_seconds: float = Field(default=30.0, gt=0)
+    postgres_lock_timeout_seconds: float = Field(default=10.0, gt=0)
+    postgres_pool_min_size: int = Field(default=1, ge=0)
+    postgres_pool_max_size: int = Field(default=10, ge=1)
+    postgres_reconnect_attempts: int = Field(default=2, ge=1, le=3)
+    postgres_shutdown_timeout_seconds: float = Field(default=5.0, gt=0)
 
     # Inbound service-token validation (same trust path as Sprint 3's identity
     # ServiceTokenValidator: RS256 tokens verified against the realm JWKS).
@@ -50,6 +59,12 @@ class Settings(BaseSettings):
     classification_clearance_claim: str = "classification_clearance"
     tenant_claim: str = "tenant_id"
     policy_config_path: Path = Path("services/audit/config/policy.example.yaml")
+
+    @model_validator(mode="after")
+    def validate_pool_bounds(self) -> Settings:
+        if self.postgres_pool_min_size > self.postgres_pool_max_size:
+            raise ValueError("postgres_pool_min_size must not exceed postgres_pool_max_size")
+        return self
 
     @property
     def keycloak_issuer(self) -> str:

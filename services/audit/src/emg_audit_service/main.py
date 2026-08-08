@@ -23,6 +23,7 @@ from emg_errors import (
 from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from .authorization import validate_audit_policy_configuration
 from .config import get_settings, validate_runtime_configuration
@@ -30,6 +31,7 @@ from .routers.custody import router as custody_router
 from .routers.events import router as events_router
 from .routers.health import router as health_router
 from .routers.integrity import router as integrity_router
+from .store import close_store_runtime, open_store_runtime
 
 _log = get_logger("audit.api")
 
@@ -60,11 +62,17 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(HttpRequestSecurityMiddleware)
 
-    def validate_startup() -> None:
-        validate_runtime_configuration(get_settings())
+    async def validate_startup() -> None:
+        settings = get_settings()
+        validate_runtime_configuration(settings)
         validate_audit_policy_configuration()
+        await run_in_threadpool(open_store_runtime, settings)
+
+    async def shutdown_store() -> None:
+        await run_in_threadpool(close_store_runtime)
 
     app.router.add_event_handler("startup", validate_startup)
+    app.router.add_event_handler("shutdown", shutdown_store)
 
     @app.middleware("http")
     async def correlation_id_middleware(

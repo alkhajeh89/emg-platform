@@ -107,6 +107,14 @@ tests only; local compose is not a production deployment profile.
 | `EMG_AUDIT_DEPLOYMENT_ENVIRONMENT` | `development` | `development`, `test`, or `production`; activates the durable-storage boot gate. |
 | `EMG_AUDIT_STORE_BACKEND` | `memory` | `memory` (tests/local) or `postgres` (tier-1). |
 | `EMG_AUDIT_POSTGRES_DSN` | *(local-dev placeholder)* | DSN for the append-only store; uses the INSERT/SELECT-only `emg_audit_app` role. |
+| `EMG_AUDIT_POSTGRES_CONNECT_TIMEOUT_SECONDS` | `10` | Bounded PostgreSQL connection-establishment timeout. |
+| `EMG_AUDIT_POSTGRES_POOL_ACQUISITION_TIMEOUT_SECONDS` | `5` | Maximum wait for a pooled connection. |
+| `EMG_AUDIT_POSTGRES_STATEMENT_TIMEOUT_SECONDS` | `30` | Server-side bound for each PostgreSQL statement. |
+| `EMG_AUDIT_POSTGRES_LOCK_TIMEOUT_SECONDS` | `10` | Server-side bound while waiting for PostgreSQL locks. |
+| `EMG_AUDIT_POSTGRES_POOL_MIN_SIZE` | `1` | Minimum connections retained by the audit pool. |
+| `EMG_AUDIT_POSTGRES_POOL_MAX_SIZE` | `10` | Maximum concurrent audit PostgreSQL connections. |
+| `EMG_AUDIT_POSTGRES_RECONNECT_ATTEMPTS` | `2` | Bounded attempts for reconnect-safe idempotent store operations. |
+| `EMG_AUDIT_POSTGRES_SHUTDOWN_TIMEOUT_SECONDS` | `5` | Maximum pool drain/close wait during shutdown. |
 | `EMG_AUDIT_KEYCLOAK_BASE_URL` | `http://localhost:8080` | Keycloak base URL (token issuer/JWKS). |
 | `EMG_AUDIT_KEYCLOAK_REALM` | `emg` | Keycloak realm. |
 | `EMG_AUDIT_SERVICE_TOKEN_AUDIENCE` | `emg-internal-services` | Expected `aud` on inbound service tokens. |
