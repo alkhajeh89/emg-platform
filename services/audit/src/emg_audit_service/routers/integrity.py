@@ -19,7 +19,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 
 @router.get("/integrity", response_model=IntegrityResponse)
-async def verify_integrity(reader: AuditReaderDep, store: StoreDep) -> IntegrityResponse:
+def verify_integrity(reader: AuditReaderDep, store: StoreDep) -> IntegrityResponse:
     report = store.verify_integrity()
     return IntegrityResponse(
         intact=report.intact,

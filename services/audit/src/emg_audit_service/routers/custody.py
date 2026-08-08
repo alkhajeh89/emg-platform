@@ -60,7 +60,7 @@ def _to_view(event: CustodyEvent) -> CustodyEventView:
 
 
 @router.post("/events", response_model=CustodyIngestResponse)
-async def record_custody_event(
+def record_custody_event(
     event: SubmittedCustodyEvent,
     principal: AuditCustodianDep,
     store: CustodyStoreDep,
@@ -99,7 +99,7 @@ def _build_query(
 
 
 @router.get("/events", response_model=list[CustodyEventView])
-async def query_custody_events(
+def query_custody_events(
     reader: AuditReaderDep,
     store: CustodyStoreDep,
     evidence_id: str | None = None,
@@ -122,7 +122,7 @@ async def query_custody_events(
 
 
 @router.get("/events/page", response_model=CustodyEventPage)
-async def query_custody_events_page(
+def query_custody_events_page(
     reader: AuditReaderDep,
     store: CustodyStoreDep,
     evidence_id: str | None = None,
@@ -152,7 +152,7 @@ async def query_custody_events_page(
 
 
 @router.get("/export", response_model=None)
-async def export_custody_events(
+def export_custody_events(
     reader: AuditReaderDep,
     store: CustodyStoreDep,
     format: Literal["json", "csv"] = "json",
@@ -182,9 +182,7 @@ async def export_custody_events(
 
 
 @router.get("/integrity", response_model=IntegrityResponse)
-async def verify_custody_integrity(
-    reader: AuditReaderDep, store: CustodyStoreDep
-) -> IntegrityResponse:
+def verify_custody_integrity(reader: AuditReaderDep, store: CustodyStoreDep) -> IntegrityResponse:
     report = store.verify_integrity()
     return IntegrityResponse(
         intact=report.intact,

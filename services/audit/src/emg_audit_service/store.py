@@ -1,24 +1,30 @@
-"""Store provider and store-health reporting for the audit service (Sprint 6).
+"""Store composition and resilient PostgreSQL lifecycle for the audit service.
 
-The service owns exactly one append-only store, selected by configuration:
-
-- `memory` — `InMemoryAuditEventStore` (tests / local without a database).
-- `postgres` — `PostgresAuditEventStore` over the append-only `audit_events`
-  table (INSERT/SELECT-only application role).
-
-`store_health()` backs the readiness endpoint: a `postgres` store that cannot
-reach the database reports `available=False`, so the audit degradation is
-visible through health/readiness (Sprint 6 Decision C, service side). The
-service never fabricates an audit record it did not durably persist.
+The PostgreSQL backend owns one bounded ``psycopg_pool.ConnectionPool`` and
+acquires a connection for each store operation. The existing append-only store
+implementations continue to own their advisory locks, transactions, hash-chain
+assignment, and composite-key idempotency.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from functools import lru_cache
-from typing import Annotated
+from math import ceil
+from threading import Lock
+from typing import Annotated, Any, Protocol, TypeVar, cast
 
-from emg_audit_client import AuditEventStore, AuditQuery, CustodyEventStore
+from emg_audit_client import (
+    AuditEvent,
+    AuditEventStore,
+    AuditQuery,
+    CustodyEvent,
+    CustodyEventStore,
+    CustodyQuery,
+    IntegrityResult,
+    SubmittedAuditEvent,
+    SubmittedCustodyEvent,
+)
 from emg_audit_pipeline import (
     InMemoryAuditEventStore,
     InMemoryCustodyEventStore,
@@ -26,9 +32,60 @@ from emg_audit_pipeline import (
     PostgresCustodyEventStore,
 )
 from fastapi import Depends
+from psycopg import Connection, OperationalError
+from psycopg.pq import TransactionStatus
 
 from .authn import SettingsDep
-from .config import Settings, StoreBackend
+from .config import Settings
+
+T = TypeVar("T")
+
+
+class _ConnectionPool(Protocol):
+    def open(self, *, wait: bool = False, timeout: float = 30.0) -> None: ...
+
+    def getconn(self, timeout: float | None = None) -> Connection[Any]: ...
+
+    def putconn(self, connection: Connection[Any]) -> None: ...
+
+    def close(self, timeout: float = 5.0) -> None: ...
+
+
+class PoolFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        conninfo: str,
+        kwargs: dict[str, Any],
+        min_size: int,
+        max_size: int,
+        timeout: float,
+        open: bool,
+    ) -> _ConnectionPool: ...
+
+
+def _create_pool(
+    *,
+    conninfo: str,
+    kwargs: dict[str, Any],
+    min_size: int,
+    max_size: int,
+    timeout: float,
+    open: bool,
+) -> _ConnectionPool:  # pragma: no cover - import/construction seam
+    from psycopg_pool import ConnectionPool
+
+    return cast(
+        _ConnectionPool,
+        ConnectionPool(
+            conninfo=conninfo,
+            kwargs=kwargs,
+            min_size=min_size,
+            max_size=max_size,
+            timeout=timeout,
+            open=open,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -38,78 +95,244 @@ class StoreHealth:
     detail: str
 
 
-@lru_cache
-def _memory_store_singleton() -> InMemoryAuditEventStore:
-    return InMemoryAuditEventStore()
+class _PooledOperations:
+    """Acquire/reset/return connections and replace operational failures."""
+
+    def __init__(self, pool: _ConnectionPool, settings: Settings) -> None:
+        self._pool = pool
+        self._acquisition_timeout = settings.postgres_pool_acquisition_timeout_seconds
+        self._attempts = settings.postgres_reconnect_attempts
+
+    def run(self, operation: Callable[[Connection[Any]], T]) -> T:
+        last_error: OperationalError | None = None
+        for attempt in range(self._attempts):
+            connection = self._pool.getconn(timeout=self._acquisition_timeout)
+            try:
+                return operation(connection)
+            except OperationalError as exc:
+                # The operation is safe to repeat: appends are idempotent under
+                # their authenticated composite key and reads have no effects.
+                # Closing makes psycopg_pool discard and replace this connection.
+                connection.close()
+                last_error = exc
+                if attempt + 1 == self._attempts:
+                    raise
+            finally:
+                self._reset_before_return(connection)
+                self._pool.putconn(connection)
+        assert last_error is not None  # pragma: no cover - loop always returns/raises
+        raise last_error
+
+    @staticmethod
+    def _reset_before_return(connection: Connection[Any]) -> None:
+        if connection.closed:
+            return
+        try:
+            if connection.info.transaction_status is not TransactionStatus.IDLE:
+                connection.rollback()
+        except Exception:
+            # A connection that cannot be reset must not be reused. A closed
+            # connection returned to psycopg_pool is discarded and replaced.
+            connection.close()
 
 
-def _build_store(settings: Settings) -> AuditEventStore:
-    if settings.store_backend == "postgres":
-        import psycopg
+class PooledAuditEventStore:
+    """AuditEventStore adapter that preserves the existing store semantics."""
 
-        connection = psycopg.connect(settings.postgres_dsn)
-        return PostgresAuditEventStore(connection)
-    return _memory_store_singleton()
+    def __init__(self, operations: _PooledOperations) -> None:
+        self._operations = operations
+
+    def append(
+        self,
+        event: SubmittedAuditEvent,
+        *,
+        source_principal: str,
+        tenant_id: str | None = None,
+    ) -> AuditEvent:
+        return self._operations.run(
+            lambda connection: PostgresAuditEventStore(connection).append(
+                event,
+                source_principal=source_principal,
+                tenant_id=tenant_id,
+            )
+        )
+
+    def query(self, query: AuditQuery) -> list[AuditEvent]:
+        return self._operations.run(
+            lambda connection: PostgresAuditEventStore(connection).query(query)
+        )
+
+    def verify_integrity(self) -> IntegrityResult:
+        return self._operations.run(
+            lambda connection: PostgresAuditEventStore(connection).verify_integrity()
+        )
 
 
-@lru_cache
-def _store_singleton_for(backend: StoreBackend, dsn: str) -> AuditEventStore:
-    # Cache keyed by the config that determines the store, so the app reuses
-    # one store/connection per configuration.
-    from .config import Settings as _Settings
+class PooledCustodyEventStore:
+    """CustodyEventStore adapter sharing the audit service connection pool."""
 
-    return _build_store(_Settings(store_backend=backend, postgres_dsn=dsn))
+    def __init__(self, operations: _PooledOperations) -> None:
+        self._operations = operations
+
+    def append(self, event: SubmittedCustodyEvent, *, source_principal: str) -> CustodyEvent:
+        return self._operations.run(
+            lambda connection: PostgresCustodyEventStore(connection).append(
+                event, source_principal=source_principal
+            )
+        )
+
+    def query(self, query: CustodyQuery) -> list[CustodyEvent]:
+        return self._operations.run(
+            lambda connection: PostgresCustodyEventStore(connection).query(query)
+        )
+
+    def verify_integrity(self) -> IntegrityResult:
+        return self._operations.run(
+            lambda connection: PostgresCustodyEventStore(connection).verify_integrity()
+        )
+
+
+class AuditStoreRuntime:
+    """Own the one production pool and both append-only store adapters."""
+
+    def __init__(self, settings: Settings, *, pool_factory: PoolFactory = _create_pool) -> None:
+        statement_ms = max(1, round(settings.postgres_statement_timeout_seconds * 1000))
+        lock_ms = max(1, round(settings.postgres_lock_timeout_seconds * 1000))
+        self._pool = pool_factory(
+            conninfo=settings.postgres_dsn,
+            kwargs={
+                "connect_timeout": max(1, ceil(settings.postgres_connect_timeout_seconds)),
+                "options": f"-c statement_timeout={statement_ms} -c lock_timeout={lock_ms}",
+            },
+            min_size=settings.postgres_pool_min_size,
+            max_size=settings.postgres_pool_max_size,
+            timeout=settings.postgres_pool_acquisition_timeout_seconds,
+            open=False,
+        )
+        self._connect_timeout = settings.postgres_connect_timeout_seconds
+        self._shutdown_timeout = settings.postgres_shutdown_timeout_seconds
+        operations = _PooledOperations(self._pool, settings)
+        self.audit_store: AuditEventStore = PooledAuditEventStore(operations)
+        self.custody_store: CustodyEventStore = PooledCustodyEventStore(operations)
+        self._opened = False
+        self._closed = False
+        self._lock = Lock()
+
+    def open(self) -> None:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("audit PostgreSQL connection pool is closed")
+            if self._opened:
+                return
+            self._pool.open(wait=True, timeout=self._connect_timeout)
+            self._opened = True
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        self._pool.close(timeout=self._shutdown_timeout)
+
+
+@dataclass(frozen=True)
+class _MemoryRuntime:
+    audit_store: AuditEventStore
+    custody_store: CustodyEventStore
+
+    def open(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+RuntimeKey = tuple[str, str, float, float, float, float, int, int, int, float]
+_runtime_lock = Lock()
+_active_runtimes: dict[RuntimeKey, AuditStoreRuntime | _MemoryRuntime] = {}
+
+
+def _runtime_key(settings: Settings) -> RuntimeKey:
+    return (
+        settings.store_backend,
+        settings.postgres_dsn,
+        settings.postgres_connect_timeout_seconds,
+        settings.postgres_pool_acquisition_timeout_seconds,
+        settings.postgres_statement_timeout_seconds,
+        settings.postgres_lock_timeout_seconds,
+        settings.postgres_pool_min_size,
+        settings.postgres_pool_max_size,
+        settings.postgres_reconnect_attempts,
+        settings.postgres_shutdown_timeout_seconds,
+    )
+
+
+def _runtime_for(settings: Settings) -> AuditStoreRuntime | _MemoryRuntime:
+    key = _runtime_key(settings)
+    with _runtime_lock:
+        runtime = _active_runtimes.get(key)
+        if runtime is None:
+            if settings.store_backend == "postgres":
+                runtime = AuditStoreRuntime(settings)
+            else:
+                runtime = _MemoryRuntime(
+                    audit_store=InMemoryAuditEventStore(),
+                    custody_store=InMemoryCustodyEventStore(),
+                )
+            _active_runtimes[key] = runtime
+        return runtime
+
+
+def open_store_runtime(settings: Settings) -> None:
+    """Construct and synchronously verify the configured production pool."""
+
+    _runtime_for(settings).open()
+
+
+def close_store_runtime() -> None:
+    """Close every constructed pool and clear process-local runtime state."""
+
+    with _runtime_lock:
+        runtimes = tuple(_active_runtimes.values())
+        _active_runtimes.clear()
+    first_error: Exception | None = None
+    for runtime in runtimes:
+        try:
+            runtime.close()
+        except Exception as exc:
+            if first_error is None:
+                first_error = exc
+    if first_error is not None:
+        raise first_error
 
 
 def store_dependency(settings: SettingsDep) -> AuditEventStore:
-    return _store_singleton_for(settings.store_backend, settings.postgres_dsn)
+    return _runtime_for(settings).audit_store
 
 
 StoreDep = Annotated[AuditEventStore, Depends(store_dependency)]
 
 
-# --- Chain-of-custody store (FEAT-04-3) — a separate ledger from the audit
-# store, wired identically. It reuses the same PostgreSQL connection settings
-# but is its own store object over its own table.
-
-
-@lru_cache
-def _memory_custody_store_singleton() -> InMemoryCustodyEventStore:
-    return InMemoryCustodyEventStore()
-
-
-def _build_custody_store(settings: Settings) -> CustodyEventStore:
-    if settings.store_backend == "postgres":
-        import psycopg
-
-        connection = psycopg.connect(settings.postgres_dsn)
-        return PostgresCustodyEventStore(connection)
-    return _memory_custody_store_singleton()
-
-
-@lru_cache
-def _custody_store_singleton_for(backend: StoreBackend, dsn: str) -> CustodyEventStore:
-    from .config import Settings as _Settings
-
-    return _build_custody_store(_Settings(store_backend=backend, postgres_dsn=dsn))
-
-
 def custody_store_dependency(settings: SettingsDep) -> CustodyEventStore:
-    return _custody_store_singleton_for(settings.store_backend, settings.postgres_dsn)
+    return _runtime_for(settings).custody_store
 
 
 CustodyStoreDep = Annotated[CustodyEventStore, Depends(custody_store_dependency)]
 
 
 def store_health(store: AuditEventStore, settings: Settings) -> StoreHealth:
-    """Probe the store for readiness reporting. For the in-memory store this is
-    always available; for Postgres it runs a cheap integrity/scan probe and
-    reports unavailability rather than pretending to be healthy."""
-    backend = settings.store_backend
+    """Probe reachability without fabricating or mutating an audit record."""
+
     try:
-        # A cheap read proves the store is reachable without mutating it or
-        # scanning the whole table.
         store.query(AuditQuery(limit=1))
-        return StoreHealth(backend=backend, available=True, detail="store reachable")
-    except Exception as exc:  # pragma: no cover - exercised via readiness tests with a fake
-        return StoreHealth(backend=backend, available=False, detail=f"store unavailable: {exc}")
+        return StoreHealth(
+            backend=settings.store_backend,
+            available=True,
+            detail="store reachable",
+        )
+    except Exception as exc:  # pragma: no cover - readiness tests use a fake
+        return StoreHealth(
+            backend=settings.store_backend,
+            available=False,
+            detail=f"store unavailable: {exc}",
+        )

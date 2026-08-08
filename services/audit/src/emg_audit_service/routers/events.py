@@ -66,7 +66,7 @@ def _to_view(event: AuditEvent) -> AuditEventView:
 
 
 @router.post("/events", response_model=IngestResponse)
-async def ingest_event(
+def ingest_event(
     event: SubmittedAuditEvent,
     principal: ServicePrincipalDep,
     store: StoreDep,
@@ -123,7 +123,7 @@ def _build_query(
 
 
 @router.get("/events", response_model=list[AuditEventView])
-async def query_events(
+def query_events(
     scope: AuditReadScopeDep,
     store: StoreDep,
     actor: str | None = None,
@@ -162,7 +162,7 @@ async def query_events(
 
 
 @router.get("/events/page", response_model=AuditEventPage)
-async def query_events_page(
+def query_events_page(
     scope: AuditReadScopeDep,
     store: StoreDep,
     actor: str | None = None,
@@ -208,7 +208,7 @@ async def query_events_page(
 
 
 @router.get("/events/export", response_model=None)
-async def export_events(
+def export_events(
     scope: AuditReadScopeDep,
     store: StoreDep,
     format: Literal["json", "csv"] = "json",
