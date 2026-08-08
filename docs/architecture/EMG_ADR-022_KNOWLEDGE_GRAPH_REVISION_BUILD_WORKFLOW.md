@@ -543,6 +543,7 @@ status; the approval conditions below are unchanged.)*
 **Production enablement is unchanged and still conditional.** It additionally
 requires the mutation-audit condition in sections 5, 10, 14, and 16 to be
 resolved or explicitly waived by the designated deciders. That condition is
-**not** resolved: ADR-028 (Audit Reconciliation) remains Draft and no consumer
-of the `mutation_dispatch` `audit` channel exists. Ratification of this ADR
-grants no production enablement.
+architecturally resolved by accepted ADR-028 (2026-08-09), but no consumer of
+the `mutation_dispatch` `audit` channel exists. Production enablement remains
+blocked until RC-1C implements and validates that consumer. Ratification of
+this ADR grants no production enablement.

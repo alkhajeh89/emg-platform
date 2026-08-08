@@ -224,7 +224,8 @@ accumulate undelivered by design, not by fault. Do not alert on undelivered
    `seq >= 1`, and hash-format checks. Until then append-only rests on role
    grants, which do not bind the table owner.
 3. **Audit dispatch consumer** — no consumer of the `audit` channel exists.
-   ADR-028 governs it and its repository status is **Draft**, not Accepted.
+   ADR-028 governs it and is **Accepted (2026-08-09), implementation authorized
+   but not implemented**.
 4. **Metrics collection, dashboards, tracing, and alerting** — owned by
    ADR-015 / FEAT-12-3. The persistence layer and ADR-027 emit; nothing
    collects.

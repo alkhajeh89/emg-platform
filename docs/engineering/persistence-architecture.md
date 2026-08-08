@@ -107,8 +107,8 @@ failing row cannot be reclaimed without limit. Claiming uses
 
 **[Accepted — not implemented]** No consumer of the `audit` channel exists.
 `claim_dispatch` and `complete_dispatch` have no production caller. Audit
-delivery is the subject of ADR-028, whose repository status is **Draft** — see
-§11.
+delivery is governed by ADR-028, **Accepted 2026-08-09**; RC-1C implementation
+remains outstanding — see §11.
 
 ## 6. Evidence ledger
 
@@ -255,8 +255,8 @@ avoid a reverse dependency from this reusable library into a service.
 
 - **Audit dispatch delivery.** `mutation_dispatch` rows on channel `audit`
   accumulate undelivered; no consumer exists. ADR-028 governs this and its
-  repository status is **Draft** (`Status: Draft`, `Decision Date: TBD`), not
-  Accepted. Nothing in this document alters ADR-028's decisions.
+  repository status is **Accepted (2026-08-09), implementation authorized but
+  not implemented**. Nothing in this document alters ADR-028's decisions.
 - **P-02 EL-10 schema hardening.** Required before evidentiary reliance; see §8.
 
 **[Production-readiness dependency]**

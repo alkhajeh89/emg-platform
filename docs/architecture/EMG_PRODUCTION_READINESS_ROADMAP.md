@@ -12,6 +12,17 @@ the Engineering Backlog, and the security/technical-debt registers), aimed at
 answering one question: **what stands between the current repository state
 and a first production-ready release, and in what order should it be closed?**
 
+## ADR-028 Acceptance Addendum — 2026-08-09
+
+ADR-028 is now **Accepted** and authorizes implementation of the dedicated
+Audit Projector. The decision resolves deployment topology, tenant-scoped
+projector Service Principals, tenant-partitioned dispatch claims, at-least-once
+delivery, deterministic idempotency, bounded durable retry/reschedule,
+poison/exhausted preservation, crash recovery, graceful shutdown, backlog
+observations, and the single-replica RC1 scalability boundary. The underlying
+production-readiness finding remains open until RC-1C implements and validates
+that consumer; acceptance alone does not deliver cross-service reconciliation.
+
 ## Governance Reconciliation Addendum — 2026-08-01
 
 **Reconciliation baseline:** `develop` at `aefc82c` (PR #37).
@@ -63,8 +74,9 @@ preserved as written.
 - The **ADR-028** row states "Referenced, not written, not begun". That was
   accurate at `aefc82c`. ADR-028 Revision 1 has since been written and merged
   (`96702a2` … `9b9d2ab`, PRs #47 and #49). Its repository status is
-  **Draft — not Accepted, `Decision Date: TBD`**. Its decisions are unchanged by
-  this addendum. The underlying readiness finding stands: **no consumer of the
+  **Draft — not Accepted, `Decision Date: TBD`** at that historical baseline.
+  The 2026-08-09 acceptance addendum above supersedes that governance status.
+  The underlying readiness finding stands: **no consumer of the
   `mutation_dispatch` `audit` channel exists**, so cross-service audit
   reconciliation is still not delivered.
 
@@ -211,7 +223,7 @@ planning: **a majority of the frozen architecture has no corresponding code.**
 | ADR-025 | KG Tenant & Authorization Model | **Accepted — implemented** | Live; one open follow-up (no client-id allow-list registry, see §4) |
 | ADR-026 Rev 2 | KG Classification Enforcement Model | **Accepted — fully implemented** | Live; this session's ADR-026 final blocker fix is the most recent change |
 | ADR-027 Revision 5 | KG Mutation API | **Accepted — implemented through Stage 4 Phase 4A** | Five-route HTTP mutation transport and final conformance are merged on `develop` at `aefc82c` (PR #37); the write-path decision is closed. Later-phase scope is not defined here. |
-| ADR-028 | Audit reconciliation | **Referenced, not written, not begun** | Re-verified at `aefc82c`; status unchanged. Blocks any cross-service audit-integrity guarantee beyond single-service append-only logs. |
+| ADR-028 | Audit reconciliation | **Accepted 2026-08-09; implementation authorized, not implemented** | Dedicated RC1 Audit Projector architecture is resolved. Still blocks cross-service audit-integrity guarantees until RC-1C implements and validates the consumer. |
 
 ADR-001 through ADR-013 do not exist in this repository and must not be
 treated as approved or implied.
