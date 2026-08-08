@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://emg.io/schemas/postgresql-backup-manifest-v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "backupId", "createdAt", "postgres", "encryption", "artifacts", "tablespaces", "evidenceAnchors"],
+  "allOf": [
+    {"properties": {"artifacts": {"contains": {"properties": {"role": {"const": "base"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1}}},
+    {"properties": {"artifacts": {"contains": {"properties": {"role": {"const": "wal"}}, "required": ["role"]}, "minContains": 1, "maxContains": 1}}}
+  ],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "backupId": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+      "description": "Canonical UTC only, matching backup_manifest.py's _utc(): must end in a literal 'Z'. A non-'Z' RFC3339 offset (e.g. '+04:00') satisfies the 'date-time' format alone but is rejected by the pattern, matching the runtime validator exactly."
+    },
+    "postgres": {
+      "type": "object", "additionalProperties": false,
+      "required": ["majorVersion", "startLsn", "stopLsn", "startWal", "stopWal", "database"],
+      "properties": {
+        "majorVersion": {"type": "integer", "minimum": 14},
+        "startLsn": {"type": "string", "pattern": "^[0-9A-F]+/[0-9A-F]+$"},
+        "stopLsn": {"type": "string", "pattern": "^[0-9A-F]+/[0-9A-F]+$"},
+        "startWal": {"type": "string", "pattern": "^[0-9A-F]{24}$"},
+        "stopWal": {"type": "string", "pattern": "^[0-9A-F]{24}$"},
+        "database": {"type": "string", "minLength": 1}
+      }
+    },
+    "encryption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["required", "keyReference"],
+      "properties": {"required": {"const": true}, "keyReference": {"type": "string", "minLength": 1}}
+    },
+    "artifacts": {
+      "type": "array", "minItems": 2,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["role", "path", "size", "sha256", "encrypted"],
+        "properties": {
+          "role": {"enum": ["base", "wal", "postgres-manifest", "tablespace"]},
+          "path": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"},
+          "size": {"type": "integer", "minimum": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "encrypted": {"const": true},
+          "tablespaceOid": {"type": "string", "pattern": "^[0-9]+$"}
+        }
+      }
+    },
+    "tablespaces": {
+      "type": "array",
+      "uniqueItems": true,
+      "description": "uniqueItems rejects two fully-identical mapping entries. It cannot express 'unique oid across entries with differing restorePath' -- JSON Schema has no cross-sibling field-projection constraint without restructuring this array into an object keyed by oid, which would change the manifest format. That specific rule (two entries sharing an oid with different restorePath) remains enforced exclusively by backup_manifest.py's validate_manifest(), which every operational script (full-backup.sh, restore-full.sh, verify-backup.sh, retention.sh) already calls in preference to schema-validate alone.",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["oid", "restorePath"],
+        "properties": {"oid": {"type": "string", "pattern": "^[0-9]+$"}, "restorePath": {"type": "string", "pattern": "^/"}}
+      }
+    },
+    "evidenceAnchors": {
+      "type": "object", "additionalProperties": false,
+      "required": ["audit", "custody"],
+      "properties": {"audit": {"$ref": "#/$defs/anchor"}, "custody": {"$ref": "#/$defs/anchor"}}
+    }
+  },
+  "$defs": {
+    "anchor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rowCount", "terminalSequence", "terminalHash"],
+      "properties": {
+        "rowCount": {"type": "integer", "minimum": 0},
+        "terminalSequence": {"type": ["integer", "null"], "minimum": 1},
+        "terminalHash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+      },
+      "description": "Mirrors backup_manifest.py's _anchor(): rowCount == 0 requires both terminal fields null; rowCount > 0 requires both non-null.",
+      "if": {
+        "properties": {"rowCount": {"const": 0}},
+        "required": ["rowCount"]
+      },
+      "then": {
+        "properties": {
+          "terminalSequence": {"const": null},
+          "terminalHash": {"const": null}
+        }
+      },
+      "else": {
+        "properties": {
+          "terminalSequence": {"type": "integer", "minimum": 1},
+          "terminalHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

@@ -48,6 +48,12 @@ jobs:
           ./tools/scripts/install-libs.sh
           ./tools/scripts/install-services.sh
 
+      - name: Install RC-1B recovery validators
+        run: |
+          .venv/bin/python -m pip install jsonschema==4.25.1
+          sudo apt-get update
+          sudo apt-get install -y shellcheck postgresql
+
       - name: Environment diagnostic (informational, incl. editable-install integrity)
         run: ./tools/scripts/setup-check.sh || true
 
@@ -61,6 +67,23 @@ jobs:
         run: |
           kubectl kustomize infra/environments/production > /tmp/emg-production.yaml
           test -s /tmp/emg-production.yaml
+
+      - name: Validate backup and recovery artifacts
+        run: |
+          bash -n tools/backup/*.sh
+          shellcheck tools/backup/*.sh
+          .venv/bin/python -c "import json, pathlib; [json.loads(p.read_text()) for p in pathlib.Path('infra/backup').glob('*.json')]"
+          .venv/bin/python -c "import pathlib, yaml; [yaml.safe_load(p.read_text()) for p in pathlib.Path('infra/backup').glob('*.yaml')]"
+          .venv/bin/python tools/backup/backup_manifest.py validate infra/backup/sample-manifest.json
+          .venv/bin/python tools/backup/backup_manifest.py schema-validate infra/backup/sample-manifest.json infra/backup/manifest.schema.json
+          .venv/bin/pytest tests/infrastructure/test_backup_recovery.py -q
+
+      - name: Real PostgreSQL backup, restore, WAL and PITR rehearsal
+        env:
+          EMG_RUN_POSTGRES_RECOVERY_TESTS: "1"
+        run: |
+          export PATH="$(pg_config --bindir):$PATH"
+          .venv/bin/pytest tests/infrastructure/test_backup_recovery_integration.py -q
 
       - name: Pre-commit hooks (all files)
         run: .venv/bin/pre-commit run --all-files

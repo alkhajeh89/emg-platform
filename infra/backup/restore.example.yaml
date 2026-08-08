@@ -1,0 +1,19 @@
+apiVersion: emg.io/v1
+kind: PostgreSQLRestorePlan
+metadata:
+  name: production-recovery
+spec:
+  sourceRepository: /var/lib/emg-backup
+  targetDataDirectory: /var/lib/postgresql/restored
+  mode: pitr
+  target:
+    timestamp: "2025-01-01T00:00:00Z"
+    timeline: latest
+    inclusive: true
+  recovery:
+    action: promote
+  verification:
+    requireManifest: true
+    requireChecksums: true
+    requireDatabaseReadiness: true
+    requireEvidenceLedgerIntegrity: true

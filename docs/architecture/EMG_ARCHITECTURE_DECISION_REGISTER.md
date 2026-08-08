@@ -27,7 +27,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 ---
 
-## Architecture Decision Records (ADR-014 – ADR-038)
+## Architecture Decision Records (ADR-014 – ADR-039)
 
 Canonical index of every ADR number in the current range. Added 2026-08-03 to
 close register-completeness finding DOC-4. This section records *governance
@@ -66,6 +66,7 @@ a different accountable owner — those are recorded as stated.
 | **ADR-036** | Application and BFF Boundary | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-036_APPLICATION_BFF_BOUNDARY.md` | **Not implemented** — A BFF remains mandatory; the browser can never hold a Service Principal credential without violating ADR-034. This branch contains no Studio frontend or production BFF. The BFF is not a PEP; service-side authorization remains authoritative. ADR-038 resolves the former downstream human-delegation sub-decision in §5, while Phase 2B remains blocked pending ADR-038 capability verification. Closes D-F-006. |
 | **ADR-037** | Decision Domain Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-037_DECISION_DOMAIN_MODEL.md` | **Not implemented** — this branch contains no Decision ontology model, Decision Query Service, Decision HTTP API, Studio aggregate backend, or Studio frontend. The accepted contract introduces no new `NodeType`, `EdgeType`, or mutation route. |
 | **ADR-038** | Human Identity Delegation Architecture | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-07 | `EMG_ADR-038_Human_Identity_Delegation_Architecture.md` | **Not implemented** — selects OAuth 2.0 Token Exchange (RFC 8693) as the authoritative delegated-human-identity architecture. Preserves the Human Principal as authorization subject and the independently identifiable BFF Acting Service, with audience isolation, scope reduction, tenant and clearance integrity, bounded lifetime, independent validation, fail-closed behaviour, and complete audit attribution. Resolves ADR-036 §5. Acceptance does not imply implementation; Phase 2B remains blocked until mandatory non-production capability verification and ADR-038 conformance criteria succeed. |
+| **ADR-039** | Backup, PITR and Recovery Governance | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-09 | `EMG_ADR-039_BACKUP_PITR_AND_RECOVERY_GOVERNANCE.md` | **Implemented** — ratifies the already-implemented physical backup, WAL/PITR, retention, manifest, evidence-anchor, and encryption-wrapper mechanics at `infra/backup/` and `tools/backup/`. Introduces no new code or mechanism. Resolves **D-A-005** and the dangling ADR-031 citation in ADR-032 §Future Compatibility. Documents one permanent, intentional manifest-validation residual (schema cannot express cross-sibling tablespace-OID uniqueness without a format change; the canonical Python validator remains the sole enforcement point). |
 
 **Numbers outside this range.** ADR-001 through ADR-013 do not exist in this
 repository and must not be treated as approved or implied.
@@ -83,7 +84,6 @@ are ADR-027 support artifacts. They carry no independent decision authority
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | D-A-001 | Module Numbering Governance | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §6 (Gap 4a), §7 (Gap 4) | Which numbering scheme is canonical? |
 | D-A-002 | Entity Resolution Ownership | **Open** | TBD | `IMPLEMENTATION_GAP_ANALYSIS.md` §2 (Gap 1) | Standalone service, part of `emg-memory-graph`, or shared library? |
-| D-A-005 | Backup, PITR, and Recovery Metadata Governance | **Open** (recorded 2026-08-03) | TBD | `EMG_ADR-032_…md` §Future Compatibility (formerly citing a non-existent ADR-031); ADR-017 §5 governs DR *strategy* only; no backup, PITR, retention, or schema-version-in-backup decision exists | Which decision governs backup content, PITR procedure, retention, and schema-version metadata in backups? Does it extend ADR-017 or require a new ADR? |
 
 ## Resolved Architecture Decisions
 
@@ -91,6 +91,7 @@ are ADR-027 support artifacts. They carry no independent decision authority
 | :--- | :--- | :--- | :--- | :--- |
 | D-A-003 | Entity/Relationship Identity, Lifecycle & Supersession Model | **Accepted — ADR-029 Revision 2 implemented (2026-07-28)** | Architecture Board / Chief Data Officer | `docs/architecture/EMG_ADR-029_ENTITY_RELATIONSHIP_IDENTITY_LIFECYCLE_SUPERSESSION_MODEL.md`; commit `97b211d`; tag `adr-029-approved-implementation` |
 | D-A-004 | ADR-027 Stage 4 Phases 4B–4E Scope Definition | **Accepted — Architecture Board, 2026-08-01** | Chief Data Officer (accountable owner); Architecture Board (approving authority) | `docs/architecture/EMG_ADR-027_KNOWLEDGE_GRAPH_MUTATION_API.md` §2; `docs/specifications/ADR-033/Phase4-Design-Package.md` §11; `docs/specifications/ADR-027/ADR-027_STAGE4_CLOSURE_RECORD.md`; Phase 4A commits `08949e0`, `f59cb4b`, `0ea7c74` and merge commit `aefc82c`; Phase 4B implementation commit `c6c28bb` and PR #45 merge commit `6536b73`; baseline `9588c6d` |
+| D-A-005 | Backup, PITR, and Recovery Metadata Governance | **SUPERSEDED BY ADR-039** (recorded Open 2026-08-03; resolved 2026-08-09) | EMG Founder | `docs/architecture/EMG_ADR-039_BACKUP_PITR_AND_RECOVERY_GOVERNANCE.md` (ratifies the implementation at `infra/backup/` and `tools/backup/`); formerly evidenced by `EMG_ADR-032_…md` §Future Compatibility (dangling ADR-031 citation, replaced) and the absence of any backup/PITR/retention/schema-version-in-backup decision under ADR-017 |
 
 ## Knowledge Graph ADR Implementation Status
 

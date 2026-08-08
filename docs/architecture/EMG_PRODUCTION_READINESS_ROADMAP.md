@@ -78,7 +78,11 @@ preserved as written.
   hash-format checks — is **required before the ledger is relied upon as an
   evidentiary record** and is not yet applied.
 - **TD-002** (continuous `ProjectionWorker` daemon) remains open and accepted.
-- Backup, restore, PITR, and disaster-recovery procedure remain unspecified.
+- Backup, restore, PITR, and retention procedure are now governed by **ADR-039**
+  (`EMG_ADR-039_BACKUP_PITR_AND_RECOVERY_GOVERNANCE.md`), ratifying the implementation at
+  `infra/backup/` and `tools/backup/`. Cross-region replication, PostgreSQL HA/failover,
+  encryption/KMS and scheduler product selection, and the first witnessed production
+  rehearsal remain unspecified deployment/operations readiness work (ADR-039 §15).
 
 Current persistence detail: `docs/engineering/persistence-architecture.md` and
 `docs/engineering/persistence-operations.md`.
@@ -135,10 +139,12 @@ findings below are preserved as written; nothing is erased.**
   centralized secrets platform. FEAT-11-3 is not started. **This gap is open.**
 - Every other production-readiness gap recorded in §5, §6, §7, §8, and §9 is
   unchanged by this addendum: observability collection, dashboards and alerting;
-  deployment topology and IaC; backup, restore, PITR and DR; data retention;
-  the continuous `ProjectionWorker` daemon (TD-002); the audit dispatch
-  consumer; the P-02 EL-10 evidence-ledger schema hardening; and ADR-027
-  Stage 5 production rollout.
+  deployment topology and IaC; backup, restore, PITR and DR (subsequently
+  governed by **ADR-039**, 2026-08-09 — see §2 above; deployment-level items
+  such as HA/failover and product selection remain open per ADR-039 §15); data
+  retention; the continuous `ProjectionWorker` daemon (TD-002); the audit
+  dispatch consumer; the P-02 EL-10 evidence-ledger schema hardening; and
+  ADR-027 Stage 5 production rollout.
 
 **Governance corrections applied the same day (context only, not a readiness
 change).** ADR-022, ADR-023, and ADR-024 were ratified as Accepted after
@@ -147,7 +153,8 @@ at its true **Draft** status; the ADR-014/015/016/017 baseline-publication
 condition was discharged; and the dangling ADR-031 citation in ADR-032 was
 replaced with an explicit open dependency now tracked as **D-A-005** (backup,
 PITR, and recovery-metadata governance). None of these changed any
-architectural decision or any production-readiness position.
+architectural decision or any production-readiness position. *(D-A-005 was
+subsequently superseded by ADR-039 on 2026-08-09; see §2 above.)*
 
 ---
 
