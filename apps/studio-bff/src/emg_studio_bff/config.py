@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     # a Delegated Credential for. Phase 2B: Knowledge Graph only.
     knowledge_graph_audience: str = "emg-knowledge-graph-audience"
     knowledge_graph_base_url: str = "http://localhost:8003"
+    readiness_timeout_seconds: float = 2.0
 
     tenant_claim: str = "tenant_id"
     classification_clearance_claim: str = "classification_clearance"
@@ -122,7 +123,8 @@ def validate_runtime_configuration(settings: Settings) -> None:
     if settings.deployment_environment != "production":
         return
     reject_unknown_environment("EMG_STUDIO_BFF_", set(Settings.model_fields))
-    if settings.oidc_client_secret.get_secret_value() == _DEV_PLACEHOLDER_OIDC_CLIENT_SECRET:
+    oidc_secret = settings.oidc_client_secret.get_secret_value()
+    if not oidc_secret or oidc_secret == _DEV_PLACEHOLDER_OIDC_CLIENT_SECRET:
         raise RuntimeError(
             "studio-bff production oidc_client_secret is still the committed dev placeholder"
         )
@@ -132,3 +134,16 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("studio-bff production Knowledge Graph transport must use HTTPS")
     if not settings.oidc_redirect_uri.startswith("https://"):
         raise RuntimeError("studio-bff production redirect_uri must use HTTPS")
+    if urlsplit(settings.studio_frontend_url).scheme != "https":
+        raise RuntimeError("studio-bff production frontend URL must use HTTPS")
+    for name, value in (
+        ("session_cookie_name", settings.session_cookie_name),
+        ("csrf_cookie_name", settings.csrf_cookie_name),
+        ("pre_auth_cookie_name", settings.pre_auth_cookie_name),
+    ):
+        if not value.startswith("__Host-"):
+            raise RuntimeError(f"studio-bff production {name} must use the __Host- prefix")
+    if settings.session_ttl_seconds <= 0 or settings.session_absolute_ttl_seconds <= 0:
+        raise RuntimeError("studio-bff production session lifetimes must be positive")
+    if settings.session_ttl_seconds > settings.session_absolute_ttl_seconds:
+        raise RuntimeError("studio-bff session TTL cannot exceed its absolute lifetime")

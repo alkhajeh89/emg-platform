@@ -39,9 +39,13 @@ RUN pip install --no-deps --no-build-isolation \
 FROM python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93 AS runtime
 
 RUN useradd --create-home --uid 10001 emg
+WORKDIR /app
 
 COPY --from=base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=base /usr/local/bin /usr/local/bin
+COPY --from=base /build/services/identity/config /app/services/identity/config
+
+ENV EMG_IDENTITY_DEPLOYMENT_ENVIRONMENT=production
 
 USER emg
 

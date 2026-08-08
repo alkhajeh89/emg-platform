@@ -16,6 +16,7 @@ def _production_settings(**overrides: object) -> Settings:
         "keycloak_base_url": "https://keycloak.example.gov",
         "knowledge_graph_base_url": "https://knowledge-graph.example.gov",
         "oidc_redirect_uri": "https://studio.example.gov/auth/callback",
+        "studio_frontend_url": "https://studio.example.gov",
         "oidc_client_secret": "a-real-production-secret",
     }
     values.update(overrides)

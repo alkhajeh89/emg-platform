@@ -17,7 +17,7 @@ from collections.abc import Awaitable, Callable
 from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import AuthorizationError, EMGError, UpstreamServiceError, ValidationError
 from emg_telemetry import get_logger, set_correlation_id
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from .rate_limit import RateLimitedError
@@ -87,16 +87,18 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "identity"}
 
     @app.get("/readyz", tags=["ops"])
-    async def readyz() -> dict[str, object]:
+    async def readyz(response: Response) -> dict[str, object]:
         """Readiness incl. audit-delivery status (Sprint 6, FEAT-04-1,
         Decision C item 6). `status` is "degraded" when audit events are not
         being durably accepted remotely; the service itself stays available so
         login/authentication is never blocked by audit unavailability."""
-        from .dependencies import audit_delivery_status
+        from .config import get_settings
+        from .health import readiness
 
-        audit = audit_delivery_status().snapshot()
-        overall = "degraded" if audit.get("degraded") else "ready"
-        return {"status": overall, "service": "identity", "audit_delivery": audit}
+        result = await readiness(get_settings())
+        if result["status"] == "unavailable":
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return result
 
     app.include_router(auth_router)
     app.include_router(service_auth_router)

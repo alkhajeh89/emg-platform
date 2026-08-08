@@ -18,6 +18,7 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
 from emg_api_contracts import reject_unknown_environment
+from emg_knowledge_graph_infrastructure import SchemaCatalogValidationError
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -61,6 +62,7 @@ class Settings(BaseSettings):
     keycloak_realm: str = "emg"
     service_token_audience: str = "emg-internal-services"
     jwks_cache_ttl_seconds: int = 300
+    readiness_timeout_seconds: float = 2.0
 
     # The JWT custom claim carrying the caller's resolved tenant identifier
     # (Sprint 7.4 addition — see authn.py).
@@ -135,6 +137,9 @@ def get_settings() -> Settings:
 _DEV_PLACEHOLDER_AUDIT_PRODUCER_SECRET = (
     "emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod"
 )
+_DEV_RUNTIME_POSTGRES_PASSWORD = "emg_knowledge_graph_local_dev_only_do_not_use_in_prod"
+_DEV_MIGRATION_POSTGRES_PASSWORD = "emg_knowledge_graph_migrator_local_dev_only_do_not_use_in_prod"
+_DEV_NEO4J_PASSWORD = "emg_local_dev_only"
 
 
 def validate_secure_transport(settings: Settings) -> None:
@@ -157,20 +162,60 @@ def validate_secure_transport(settings: Settings) -> None:
         # same transport-security requirement as every other external call
         # this function already guards.
         raise RuntimeError("knowledge-graph production audit-service transport must use HTTPS")
-    for name, dsn in (
-        ("runtime", settings.postgres_dsn),
-        ("migration", settings.migration_postgres_dsn),
+    for name, dsn, development_password in (
+        ("runtime", settings.postgres_dsn, _DEV_RUNTIME_POSTGRES_PASSWORD),
     ):
-        sslmode = parse_qs(urlsplit(dsn).query).get("sslmode", [])
+        parsed_dsn = urlsplit(dsn)
+        sslmode = parse_qs(parsed_dsn.query).get("sslmode", [])
         if not sslmode or sslmode[-1] not in {"require", "verify-ca", "verify-full"}:
             raise RuntimeError(
                 f"knowledge-graph production {name} PostgreSQL transport must require TLS"
             )
-    if (
-        settings.audit_producer_client_secret.get_secret_value()
-        == _DEV_PLACEHOLDER_AUDIT_PRODUCER_SECRET
-    ):
+        if not parsed_dsn.password or parsed_dsn.password == development_password:
+            raise RuntimeError(
+                f"knowledge-graph production {name} PostgreSQL credential is blank or uses "
+                "a development value"
+            )
+    audit_secret = settings.audit_producer_client_secret.get_secret_value()
+    if not audit_secret or audit_secret == _DEV_PLACEHOLDER_AUDIT_PRODUCER_SECRET:
         raise RuntimeError(
             "knowledge-graph production audit_producer_client_secret is still the committed "
             "dev placeholder"
+        )
+    if settings.neo4j_uri is not None:
+        if urlsplit(settings.neo4j_uri).scheme != "neo4j+s":
+            raise RuntimeError("knowledge-graph production Neo4j transport must use neo4j+s")
+        if not settings.neo4j_user or settings.neo4j_password is None:
+            raise RuntimeError("knowledge-graph production Neo4j credentials are required")
+        neo4j_password = settings.neo4j_password.get_secret_value()
+        if not neo4j_password or neo4j_password == _DEV_NEO4J_PASSWORD:
+            raise RuntimeError(
+                "knowledge-graph production Neo4j credential is blank or uses a development value"
+            )
+    if not settings.policy_config_path.is_file():
+        raise RuntimeError("knowledge-graph production policy configuration file is missing")
+    if settings.schema_catalog_path is None or not settings.schema_catalog_path.is_file():
+        raise SchemaCatalogValidationError(
+            "knowledge-graph production schema catalog file is missing"
+        )
+
+
+def validate_migration_configuration(settings: Settings) -> None:
+    """Validate the owner credential in the migration process, never the server."""
+    if settings.deployment_environment != "production":
+        return
+    parsed_dsn = urlsplit(settings.migration_postgres_dsn)
+    sslmode = parse_qs(parsed_dsn.query).get("sslmode", [])
+    if not sslmode or sslmode[-1] not in {"require", "verify-ca", "verify-full"}:
+        raise RuntimeError(
+            "knowledge-graph production migration PostgreSQL transport must require TLS"
+        )
+    if not parsed_dsn.password or parsed_dsn.password == _DEV_MIGRATION_POSTGRES_PASSWORD:
+        raise RuntimeError(
+            "knowledge-graph production migration PostgreSQL credential is blank or uses "
+            "a development value"
+        )
+    if settings.migration_postgres_dsn == settings.postgres_dsn:
+        raise RuntimeError(
+            "knowledge-graph production runtime and migration database credentials must be distinct"
         )

@@ -9,7 +9,10 @@ rather than hidden.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import asyncio
+
+from fastapi import APIRouter, Response, status
+from starlette.concurrency import run_in_threadpool
 
 from ..authn import SettingsDep
 from ..schemas import ReadinessResponse
@@ -24,8 +27,22 @@ async def healthz() -> dict[str, str]:
 
 
 @router.get("/readyz", response_model=ReadinessResponse)
-async def readyz(store: StoreDep, settings: SettingsDep) -> ReadinessResponse:
-    health = store_health(store, settings)
+async def readyz(response: Response, store: StoreDep, settings: SettingsDep) -> ReadinessResponse:
+    try:
+        health = await asyncio.wait_for(
+            run_in_threadpool(store_health, store, settings),
+            timeout=settings.readiness_timeout_seconds,
+        )
+    except TimeoutError:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return ReadinessResponse(
+            status="unavailable",
+            store_backend=settings.store_backend,
+            store_available=False,
+            detail="store readiness check timed out",
+        )
+    if not health.available:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return ReadinessResponse(
         status="ready" if health.available else "degraded",
         store_backend=health.backend,

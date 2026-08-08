@@ -28,7 +28,7 @@ def test_production_accepts_postgres_storage() -> None:
             deployment_environment="production",
             store_backend="postgres",
             keycloak_base_url="https://keycloak.example.gov",
-            postgres_dsn="postgresql://audit@postgres.example.gov/emg?sslmode=verify-full",
+            postgres_dsn="postgresql://audit:production-password@postgres.example.gov/emg?sslmode=verify-full",
         )
     )
 
@@ -45,7 +45,7 @@ def test_production_rejects_plaintext_transport(overrides: dict[str, object]) ->
         "deployment_environment": "production",
         "store_backend": "postgres",
         "keycloak_base_url": "https://keycloak.example.gov",
-        "postgres_dsn": "postgresql://audit@postgres/emg?sslmode=verify-full",
+        "postgres_dsn": "postgresql://audit:production-password@postgres/emg?sslmode=verify-full",
     }
     values.update(overrides)
     with pytest.raises(RuntimeError, match="transport"):

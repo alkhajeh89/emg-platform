@@ -54,8 +54,13 @@ jobs:
       - name: Lint (ruff + black --check)
         run: make lint
 
-      - name: Test (pytest across libs + services)
+      - name: Test (pytest across libs + services + apps + infrastructure)
         run: make test
+
+      - name: Validate production manifests render
+        run: |
+          kubectl kustomize infra/environments/production > /tmp/emg-production.yaml
+          test -s /tmp/emg-production.yaml
 
       - name: Pre-commit hooks (all files)
         run: .venv/bin/pre-commit run --all-files

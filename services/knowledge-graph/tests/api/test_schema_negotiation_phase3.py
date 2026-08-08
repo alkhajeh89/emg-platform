@@ -259,11 +259,11 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
     )
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
-        "postgresql://runtime@postgres.example.gov/emg?sslmode=verify-full",
+        "postgresql://runtime:runtime-production-secret@postgres.example.gov/emg?sslmode=verify-full",
     )
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN",
-        "postgresql://migration@postgres.example.gov/emg?sslmode=verify-full",
+        "postgresql://migration:migration-production-secret@postgres.example.gov/emg?sslmode=verify-full",
     )
     monkeypatch.delenv(
         "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",
@@ -285,7 +285,10 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
         dependencies._schema_components_singleton.cache_clear()
 
     assert negotiated.effective_version == CANONICAL_VERSION
-    assert response.status_code == 200
+    # Production readiness also verifies mandatory Keycloak and Audit
+    # dependencies. This isolated test supplies neither, so it must fail closed
+    # while still exposing non-sensitive schema-runtime metadata.
+    assert response.status_code == 503
     assert response.json()["schema_runtime_configured"] is True
     assert response.json()["schema_placeholder_active"] is False
     assert response.json()["canonical_schema_version"] == CANONICAL_VERSION

@@ -36,7 +36,7 @@ from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres.migration_executor import PostgresMigrationExecutor
 from emg_persistence.postgres.pool import DirectConnectionProvider
 
-from .config import get_settings
+from .config import get_settings, validate_migration_configuration
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ def run_startup_migrations() -> None:
     `store_backend == "postgres"`.
     """
     settings = get_settings()
+    validate_migration_configuration(settings)
     if settings.store_backend != "postgres":
         logger.info(
             "knowledge-graph: store_backend=%r, skipping startup migrations "

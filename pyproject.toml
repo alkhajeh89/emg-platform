@@ -30,7 +30,7 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["libs", "services", "apps"]
+testpaths = ["libs", "services", "apps", "tests/infrastructure"]
 python_files = "test_*.py"
 # Each shared library package under /libs/python has its own tests/test_import.py
 # with the same basename; importlib mode avoids sys.modules name collisions

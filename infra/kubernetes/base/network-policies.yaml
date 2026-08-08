@@ -1,0 +1,73 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-default-deny}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: emg-platform}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-dns-egress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: emg-platform}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-audit-ingress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-audit}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-identity}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-knowledge-graph}}
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-knowledge-graph-ingress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-knowledge-graph}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-studio-bff}}
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-internal-egress}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [emg-identity, emg-knowledge-graph, emg-studio-bff]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-audit}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-knowledge-graph}}
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-studio-ingress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-studio-bff}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {networking.emg.io/ingress-access: "true"}
+      ports: [{protocol: TCP, port: 8000}]

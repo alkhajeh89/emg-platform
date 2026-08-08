@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from emg_identity import config as identity_config
 from emg_identity import dependencies
 from emg_identity.config import (
     DEFAULT_KEYCLOAK_CLIENT_SECRET,
@@ -25,8 +26,9 @@ def _production_settings(**overrides: object) -> Settings:
         "keycloak_base_url": "https://keycloak.example.gov",
         "audit_service_base_url": "https://audit.example.gov",
         "refresh_token_postgres_dsn": (
-            "postgresql://identity@postgres.example.gov/emg?sslmode=verify-full"
+            "postgresql://identity:production-password@postgres.example.gov/emg?sslmode=verify-full"
         ),
+        "audit_spool_path": Path.cwd() / "services/identity/config/audit-spool.jsonl",
     }
     values.update(overrides)
     return Settings(**values)
@@ -63,7 +65,10 @@ def test_non_production_retains_local_defaults(environment: str) -> None:
     validate_runtime_configuration(Settings(deployment_environment=environment))
 
 
-def test_production_accepts_secure_runtime_configuration() -> None:
+def test_production_accepts_secure_runtime_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(identity_config.os, "access", lambda *_args: True)
     validate_runtime_configuration(_production_settings())
 
 

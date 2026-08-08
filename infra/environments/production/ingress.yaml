@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: emg-studio-bff
+spec:
+  tls:
+    - hosts: [studio.production.example.invalid]
+      secretName: emg-studio-tls
+  rules:
+    - host: studio.production.example.invalid
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: emg-studio-bff, port: {name: http}}

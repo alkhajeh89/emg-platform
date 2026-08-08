@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: emg-knowledge-graph-migration}
+spec:
+  backoffLimit: 3
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-knowledge-graph-migration, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: emg-knowledge-graph
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migration
+          image: registry.invalid/emg/knowledge-graph@sha256:0000000000000000000000000000000000000000000000000000000000000003
+          command: [python, -m, emg_knowledge_graph_api.migrate]
+          env:
+            - {name: EMG_KNOWLEDGE_GRAPH_API_DEPLOYMENT_ENVIRONMENT, value: production}
+            - {name: EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND, value: postgres}
+            - {name: EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: migration-postgres-dsn}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: "1", memory: 512Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]

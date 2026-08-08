@@ -1,0 +1,11 @@
+# NOT included by kustomization.yaml. Copy and replace every documented CIDR
+# using environment-owned network data before deployment. Standard Kubernetes
+# NetworkPolicy cannot restrict arbitrary external FQDNs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-external-dependencies}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/part-of: emg-platform}
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entries.

@@ -4,9 +4,11 @@ Kubernetes-based infrastructure across environment tiers, defined as code
 and environment-promoted rather than hand-configured (Engineering Master
 Plan §5). Capacity/scaling follows ADR-017's compounded-load model.
 
-**Out of Sprint 1 scope.** Folder structure only (Sprint 1 objective:
-"Configure infrastructure folders"). IaC module content, Kubernetes cluster
-provisioning, and capacity/HA/DR implementation are EPIC-11 (Sprint 11+):
+The production Kubernetes deployment foundation is implemented under
+`kubernetes/base` and `environments/production` for RC-1A.  Local
+`docker-compose.yml` remains development-only.  Cluster provisioning,
+capacity/HA/DR, release engineering, and air-gapped packaging remain separate
+work:
 
 - FEAT-11-1 Kubernetes Cluster Provisioning
 - FEAT-11-2 Infrastructure-as-Code Baseline

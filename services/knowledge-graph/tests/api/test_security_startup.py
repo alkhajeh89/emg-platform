@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 from emg_knowledge_graph_api import dependencies
-from emg_knowledge_graph_api.config import Settings, validate_secure_transport
+from emg_knowledge_graph_api.config import (
+    Settings,
+    validate_migration_configuration,
+    validate_secure_transport,
+)
 from emg_knowledge_graph_api.main import create_app
 from emg_knowledge_graph_infrastructure import SchemaCatalogValidationError
 from emg_policy_engine import PolicyConfigurationError
@@ -26,7 +30,6 @@ def test_unknown_knowledge_graph_backend_is_rejected() -> None:
     [
         {"keycloak_base_url": "http://keycloak"},
         {"postgres_dsn": "postgresql://runtime@postgres/emg"},
-        {"migration_postgres_dsn": "postgresql://migration@postgres/emg"},
     ],
 )
 def test_production_rejects_plaintext_transport(overrides: dict[str, object]) -> None:
@@ -34,12 +37,21 @@ def test_production_rejects_plaintext_transport(overrides: dict[str, object]) ->
         "deployment_environment": "production",
         "store_backend": "postgres",
         "keycloak_base_url": "https://keycloak.example.gov",
-        "postgres_dsn": "postgresql://runtime@postgres/emg?sslmode=verify-full",
-        "migration_postgres_dsn": "postgresql://migration@postgres/emg?sslmode=verify-full",
+        "postgres_dsn": "postgresql://runtime:runtime-password@postgres/emg?sslmode=verify-full",
+        "migration_postgres_dsn": "postgresql://migration:migration-password@postgres/emg?sslmode=verify-full",
     }
     values.update(overrides)
     with pytest.raises(RuntimeError, match="transport"):
         validate_secure_transport(Settings(**values))
+
+
+def test_production_migration_rejects_plaintext_transport() -> None:
+    settings = Settings(
+        deployment_environment="production",
+        migration_postgres_dsn="postgresql://migration@postgres/emg",
+    )
+    with pytest.raises(RuntimeError, match="transport"):
+        validate_migration_configuration(settings)
 
 
 def test_production_rejects_dev_placeholder_audit_producer_secret() -> None:
@@ -50,8 +62,9 @@ def test_production_rejects_dev_placeholder_audit_producer_secret() -> None:
         store_backend="postgres",
         keycloak_base_url="https://keycloak.example.gov",
         audit_service_base_url="https://audit.example.gov",
-        postgres_dsn="postgresql://runtime@postgres/emg?sslmode=verify-full",
-        migration_postgres_dsn="postgresql://migration@postgres/emg?sslmode=verify-full",
+        postgres_dsn="postgresql://runtime:runtime-password@postgres/emg?sslmode=verify-full",
+        migration_postgres_dsn="postgresql://migration:migration-password@postgres/emg?sslmode=verify-full",
+        schema_catalog_path=Path("services/knowledge-graph/config/schema-catalog.json"),
         audit_producer_client_secret=(
             "emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod"
         ),
@@ -66,8 +79,9 @@ def test_production_accepts_non_placeholder_audit_producer_secret() -> None:
         store_backend="postgres",
         keycloak_base_url="https://keycloak.example.gov",
         audit_service_base_url="https://audit.example.gov",
-        postgres_dsn="postgresql://runtime@postgres/emg?sslmode=verify-full",
-        migration_postgres_dsn="postgresql://migration@postgres/emg?sslmode=verify-full",
+        postgres_dsn="postgresql://runtime:runtime-password@postgres/emg?sslmode=verify-full",
+        migration_postgres_dsn="postgresql://migration:migration-password@postgres/emg?sslmode=verify-full",
+        schema_catalog_path=Path("services/knowledge-graph/config/schema-catalog.json"),
         audit_producer_client_secret="a-real-production-secret",
     )
     validate_secure_transport(settings)  # must not raise
@@ -88,7 +102,7 @@ def test_production_rejects_memory_backend(monkeypatch: pytest.MonkeyPatch) -> N
 def test_production_rejects_shared_runtime_and_migration_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    shared_dsn = "postgresql://shared-role:secret@postgres:5432/emg"
+    shared_dsn = "postgresql://shared-role:secret@postgres:5432/emg?sslmode=verify-full"
     settings = Settings(
         deployment_environment="production",
         store_backend="postgres",
@@ -96,10 +110,8 @@ def test_production_rejects_shared_runtime_and_migration_credentials(
         migration_postgres_dsn=shared_dsn,
         schema_catalog_path=Path("services/knowledge-graph/config/schema-catalog.json"),
     )
-    monkeypatch.setattr(dependencies, "_settings_singleton", lambda: settings)
-
     with pytest.raises(RuntimeError, match="credentials must be distinct"):
-        dependencies.validate_schema_runtime_configuration()
+        validate_migration_configuration(settings)
 
 
 def test_policy_semantic_validation_is_a_startup_gate(
@@ -131,7 +143,7 @@ def test_policy_semantic_validation_is_a_startup_gate(
 @pytest.mark.parametrize(
     ("catalog_document", "expected_message"),
     [
-        (None, "failed to read schema catalog"),
+        (None, "schema catalog file is missing"),
         (
             '{"generation":"invalid","canonical_version":"2.1.0","versions":[]}',
             "schema catalog must contain at least one version",
@@ -164,11 +176,11 @@ def test_missing_or_invalid_catalog_prevents_production_startup(
     )
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
-        "postgresql://runtime@postgres.example.gov/emg?sslmode=verify-full",
+        "postgresql://runtime:runtime-password@postgres.example.gov/emg?sslmode=verify-full",
     )
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN",
-        "postgresql://migration@postgres.example.gov/emg?sslmode=verify-full",
+        "postgresql://migration:migration-password@postgres.example.gov/emg?sslmode=verify-full",
     )
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",

@@ -15,6 +15,7 @@ from emg_api_contracts import reject_unknown_environment
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StoreBackend = Literal["memory", "postgres"]
+_DEV_POSTGRES_PASSWORD = "emg_audit_local_dev_only_do_not_use_in_prod"
 
 
 class Settings(BaseSettings):
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     keycloak_realm: str = "emg"
     service_token_audience: str = "emg-internal-services"
     jwks_cache_ttl_seconds: int = 300
+    readiness_timeout_seconds: float = 2.0
 
     # ADR-026 Revision 2 (Amendment 2, Group D5): the JWT custom claim
     # carrying a caller's classification clearance, extracted into
@@ -71,6 +73,13 @@ def validate_runtime_configuration(settings: Settings) -> None:
         reject_unknown_environment("EMG_AUDIT_", set(Settings.model_fields))
         if urlsplit(settings.keycloak_base_url).scheme != "https":
             raise RuntimeError("audit production Keycloak transport must use HTTPS")
-        sslmode = parse_qs(urlsplit(settings.postgres_dsn).query).get("sslmode", [])
+        parsed_dsn = urlsplit(settings.postgres_dsn)
+        sslmode = parse_qs(parsed_dsn.query).get("sslmode", [])
         if not sslmode or sslmode[-1] not in {"require", "verify-ca", "verify-full"}:
             raise RuntimeError("audit production PostgreSQL transport must require TLS")
+        if not parsed_dsn.password or parsed_dsn.password == _DEV_POSTGRES_PASSWORD:
+            raise RuntimeError(
+                "audit production PostgreSQL credential is blank or uses a development value"
+            )
+        if not settings.policy_config_path.is_file():
+            raise RuntimeError("audit production policy configuration file is missing")

@@ -144,6 +144,7 @@ services:
     depends_on:
       - keycloak
     environment:
+      EMG_IDENTITY_DEPLOYMENT_ENVIRONMENT: development
       EMG_IDENTITY_KEYCLOAK_BASE_URL: http://keycloak:8080
       EMG_IDENTITY_KEYCLOAK_REALM: emg
       EMG_IDENTITY_KEYCLOAK_CLIENT_ID: emg-identity-service
@@ -171,6 +172,7 @@ services:
       - postgres
       - keycloak
     environment:
+      EMG_AUDIT_DEPLOYMENT_ENVIRONMENT: development
       EMG_AUDIT_STORE_BACKEND: postgres
       # Local-dev-only DSN using the INSERT/SELECT-only application role
       # created by tools/seed-data/postgres/001_audit_events.sql. Production

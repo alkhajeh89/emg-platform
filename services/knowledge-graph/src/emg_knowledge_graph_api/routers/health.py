@@ -6,12 +6,16 @@ if it is unreachable, rather than unconditionally claiming readiness."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import asyncio
+
+import httpx
+from fastapi import APIRouter, Response, status
+from starlette.concurrency import run_in_threadpool
 
 from ..authn import SettingsDep
 from ..dependencies import SchemaRuntimeHealthDep
 from ..schemas import ReadinessResponse
-from ..store import GraphStoreDep, store_health
+from ..store import GraphStoreDep, StoreHealth, store_health
 
 router = APIRouter(tags=["ops"])
 
@@ -23,11 +27,29 @@ async def healthz() -> dict[str, str]:
 
 @router.get("/readyz", response_model=ReadinessResponse)
 async def readyz(
+    response: Response,
     store: GraphStoreDep,
     settings: SettingsDep,
     schema_runtime: SchemaRuntimeHealthDep,
 ) -> ReadinessResponse:
-    health = store_health(store, settings)
+    try:
+        health = await asyncio.wait_for(
+            run_in_threadpool(store_health, store, settings),
+            timeout=settings.readiness_timeout_seconds,
+        )
+        if settings.deployment_environment == "production":
+            async with httpx.AsyncClient(timeout=settings.readiness_timeout_seconds) as client:
+                jwks_response, audit_response = await asyncio.gather(
+                    client.get(settings.jwks_uri),
+                    client.get(f"{settings.audit_service_base_url.rstrip('/')}/healthz"),
+                )
+                jwks_response.raise_for_status()
+                audit_response.raise_for_status()
+    except (TimeoutError, httpx.HTTPError):
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        health = store_health_unavailable(settings.store_backend)
+    if not health.available:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return ReadinessResponse(
         status="ready" if health.available else "degraded",
         store_backend=health.backend,
@@ -38,3 +60,8 @@ async def readyz(
         canonical_schema_version=schema_runtime.canonical_version,
         schema_catalog_generation=schema_runtime.catalog_generation,
     )
+
+
+def store_health_unavailable(backend: str) -> StoreHealth:
+    """Build a safe readiness result without exposing upstream details."""
+    return StoreHealth(backend=backend, available=False, detail="mandatory dependency unavailable")

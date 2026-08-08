@@ -44,6 +44,8 @@ COPY --from=base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.
 COPY --from=base /usr/local/bin /usr/local/bin
 COPY --from=base /build/services/audit/config /app/services/audit/config
 
+ENV EMG_AUDIT_DEPLOYMENT_ENVIRONMENT=production
+
 USER emg
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

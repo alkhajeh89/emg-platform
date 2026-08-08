@@ -14,6 +14,7 @@ deployments' environment variables keep working unchanged.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
@@ -135,6 +136,7 @@ class Settings(BaseSettings):
     audit_forwarding_enabled: bool = False
     audit_service_base_url: str = "http://localhost:8002"
     audit_delivery_timeout_seconds: float = 3.0
+    readiness_timeout_seconds: float = 2.0
     audit_delivery_max_attempts: int = 5
     audit_delivery_backoff_base_seconds: float = 0.5
     # Durable local spool for events not yet accepted by the audit service.
@@ -180,6 +182,25 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("identity production audit transport must use HTTPS")
     if not _postgres_tls_required(settings.refresh_token_postgres_dsn):
         raise RuntimeError("identity production PostgreSQL transport must require TLS")
+    parsed_refresh_dsn = urlsplit(settings.refresh_token_postgres_dsn)
+    if not parsed_refresh_dsn.password or "local_dev_only" in parsed_refresh_dsn.password:
+        raise RuntimeError(
+            "identity production PostgreSQL credential is blank or uses a development value"
+        )
+    if not settings.audit_spool_path.is_absolute():
+        raise RuntimeError("identity production audit spool path must be absolute")
+    if (
+        settings.audit_spool_path == Path("/tmp")
+        or Path("/tmp") in settings.audit_spool_path.parents
+    ):
+        raise RuntimeError(
+            "identity production audit spool path must not use ephemeral /tmp storage"
+        )
+    spool_parent = settings.audit_spool_path.parent
+    if not spool_parent.is_dir() or not os.access(spool_parent, os.W_OK):
+        raise RuntimeError("identity production audit spool directory is missing or not writable")
+    if not settings.policy_config_path.is_file():
+        raise RuntimeError("identity production policy configuration file is missing")
 
 
 def _postgres_tls_required(dsn: str) -> bool:
