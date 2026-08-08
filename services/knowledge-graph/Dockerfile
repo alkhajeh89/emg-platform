@@ -35,6 +35,9 @@ COPY libs/python/emg-policy-engine /build/libs/python/emg-policy-engine
 
 # emg-memory-graph's own declared dependencies (transitively required at
 # install time even though this service does not import them directly).
+# emg-audit-client was already required transitively here; Phase 2B
+# (ADR-038 §8.7) makes it a direct, explicit dependency of this service too
+# (see pyproject.toml) — still copied only once.
 COPY libs/python/emg-knowledge-lifecycle /build/libs/python/emg-knowledge-lifecycle
 COPY libs/python/emg-knowledge-pipeline /build/libs/python/emg-knowledge-pipeline
 COPY libs/python/emg-semantic-layer /build/libs/python/emg-semantic-layer

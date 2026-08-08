@@ -28,7 +28,7 @@ fail=0
 checked=0
 failed_pkgs=()
 
-for pkg in libs/python/*/ services/*/; do
+for pkg in libs/python/*/ services/*/ apps/*/; do
   src="${pkg}src"
   [ -d "$src" ] || continue
   # Skip empty scaffolds (no Python sources yet).

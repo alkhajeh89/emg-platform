@@ -100,12 +100,13 @@ from emg_knowledge_graph import (
     ShortestPathQuery,
 )
 from emg_memory_graph import EdgeDirection
+from emg_telemetry import get_correlation_id
 from fastapi import APIRouter, Depends, Query
 
+from .. import audit_producer, mapping
 from .. import classification as classification_gate
-from .. import mapping
-from ..authn import TenantContextDep
-from ..authorization import require_permission
+from ..authn import AuthenticatedCallerDep, SettingsDep
+from ..authorization import require_permission_delegated_aware
 from ..dependencies import KnowledgeGraphApplicationDep, PolicyEnforcementPointDep
 from ..schemas import (
     EdgeQueryResultResponse,
@@ -212,32 +213,50 @@ def _parse_metadata_predicates(raw: list[str]) -> tuple[MetadataPredicate, ...]:
 @router.get("/entities/{entity_id}", response_model=EntityQueryResultResponse)
 async def get_entity(
     entity_id: str,
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_ENTITY))],
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_ENTITY))],
     revision_number: Annotated[int | None, Query(ge=1)] = None,
 ) -> EntityQueryResultResponse:
     scope = GraphQueryScope(tenant=caller.tenant, revision_number=revision_number)
-    result = app.get_entity(GetEntityQuery(scope=scope, node_id=entity_id))
-    gated_item = classification_gate.gate_entity(
-        pep, caller.principal, RESOURCE_ENTITY, result.item
-    )
-    if gated_item is None:
-        # Same not-found message shape the application layer itself raises
-        # (service.py) — a classification denial must be indistinguishable
-        # from a real not-found (ADR-026 Revision 2 §8.5).
-        raise EntityNotFoundError(f"no entity {entity_id!r} for tenant {caller.tenant.value!r}")
-    result = EntityQueryResult(item=gated_item, revision_context=result.revision_context)
-    return mapping.entity_query_result(result)
+    # Final correction-sprint Finding 4: wraps the whole body so every
+    # delegated outcome — success, classification-denied, genuine not-found,
+    # unhandled error — is audit-attributed exactly once (ADR-038 §8.7), not
+    # only success. A no-op for non-delegated callers.
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_ENTITY,
+        resource_id=entity_id,
+        correlation_id=get_correlation_id(),
+    ) as audit_ctx:
+        result = app.get_entity(GetEntityQuery(scope=scope, node_id=entity_id))
+        gated_item = classification_gate.gate_entity(
+            pep, caller.principal, RESOURCE_ENTITY, result.item
+        )
+        if gated_item is None:
+            # Same not-found message shape the application layer itself raises
+            # (service.py) — a classification denial must be indistinguishable
+            # from a real not-found (ADR-026 Revision 2 §8.5) in the HTTP
+            # response. The *audit* record, a separate internal governance
+            # trail, still distinguishes the two (Finding 4).
+            if audit_ctx is not None:
+                audit_ctx.outcome = "denied"
+            raise EntityNotFoundError(f"no entity {entity_id!r} for tenant {caller.tenant.value!r}")
+        result = EntityQueryResult(item=gated_item, revision_context=result.revision_context)
+        response = mapping.entity_query_result(result)
+    return response
 
 
 @router.get("/entities", response_model=PagedEntityResultResponse)
 async def list_entities(
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_ENTITY))],
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_ENTITY))],
     node_type: str | None = None,
     source: str | None = None,
     confidence: float | None = None,
@@ -274,49 +293,74 @@ async def list_entities(
             scope=replace(q.scope, revision_number=pinned_revision),
         )
 
-    decision_cache: dict[Classification, bool] = {}
-    items, page_info, revision_context = _authorized_page(
-        limit=limit,
-        initial_query=query,
-        run_page=_run,
-        advance=_advance,
-        authorize=lambda raw_items: classification_gate.filter_entities(
-            pep,
-            caller.principal,
-            RESOURCE_ENTITY,
-            raw_items,
-            decision_cache=decision_cache,
-        ),
-        id_of=lambda item: item.node_id,
-    )
-    result = PagedEntityResult(items=items, page_info=page_info, revision_context=revision_context)
-    return mapping.paged_entity_result(result)
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_ENTITY,
+        resource_id=None,
+        action="list",
+        correlation_id=get_correlation_id(),
+    ):
+        decision_cache: dict[Classification, bool] = {}
+        items, page_info, revision_context = _authorized_page(
+            limit=limit,
+            initial_query=query,
+            run_page=_run,
+            advance=_advance,
+            authorize=lambda raw_items: classification_gate.filter_entities(
+                pep,
+                caller.principal,
+                RESOURCE_ENTITY,
+                raw_items,
+                decision_cache=decision_cache,
+            ),
+            id_of=lambda item: item.node_id,
+        )
+        result = PagedEntityResult(
+            items=items, page_info=page_info, revision_context=revision_context
+        )
+        response = mapping.paged_entity_result(result)
+    return response
 
 
 @router.get("/edges/{edge_id}", response_model=EdgeQueryResultResponse)
 async def get_edge(
     edge_id: str,
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_EDGE))],
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_EDGE))],
     revision_number: Annotated[int | None, Query(ge=1)] = None,
 ) -> EdgeQueryResultResponse:
     scope = GraphQueryScope(tenant=caller.tenant, revision_number=revision_number)
-    result = app.get_edge(GetEdgeQuery(scope=scope, edge_id=edge_id))
-    gated_item = classification_gate.gate_edge(pep, caller.principal, RESOURCE_EDGE, result.item)
-    if gated_item is None:
-        raise EdgeNotFoundError(f"no edge {edge_id!r} for tenant {caller.tenant.value!r}")
-    result = EdgeQueryResult(item=gated_item, revision_context=result.revision_context)
-    return mapping.edge_query_result(result)
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_EDGE,
+        resource_id=edge_id,
+        correlation_id=get_correlation_id(),
+    ) as audit_ctx:
+        result = app.get_edge(GetEdgeQuery(scope=scope, edge_id=edge_id))
+        gated_item = classification_gate.gate_edge(
+            pep, caller.principal, RESOURCE_EDGE, result.item
+        )
+        if gated_item is None:
+            if audit_ctx is not None:
+                audit_ctx.outcome = "denied"
+            raise EdgeNotFoundError(f"no edge {edge_id!r} for tenant {caller.tenant.value!r}")
+        result = EdgeQueryResult(item=gated_item, revision_context=result.revision_context)
+        response = mapping.edge_query_result(result)
+    return response
 
 
 @router.get("/edges", response_model=PagedEdgeResultResponse)
 async def list_edges(
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_EDGE))],
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_EDGE))],
     edge_type: str | None = None,
     direction: EdgeDirection | None = None,
     valid_at: datetime | None = None,
@@ -345,32 +389,46 @@ async def list_edges(
             scope=replace(q.scope, revision_number=pinned_revision),
         )
 
-    decision_cache: dict[Classification, bool] = {}
-    items, page_info, revision_context = _authorized_page(
-        limit=limit,
-        initial_query=query,
-        run_page=_run,
-        advance=_advance,
-        authorize=lambda raw_items: classification_gate.filter_edges(
-            pep,
-            caller.principal,
-            RESOURCE_EDGE,
-            raw_items,
-            decision_cache=decision_cache,
-        ),
-        id_of=lambda item: item.edge_id,
-    )
-    result = PagedEdgeResult(items=items, page_info=page_info, revision_context=revision_context)
-    return mapping.paged_edge_result(result)
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_EDGE,
+        resource_id=None,
+        action="list",
+        correlation_id=get_correlation_id(),
+    ):
+        decision_cache: dict[Classification, bool] = {}
+        items, page_info, revision_context = _authorized_page(
+            limit=limit,
+            initial_query=query,
+            run_page=_run,
+            advance=_advance,
+            authorize=lambda raw_items: classification_gate.filter_edges(
+                pep,
+                caller.principal,
+                RESOURCE_EDGE,
+                raw_items,
+                decision_cache=decision_cache,
+            ),
+            id_of=lambda item: item.edge_id,
+        )
+        result = PagedEdgeResult(
+            items=items, page_info=page_info, revision_context=revision_context
+        )
+        response = mapping.paged_edge_result(result)
+    return response
 
 
 @router.get("/entities/{entity_id}/neighbors", response_model=PagedNeighborResultResponse)
 async def list_neighbors(
     entity_id: str,
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_NEIGHBORS))],
+    settings: SettingsDep,
+    _authorization: Annotated[
+        None, Depends(require_permission_delegated_aware(RESOURCE_NEIGHBORS))
+    ],
     direction: NeighborDirection = NeighborDirection.BOTH,
     valid_at: datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=MAX_QUERY_PAGE_SIZE)] = MAX_QUERY_PAGE_SIZE,
@@ -400,28 +458,38 @@ async def list_neighbors(
             scope=replace(q.scope, revision_number=pinned_revision),
         )
 
-    items, page_info, revision_context = _authorized_page(
-        limit=limit,
-        initial_query=query,
-        run_page=_run,
-        advance=_advance,
-        authorize=lambda raw_items: classification_gate.filter_neighbors(
-            pep, caller.principal, RESOURCE_NEIGHBORS, raw_items
-        ),
-        id_of=lambda item: item.via_edge_id,
-    )
-    result = PagedNeighborResult(
-        items=items, page_info=page_info, revision_context=revision_context
-    )
-    return mapping.paged_neighbor_result(result)
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_NEIGHBORS,
+        resource_id=entity_id,
+        action="list",
+        correlation_id=get_correlation_id(),
+    ):
+        items, page_info, revision_context = _authorized_page(
+            limit=limit,
+            initial_query=query,
+            run_page=_run,
+            advance=_advance,
+            authorize=lambda raw_items: classification_gate.filter_neighbors(
+                pep, caller.principal, RESOURCE_NEIGHBORS, raw_items
+            ),
+            id_of=lambda item: item.via_edge_id,
+        )
+        result = PagedNeighborResult(
+            items=items, page_info=page_info, revision_context=revision_context
+        )
+        response = mapping.paged_neighbor_result(result)
+    return response
 
 
 @router.get("/paths/shortest", response_model=PathQueryResultResponse)
 async def find_shortest_path(
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_PATH))],
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_PATH))],
     from_node_id: str,
     to_node_id: str,
     maximum_depth: Annotated[int, Query(ge=1, le=MAX_TRAVERSAL_DEPTH)] = MAX_TRAVERSAL_DEPTH,
@@ -434,10 +502,27 @@ async def find_shortest_path(
         to_node_id=to_node_id,
         maximum_depth=maximum_depth,
     )
-    result = app.find_shortest_path(query)
-    gated_path = classification_gate.gate_path(pep, caller.principal, RESOURCE_PATH, result.item)
-    result = PathQueryResult(item=gated_path, revision_context=result.revision_context)
-    return mapping.path_query_result(result)
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_PATH,
+        resource_id=f"{from_node_id}->{to_node_id}",
+        correlation_id=get_correlation_id(),
+    ) as audit_ctx:
+        result = app.find_shortest_path(query)
+        was_found_before_gating = result.item.found
+        gated_path = classification_gate.gate_path(
+            pep, caller.principal, RESOURCE_PATH, result.item
+        )
+        if audit_ctx is not None and was_found_before_gating and not gated_path.found:
+            # A real path existed and classification hid it — a denial, not
+            # a genuine absence (Finding 4). The HTTP response stays
+            # found=False either way (ADR-026 uniform denial); only the
+            # audit record distinguishes the two.
+            audit_ctx.outcome = "denied"
+        result = PathQueryResult(item=gated_path, revision_context=result.revision_context)
+        response = mapping.path_query_result(result)
+    return response
 
 
 @router.get(
@@ -448,16 +533,34 @@ async def get_entity_history(
     entity_id: str,
     attribute_name: str,
     valid_at: datetime,
-    caller: TenantContextDep,
+    caller: AuthenticatedCallerDep,
     app: KnowledgeGraphApplicationDep,
     pep: PolicyEnforcementPointDep,
-    _authorization: Annotated[None, Depends(require_permission(RESOURCE_HISTORY))],
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_HISTORY))],
     revision_number: Annotated[int | None, Query(ge=1)] = None,
 ) -> EntityHistoryResultResponse:
     scope = GraphQueryScope(tenant=caller.tenant, revision_number=revision_number)
     query = EntityAttributeHistoryQuery(
         scope=scope, node_id=entity_id, attribute=attribute_name, valid_at=valid_at
     )
-    result = app.get_entity_history(query)
-    result = classification_gate.gate_history_fact(pep, caller.principal, RESOURCE_HISTORY, result)
-    return mapping.entity_history_result(result)
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_HISTORY,
+        resource_id=f"{entity_id}.{attribute_name}",
+        correlation_id=get_correlation_id(),
+    ) as audit_ctx:
+        result = app.get_entity_history(query)
+        had_value_before_gating = result.item is not None
+        result = classification_gate.gate_history_fact(
+            pep, caller.principal, RESOURCE_HISTORY, result
+        )
+        if audit_ctx is not None and had_value_before_gating and result.item is None:
+            # A value existed at that moment and classification hid it — a
+            # denial, not "no value at that moment" (Finding 4). The HTTP
+            # response is item=None either way (ADR-026 uniform denial);
+            # only the audit record distinguishes the two.
+            audit_ctx.outcome = "denied"
+        response = mapping.entity_history_result(result)
+    return response

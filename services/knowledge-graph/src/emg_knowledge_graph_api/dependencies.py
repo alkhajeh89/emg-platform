@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Annotated, TypeVar
 
 from emg_auth_client import PolicyEnforcementPoint
+from emg_errors import AuthorizationError
 from emg_knowledge_graph import (
     CompatibilityAdapterRegistry,
     IResourceMetadataReader,
@@ -55,7 +56,7 @@ from emg_platform_core import PrincipalRef
 from emg_policy_engine import LocalPolicyEnforcementPoint, load_validated_policy_config
 from fastapi import Depends
 
-from .authn import TenantContextDep
+from .authn import ServicePrincipal, TenantContextDep
 from .config import Settings, get_settings, validate_secure_transport
 from .mutation_authorization import PepMutationAuthorizationEvaluator
 from .mutation_preparation import MutationRequestPreparer
@@ -251,8 +252,19 @@ def validate_schema_runtime_configuration() -> None:
 
 
 def mutation_principal_ref_dependency(caller: TenantContextDep) -> PrincipalRef:
-    """Adapt the authenticated transport identity to the application contract."""
+    """Adapt the authenticated transport identity to the application contract.
 
+    Phase 2B note: `TenantContextDep` resolves exclusively via
+    `TenantServiceTokenValidator` (see `authn.py`) — mutation routes never
+    depend on the new delegated-credential-aware `AuthenticatedCallerDep`,
+    so `caller.principal` is always a `ServicePrincipal` here today. The
+    `isinstance` check below is defense-in-depth, not a currently-reachable
+    branch: it turns a hypothetical future wiring mistake into a clean,
+    fail-closed 401 instead of an unhandled `AttributeError` -> 500.
+    """
+
+    if not isinstance(caller.principal, ServicePrincipal):
+        raise AuthorizationError("Mutation endpoints require a service-to-service caller")
     return PrincipalRef.service(caller.principal.client_id)
 
 

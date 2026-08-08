@@ -50,7 +50,7 @@ services:
     container_name: emg-keycloak
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
-    command: start-dev --import-realm
+    command: start-dev --import-realm --features=token-exchange,admin-fine-grained-authz
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin_local_dev_only
@@ -64,6 +64,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
+
+  # Final correction-sprint Finding 6: Keycloak 25's fine-grained
+  # token-exchange permission has no declarative realm-import syntax, so the
+  # realm import above leaves emg-studio-bff unable to complete a real
+  # exchange against Knowledge Graph's audience until this grant runs. This
+  # one-shot container makes that automatic on every `docker compose up` —
+  # a clean checkout now produces a working delegated identity path with no
+  # manual step. Idempotent; see tools/scripts/provision-keycloak-realm.py.
+  keycloak-provision:
+    image: python:3.11-slim@sha256:139020233cc412efe4c8135b0efe1c7569dc8b28ddd88bddb109b764f5a2d689
+    container_name: emg-keycloak-provision
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./tools/scripts/provision-keycloak-realm.py:/provision-keycloak-realm.py:ro
+    environment:
+      EMG_KEYCLOAK_BASE_URL: http://keycloak:8080
+      EMG_KEYCLOAK_REALM: emg
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_local_dev_only
+    command: ["python", "/provision-keycloak-realm.py"]
 
   neo4j:
     image: neo4j:5-enterprise@sha256:93db923b3cb6d7b32b5477182f90b4438a832bb9f9082514c18957ff60bf1138
@@ -205,8 +232,52 @@ services:
       EMG_KNOWLEDGE_GRAPH_API_NEO4J_PASSWORD: emg_local_dev_only
       EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_BASE_URL: http://keycloak:8080
       EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_REALM: emg
+      EMG_KNOWLEDGE_GRAPH_API_DELEGATED_CREDENTIAL_AUDIENCE: emg-knowledge-graph-audience
+      EMG_KNOWLEDGE_GRAPH_API_AUDIT_PRODUCER_CLIENT_ID: emg-svc-knowledge-graph-writer
+      EMG_KNOWLEDGE_GRAPH_API_AUDIT_PRODUCER_CLIENT_SECRET: emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod
+      EMG_KNOWLEDGE_GRAPH_API_AUDIT_SERVICE_BASE_URL: http://audit:8000
     ports:
       - "8003:8000"
+
+  studio-bff:
+    build:
+      context: .
+      dockerfile: apps/studio-bff/Dockerfile
+    container_name: emg-studio-bff
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      keycloak:
+        condition: service_started
+      keycloak-provision:
+        condition: service_completed_successfully
+      knowledge-graph:
+        condition: service_started
+    environment:
+      EMG_STUDIO_BFF_DEPLOYMENT_ENVIRONMENT: development
+      EMG_STUDIO_BFF_KEYCLOAK_BASE_URL: http://keycloak:8080
+      EMG_STUDIO_BFF_KEYCLOAK_REALM: emg
+      EMG_STUDIO_BFF_OIDC_CLIENT_ID: emg-studio-bff
+      # Local-dev-only secret matching tools/seed-data/keycloak/emg-realm.json.
+      # Production overrides via the centralized secrets store (Engineering
+      # Master Plan §5), never via this file.
+      EMG_STUDIO_BFF_OIDC_CLIENT_SECRET: emg_studio_bff_local_dev_secret_do_not_use_in_prod
+      EMG_STUDIO_BFF_OIDC_REDIRECT_URI: http://localhost:8010/auth/callback
+      EMG_STUDIO_BFF_STUDIO_FRONTEND_URL: http://localhost:3000
+      EMG_STUDIO_BFF_KNOWLEDGE_GRAPH_AUDIENCE: emg-knowledge-graph-audience
+      EMG_STUDIO_BFF_KNOWLEDGE_GRAPH_BASE_URL: http://knowledge-graph:8000
+      # No EMG_STUDIO_BFF_SESSION_BACKEND / REDIS_URL: this app never holds a
+      # direct Redis (or any datastore) connection — correction-sprint
+      # Finding 1, ADR-036 D-10.2. Session storage is in-process for this
+      # batch; see docs/security/adr-038/07_PRODUCTION_CONFIGURATION.md.
+    ports:
+      - "8010:8000"
 
 volumes:
   postgres-data:

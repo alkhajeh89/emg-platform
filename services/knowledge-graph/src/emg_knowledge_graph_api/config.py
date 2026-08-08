@@ -66,6 +66,29 @@ class Settings(BaseSettings):
     # (Sprint 7.4 addition — see authn.py).
     tenant_claim: str = "tenant_id"
 
+    # Phase 2B (ADR-038 Ch. VII §7.4 Audience Restriction): the single
+    # downstream audience identifier a Delegated Credential must carry to be
+    # accepted by DelegatedCredentialValidator. A credential issued for any
+    # other audience is rejected — this service is never a generic,
+    # multi-audience acceptor.
+    delegated_credential_audience: str = "emg-knowledge-graph-audience"
+
+    # Phase 2B (ADR-038 §8.7 Audit Attribution): this service's OWN outbound
+    # service-to-service credential, used ONLY to authenticate its own
+    # audit-producer calls for delegated (human-attributed) requests — an
+    # ordinary ADR-034 service-to-service call, not part of the delegation
+    # chain itself. Reuses the already-registered, already-recognized
+    # `emg-svc-knowledge-graph-writer` client (see
+    # tools/seed-data/keycloak/emg-realm.json and
+    # emg_audit_service.authn._RECOGNIZED_CLIENTS) rather than registering a
+    # new client identity.
+    audit_producer_client_id: str = "emg-svc-knowledge-graph-writer"
+    audit_producer_client_secret: SecretStr = SecretStr(
+        "emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod"
+    )
+    audit_producer_audience: str = "emg-internal-services"
+    audit_service_base_url: str = "http://localhost:8002"
+
     # ADR-026 Revision 2 (Amendment 2, Group D5): the JWT custom claim
     # carrying a caller's classification clearance, extracted into
     # ServicePrincipal.attributes. Follows the exact same optional-claim
@@ -100,19 +123,40 @@ class Settings(BaseSettings):
     def jwks_uri(self) -> str:
         return f"{self.keycloak_issuer}/protocol/openid-connect/certs"
 
+    @property
+    def token_endpoint(self) -> str:
+        return f"{self.keycloak_issuer}/protocol/openid-connect/token"
+
 
 def get_settings() -> Settings:
     return Settings()
 
 
+_DEV_PLACEHOLDER_AUDIT_PRODUCER_SECRET = (
+    "emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod"
+)
+
+
 def validate_secure_transport(settings: Settings) -> None:
-    """Reject plaintext external transports in production."""
+    """Reject plaintext external transports in production.
+
+    **Final correction-sprint Finding 5.** Also reject the known, committed
+    dev-placeholder audit-producer client secret — see the equivalent check
+    in `apps/studio-bff/.../config.py::validate_runtime_configuration` for
+    the identical rationale."""
 
     if settings.deployment_environment != "production":
         return
     reject_unknown_environment("EMG_KNOWLEDGE_GRAPH_API_", set(Settings.model_fields))
     if urlsplit(settings.keycloak_base_url).scheme != "https":
         raise RuntimeError("knowledge-graph production Keycloak transport must use HTTPS")
+    if urlsplit(settings.audit_service_base_url).scheme != "https":
+        # Correction-sprint Finding 11: this check was missing even though
+        # Phase 2B introduced a new outbound production dependency
+        # (delegated-request audit attribution, audit_producer.py) with the
+        # same transport-security requirement as every other external call
+        # this function already guards.
+        raise RuntimeError("knowledge-graph production audit-service transport must use HTTPS")
     for name, dsn in (
         ("runtime", settings.postgres_dsn),
         ("migration", settings.migration_postgres_dsn),
@@ -122,3 +166,11 @@ def validate_secure_transport(settings: Settings) -> None:
             raise RuntimeError(
                 f"knowledge-graph production {name} PostgreSQL transport must require TLS"
             )
+    if (
+        settings.audit_producer_client_secret.get_secret_value()
+        == _DEV_PLACEHOLDER_AUDIT_PRODUCER_SECRET
+    ):
+        raise RuntimeError(
+            "knowledge-graph production audit_producer_client_secret is still the committed "
+            "dev placeholder"
+        )

@@ -28,10 +28,14 @@ dependencies = [
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
   "psycopg[binary]>=3.1",
+  "httpx>=0.27",
   "emg-common-types",
   "emg-telemetry",
   "emg-api-contracts",
   "emg-persistence",
+  # Phase 2B (ADR-038 §8.7): delegated-request audit attribution, reusing
+  # the existing audit event contract (no new mechanism).
+  "emg-audit-client",
   # ADR-025 Group C2: authorization enforcement, reusing the platform's
   # existing PEP contract and ABAC evaluator (no new authorization
   # framework). Declared as hard dependencies for the same bootstrap reason

@@ -31,15 +31,46 @@ helper adds no exception-swallowing around that call.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from typing import Any, NoReturn
 
-from emg_auth_client import AuthorizationRequest, PolicyEnforcementPoint
-from emg_errors import PermissionDeniedError
+from emg_auth_client import AuthorizationRequest, Decision, PolicyEnforcementPoint
+from emg_errors import PermissionDeniedError, UpstreamServiceError
+from emg_telemetry import get_correlation_id
 
-from .authn import CallerContext, TenantContextDep
+from . import audit_producer
+from .authn import AuthenticatedCallerDep, CallerContext, SettingsDep, TenantContextDep
+from .config import Settings
 from .dependencies import PolicyEnforcementPointDep
 
 DEFAULT_ACTION = "read"
+
+
+def _authorize(
+    caller: CallerContext,
+    resource_type: str,
+    action: str,
+    pep: PolicyEnforcementPoint,
+) -> Decision:
+    """Shared by `require_permission` and `require_permission_delegated_aware`
+    (correction-sprint Finding 12): identical `AuthorizationRequest`
+    construction and PEP evaluation for both, so the two public factories
+    below cannot drift out of sync on security-critical logic. Returns the
+    raw `Decision` — each caller below decides how to act on a deny (both
+    ultimately raise `PermissionDeniedError`; the delegated-aware path also
+    attempts audit attribution first, see Finding 6)."""
+    request = AuthorizationRequest(
+        principal=caller.principal,
+        resource_type=resource_type,
+        action=action,
+    )
+    return pep.authorize(request)
+
+
+def _deny(resource_type: str, action: str, decision: Decision) -> NoReturn:
+    raise PermissionDeniedError(
+        f"principal is not permitted to {action!r} {resource_type!r}: {decision.reason}"
+    )
 
 
 def require_permission(
@@ -59,15 +90,66 @@ def require_permission(
         caller: TenantContextDep,
         pep: PolicyEnforcementPointDep,
     ) -> None:
-        request = AuthorizationRequest(
-            principal=caller.principal,
-            resource_type=resource_type,
-            action=action,
-        )
-        decision = pep.authorize(request)
+        decision = _authorize(caller, resource_type, action, pep)
         if not decision.allowed:
-            raise PermissionDeniedError(
-                f"principal is not permitted to {action!r} {resource_type!r}: " f"{decision.reason}"
-            )
+            _deny(resource_type, action, decision)
+
+    return _dependency
+
+
+def require_permission_delegated_aware(
+    resource_type: str, action: str = DEFAULT_ACTION
+) -> Callable[[CallerContext, PolicyEnforcementPoint, Settings], Coroutine[Any, Any, None]]:
+    """Phase 2B: identical to `require_permission` in every respect —
+    same `AuthorizationRequest` shape, same PEP call, same fail-closed
+    deny-raises-403 behavior, same `ADR-025`/`ADR-026` semantics — except
+    it depends on `AuthenticatedCallerDep` instead of `TenantContextDep`, so
+    it accepts a Delegated Credential's resolved Human Principal as well as
+    a plain service token.
+
+    Used ONLY by the read routes that Phase 2B exposes through the Studio
+    BFF proxy. `require_permission` above is untouched and remains the sole
+    dependency mutation routes use — this is a parallel factory, not a
+    replacement, precisely so a delegated (human) credential can never
+    reach a mutation route through this module.
+
+    **Correction-sprint Finding 6.** A delegated (human-attributed) caller's
+    DENY decision is now also audit-attributed here, before the caller ever
+    sees the 403 — not only successes, which each route body separately
+    attributes with richer resource-level detail after a 200 is already
+    guaranteed. ADR-038 §8.7 requires "authorization decision" to be
+    recorded for "every delegated operation," not only allowed ones. If
+    attribution of the denial itself cannot be completed, this raises
+    `UpstreamServiceError` (500) instead of `PermissionDeniedError` (403) —
+    an unattributed delegated denial is not an acceptable fallback. A
+    non-delegated (`caller.acting_service is None`) deny is completely
+    unaffected: no audit call is attempted, behavior is byte-for-byte
+    unchanged from before this correction."""
+
+    async def _dependency(
+        caller: AuthenticatedCallerDep,
+        pep: PolicyEnforcementPointDep,
+        settings: SettingsDep,
+    ) -> None:
+        decision = _authorize(caller, resource_type, action, pep)
+        if decision.allowed:
+            return
+        if caller.acting_service is not None:
+            try:
+                await audit_producer.emit_delegated_audit_event(
+                    settings,
+                    caller,
+                    resource_type=resource_type,
+                    resource_id=None,
+                    action=action,
+                    outcome="denied",
+                    correlation_id=get_correlation_id(),
+                )
+            except UpstreamServiceError as exc:
+                raise UpstreamServiceError(
+                    f"delegated denial for {action!r} {resource_type!r} could not be "
+                    f"audit-attributed: {exc}"
+                ) from exc
+        _deny(resource_type, action, decision)
 
     return _dependency

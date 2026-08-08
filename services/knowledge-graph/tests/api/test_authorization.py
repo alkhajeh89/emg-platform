@@ -36,7 +36,12 @@ import pytest
 from emg_auth_client import AuthorizationRequest
 from emg_errors import PermissionDeniedError
 from emg_knowledge_graph import KnowledgeGraphApplication
-from emg_knowledge_graph_api.authn import CallerContext, ServicePrincipal, require_tenant_context
+from emg_knowledge_graph_api.authn import (
+    CallerContext,
+    ServicePrincipal,
+    require_authenticated_caller,
+    require_tenant_context,
+)
 from emg_knowledge_graph_api.authorization import require_permission
 from emg_knowledge_graph_api.dependencies import (
     knowledge_graph_application_dependency,
@@ -85,6 +90,7 @@ def _client_for(
     app = create_app()
     app.dependency_overrides[knowledge_graph_application_dependency] = lambda: application
     app.dependency_overrides[require_tenant_context] = lambda: caller_context
+    app.dependency_overrides[require_authenticated_caller] = lambda: caller_context
     app.dependency_overrides[policy_enforcement_point_dependency] = lambda: pep
     return TestClient(app)
 

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Installs every installable services/* package in EDITABLE mode with its [dev]
-# extra. This is what makes root test discovery work: the root pyproject.toml
-# points pytest at both `libs` and `services`, and the service test suites
-# import their own package (e.g. `emg_identity`, `emg_audit_service`) plus
-# third-party runtime deps (fastapi, httpx, pyjwt[crypto] -> cryptography,
-# psycopg, pydantic-settings) and test deps (pytest-asyncio).
+# Installs every installable services/* and apps/* package in EDITABLE mode
+# with its [dev] extra. This is what makes root test discovery work: the
+# root pyproject.toml points pytest at `libs`, `services`, and `apps`, and
+# the service/app test suites import their own package (e.g. `emg_identity`,
+# `emg_audit_service`, `emg_studio_bff`) plus third-party runtime deps
+# (fastapi, httpx, pyjwt[crypto] -> cryptography, psycopg, pydantic-settings)
+# and test deps (pytest-asyncio).
 #
-# Only directories that ship a pyproject.toml are installable services; empty
-# scaffold directories under services/ are skipped automatically.
+# Only directories that ship a pyproject.toml are installable; empty scaffold
+# directories under services/ or apps/ are skipped automatically.
 #
 # Run AFTER install-libs.sh so each service's emg-* siblings are already present
 # (resolved locally); the remaining third-party deps come from the index.
@@ -19,16 +20,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/scripts/_venv.sh
 source "$SCRIPT_DIR/_venv.sh"
 SERVICES_DIR="$ROOT_DIR/services"
-
-if [ ! -d "$SERVICES_DIR" ]; then
-  echo "==> No services directory found — nothing to install"
-  exit 0
-fi
+APPS_DIR="$ROOT_DIR/apps"
 
 shopt -s nullglob
-pkgs=("$SERVICES_DIR"/*/pyproject.toml)
+pkgs=()
+[ -d "$SERVICES_DIR" ] && pkgs+=("$SERVICES_DIR"/*/pyproject.toml)
+[ -d "$APPS_DIR" ] && pkgs+=("$APPS_DIR"/*/pyproject.toml)
 if [ ${#pkgs[@]} -eq 0 ]; then
-  echo "==> No installable service packages (no services/*/pyproject.toml) — nothing to install"
+  echo "==> No installable service/app packages found — nothing to install"
   exit 0
 fi
 

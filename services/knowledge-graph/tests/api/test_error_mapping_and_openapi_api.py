@@ -31,7 +31,11 @@ from emg_knowledge_graph import (
     UnsupportedFingerprintVersionError,
     UnsupportedHistoryCapabilityError,
 )
-from emg_knowledge_graph_api.authn import CallerContext, require_tenant_context
+from emg_knowledge_graph_api.authn import (
+    CallerContext,
+    require_authenticated_caller,
+    require_tenant_context,
+)
 from emg_knowledge_graph_api.dependencies import (
     knowledge_graph_application_dependency,
     policy_enforcement_point_dependency,
@@ -85,6 +89,7 @@ def _client_raising(error: Exception, *, caller_context: CallerContext) -> TestC
         error
     )
     app.dependency_overrides[require_tenant_context] = lambda: caller_context
+    app.dependency_overrides[require_authenticated_caller] = lambda: caller_context
     app.dependency_overrides[policy_enforcement_point_dependency] = _real_policy_enforcement_point
     return TestClient(app)
 

@@ -34,7 +34,12 @@ from pathlib import Path
 import pytest
 from emg_common_types import Classification
 from emg_knowledge_graph import KnowledgeGraphApplication
-from emg_knowledge_graph_api.authn import CallerContext, ServicePrincipal, require_tenant_context
+from emg_knowledge_graph_api.authn import (
+    CallerContext,
+    ServicePrincipal,
+    require_authenticated_caller,
+    require_tenant_context,
+)
 from emg_knowledge_graph_api.dependencies import (
     knowledge_graph_application_dependency,
     policy_enforcement_point_dependency,
@@ -207,7 +212,13 @@ def _real_policy_enforcement_point() -> LocalPolicyEnforcementPoint:
 def client(application: KnowledgeGraphApplication, caller_context_a: CallerContext) -> TestClient:
     app = create_app()
     app.dependency_overrides[knowledge_graph_application_dependency] = lambda: application
+    # Mutation routes depend on require_tenant_context; read routes depend
+    # on require_authenticated_caller (Phase 2B, ADR-038 — accepts either a
+    # plain service token or a Delegated Credential). Both are overridden
+    # with the same caller_context_a so every pre-existing route test keeps
+    # its previously-expected, identical response for this caller.
     app.dependency_overrides[require_tenant_context] = lambda: caller_context_a
+    app.dependency_overrides[require_authenticated_caller] = lambda: caller_context_a
     app.dependency_overrides[policy_enforcement_point_dependency] = _real_policy_enforcement_point
     return TestClient(app)
 
