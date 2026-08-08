@@ -10,21 +10,20 @@ Decision Authority:
 Project Architect
 
 Status:
-Draft
+Accepted
 
 Decision Date:
-TBD
+2026-08-09
 
 Current Revision:
 Revision 1
 
-> **Revision 1 — Draft for architecture review.** This document is not
-> Accepted and authorizes no implementation. It defines the reconciliation and
-> delivery contract that ADR-027 Revision 5 and ADR-030 Revision 4 both defer to
-> this ADR. It amends no accepted ADR, creates no mutation route, command, or
-> DTO, and changes no product scope. Every statement is labelled **Fact**,
-> **Decision**, **Consequence**, or **Open Question**. Where repository evidence
-> is insufficient, an Open Question is recorded instead of an invented answer.
+> **Revision 1 — Accepted for implementation.** This document defines the
+> reconciliation and delivery contract that ADR-027 Revision 5 and ADR-030
+> Revision 4 both defer to this ADR. It amends no accepted ADR, creates no
+> mutation route, command, or DTO, and changes no product scope. Acceptance
+> authorizes the bounded Audit Projector described here; it does not authorize
+> adjacent product capability.
 
 ## 1. Context
 
@@ -160,9 +159,9 @@ by it:
   rules, ADR-026 classification enforcement, and ADR-034 audit read
   confinement.
 - Physical erasure, which ADR-027 §9.3 keeps out of scope platform-wide.
-- **Operator alerting**, including any operator-visible signal for an exhausted
-  dispatch row. Alerting belongs to **ADR-015 / FEAT-12-3** (OQ-8, partial).
-  Whether ADR-028 emits an exhausted-row metric remains open under OQ-8.
+- **Operator alerting and dashboards.** Alert routing, dashboards, and the
+  production observability backend belong to **ADR-015 / FEAT-12-3**. ADR-028
+  requires only the structured operational observations in D-53.
 
 ## 6. Architecture
 
@@ -228,12 +227,19 @@ own `sequence_number`, which the audit store assigns on append.
 | Confine audit reads | **No — ADR-034** |
 | Publish graph-revision events | **No — existing revision outbox** |
 
-**Deployment topology is intentionally deferred.** Where the projector is
-deployed is **not decided by this ADR** and remains **Open Question OQ-5**. The
-platform's existing outbox worker carries the same undecided question, recorded
-as **TD-002** in `docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md:191`
-("No continuous `ProjectionWorker` daemon — Open, accepted"). This ADR
-recommends no deployment model.
+**Decision D-46 — deployment topology.** The Audit Projector is a dedicated,
+headless process/workload with its own configuration, lifecycle, health state,
+and Service Principal. For RC1 it runs as **one replica**. It is not hosted in
+the browser/BFF, PolicyEngine, GraphStore, Audit Service request handlers, or a
+mutation request/transaction. This keeps network delivery and retry latency out
+of the mutation commit, avoids coupling audit availability to mutation
+correctness, and gives the durable backlog an independently restartable owner.
+
+**Decision D-47 — process boundary.** The projector may reuse existing shared
+libraries and PostgreSQL repositories, but it is not a mode of another service
+and has no public HTTP/product API. Its only outbound application call is the
+authenticated Audit Service producer contract. Its only database writes are
+the operational dispatch transitions authorized by D-14 and D-48.
 
 **Fact — field inventory.** `MutationAuditIntent`
 (`services/knowledge-graph/src/emg_knowledge_graph/results.py:39-56`) carries:
@@ -257,8 +263,8 @@ reads `classification`, `source_system`, and `reason` from the submitted event.
 | `resource_id` | `MutationAuditIntent.resource_id` | Direct |
 | `classification` | `MutationAuditIntent.classification` | Direct |
 | `reason` | `MutationAuditIntent.reason` | Direct, nullable |
-| `actor` | `MutationAuditIntent.principal` | Derivation required |
-| `event_id` | — | Derived — D-9 |
+| `actor` | `MutationAuditIntent.principal.principal_id` | Deterministic string |
+| `event_id` | — | `kg-mutation:{mutation_id}:{zero_based_ordinal}` — D-9 |
 | `actor_type` | — | **Fixed literal `"service"`** — D-35 |
 | `module` | — | **Fixed literal `"knowledge-graph"`** — D-35 |
 | `outcome` | `mutation_ledger.status` | **`"success"` for both statuses** — D-37 |
@@ -268,7 +274,7 @@ reads `classification`, `source_system`, and `reason` from the submitted event.
 | `metadata["content_hash"]` | `MutationAuditIntent.content_hash` | **Mapped** — D-40 |
 | `metadata["related_resource_ids"]` | `MutationAuditIntent.related_resource_ids` | **Mapped** — D-40 |
 | `metadata["ledger_status"]` | `mutation_ledger.status` | **Mapped** — D-40 |
-| — | `idempotency_key` | **Not projected** — D-41; unresolved residual OQ-6 |
+| — | `idempotency_key` | **Not projected** — D-41, final |
 
 **Consequence.** Every required target field now has a determined source or a
 fixed literal. `idempotency_key` is the only ADR-030-preserved fact that is not
@@ -379,9 +385,8 @@ entry. It is client-supplied through the `X-Idempotency-Key` header and is
 therefore content of unknown shape. `validation.py` inspects metadata **key
 names** for sensitivity and redacts values by pattern; neither guarantees that
 an arbitrary client value is safe to place in an immutable, hash-covered audit
-record. **It remains only in `mutation_ledger` until separately approved.**
-The residual determination stays open under OQ-6 and is owned by
-Identity/Security per D-31.
+record. **It remains only in `mutation_ledger`.** Any future proposal to expose
+it is new governance scope; it is not an unresolved RC1 decision.
 
 **Decision D-42 — metadata content prohibitions (binding).** Projected metadata
 **must not contain**: payload or graph content; tenant credentials; tokens;
@@ -406,9 +411,10 @@ One dispatch row therefore corresponds to one or more audit events.
 `mutation_id`", and §5.4 describes `(channel, mutation_id)` as "the external
 event identity" for *dispatch* idempotency.
 
-**Decision D-9.** The projected `event_id` is derived deterministically from the
-`mutation_id` together with the intent's **zero-based ordinal position** in the
-stored `audit_intents` collection. Two properties follow:
+**Decision D-9.** The projected `event_id` is the ASCII string
+`kg-mutation:{mutation_id}:{zero_based_ordinal}`, using the canonical lowercase,
+hyphenated UUID representation and the base-10 ordinal without padding. Two
+properties follow:
 
 1. **Reproducible.** The same ledger row always yields the same identities. The
    ledger is immutable (ADR-030 §4.4), so the collection order is stable.
@@ -416,10 +422,10 @@ stored `audit_intents` collection. Two properties follow:
    `event_id` values, so each intent is a distinct entry under the audit
    service's `(source_principal, event_id)` duplicate rule (D-4).
 
-**Decision D-10.** The exact derivation function is a normative contract this
-ADR fixes in principle and leaves to implementation review to express. It must
-be pure, stable across processes and releases, and must not depend on wall-clock
-time, hostname, or process identity.
+**Decision D-10.** The derivation in D-9 is a normative compatibility contract.
+It is pure, stable across processes and releases, and does not depend on time,
+hostname, worker identity, deployment, or credential material. `actor` is the
+string form of the stored `principal_id`; `actor_type` remains governed by D-35.
 
 ## 8. Integration with ADR-027
 
@@ -480,9 +486,11 @@ implement, using ADR-030's foundation **unchanged**. It adds no column, no
 index, and no constraint.
 
 **Decision D-14.** ADR-028 reads `mutation_ledger` and never writes to it. It
-writes only the mutable operational fields of `mutation_dispatch` that ADR-030
-§5.4 already defines: `attempt_count`, `claim_owner`, `claim_expires_at`, and
-`delivered_at`.
+writes only existing mutable operational fields of `mutation_dispatch`:
+`available_at`, `attempt_count`, `claim_owner`, `claim_expires_at`, and
+`delivered_at`. `available_at` is required for the durable reschedule defined by
+D-48. No dispatch row is deleted to represent success, failure, exhaustion, or
+operator action.
 
 **Decision D-15.** The ledger's immutability (ADR-030 §4.4) is preserved. Any
 future need to record reconciliation state **inside** the ledger requires an
@@ -503,7 +511,7 @@ producer content (Sprint 6 security-review fix, Priority 5)", and calls
 **Fact.** ADR-034 assigns legacy rows the reserved `legacy-unscoped` tenant,
 "invisible to normal tenant tokens."
 
-**Consequence — the central unresolved tension.** The audit service derives
+**Fact — the former central design tension.** The audit service derives
 `tenant_id` from **the producer's own token**, not from event content. A
 projector delivering events for many tenants under one service token would
 attribute every event to that token's tenant. `MutationAuditIntent.tenant`
@@ -573,11 +581,13 @@ roles. It does not constrain the **value** of the `tenant_id` claim;
 Constraining the claim value is therefore an issuance-side responsibility, not
 an audit-service check.
 
-**Decision D-33.** The storage and implementation mechanism for the
-tenant-to-projector identity mapping is **an implementation-design requirement
-and is not specified here.** This ADR fixes the required properties —
-approved, tenant-matching, fail-closed, and stable per D-26 — and leaves the
-mechanism to implementation review.
+**Decision D-33.** The tenant-to-projector identity mapping is explicit
+deployment configuration sourced from the platform's approved secret/configuration
+system; no credential is committed to the repository. Each onboarded RC1 tenant
+maps to exactly one stable logical projector client identity. Startup validates
+that configured tenants are unique and credentials resolve; at runtime a
+missing or mismatched mapping leaves that tenant's work unclaimed or
+unacknowledged and emits a failure observation. There is no default identity.
 
 **Decision D-17.** Classification is preserved by direct mapping:
 `MutationAuditIntent.classification` maps to the submitted event's
@@ -585,6 +595,23 @@ mechanism to implementation review.
 classification is downgraded, defaulted, or omitted in projection.
 
 ## 11. Security
+
+**Decision D-56 — security invariants.** Every implementation and deployment
+must preserve all of the following:
+
+1. No committed mutation exists without its transactionally created durable
+   `audit` dispatch row.
+2. No `mutation_dispatch` row is deleted to conceal failure or exhaustion.
+3. No audit delivery occurs without an authenticated projector Service
+   Principal.
+4. No credential claims or dispatches work for a different tenant.
+5. Tenant identity is never accepted from client-controlled event content.
+6. No work is silently dropped and no exactly-once claim is made.
+7. No Audit Service HTTP call occurs in the mutation transaction.
+8. No fallback audit sink or bypass of Audit Service ingestion exists.
+9. ADR-038 delegated-operation fail-closed behavior is unchanged.
+10. Mutation, authorization, PolicyEngine, GraphStore, and Phase 2B identity
+    semantics are unchanged.
 
 **Decision D-18.** The projector authenticates to the audit service as a
 **tenant-scoped** service principal (D-28). It introduces no new authentication
@@ -596,10 +623,10 @@ credential's tenant. A single multi-tenant projector identity would not have
 that containment property; D-28 rejects it.
 
 **Decision D-19.** The projector holds **read-only** access to `mutation_ledger`
-and write access limited to the four mutable `mutation_dispatch` operational
-fields. It requires no graph write access, no schema ownership, and no DDL
-capability, consistent with ADR-034's `emg_knowledge_graph_app` least-privilege
-model.
+and write access limited to the five existing mutable `mutation_dispatch`
+operational fields named by D-14. It requires no graph write access, no schema
+ownership, and no DDL capability, consistent with ADR-034's
+`emg_knowledge_graph_app` least-privilege model.
 
 **Decision D-20.** Projected events carry no content beyond the fields
 `MutationAuditIntent` already contains. The projector performs no enrichment
@@ -613,15 +640,14 @@ cannot forge graph state, alter the immutable ledger, or widen a classification.
 `_RECOGNIZED_CLIENTS` as a module-level constant, and `:131-132` rejects a token
 whose `azp`/`client_id` is not present in it.
 
-**Decision D-45 — projector identities use the existing recognized-client
-mechanism (OQ-7, partial).** Projector identities authenticate through the
+**Decision D-45 — projector Service Principals.** Projector identities authenticate through the
 **existing recognized-client mechanism** already enforced by the audit service.
 ADR-028 introduces no new authentication mechanism and no alternative
-registration path.
-
-**Open Question OQ-7 remains open** for the number of registered identities,
-their naming, the tenant-to-client registration strategy, and the scalability of
-that strategy. This ADR does not decide any of them.
+registration path. They are distinct from the Knowledge Graph writer, from all
+human principals, and from ADR-038 Acting Service identities. RC1 provisions
+one explicitly registered, stable logical projector client per onboarded
+tenant. Secret rotation must retain that client identity. Registration remains
+an explicit allow-list operation; wildcard client trust is forbidden.
 
 ## 12. Failure Handling
 
@@ -630,6 +656,25 @@ delivery leaves `delivered_at` null, so the row remains in the work set (ADR-030
 §5.4: "a row remains queryable until delivery is durably acknowledged"). The
 existing `attempt_count` column bounds retries. An expired claim becomes
 eligible for another worker, as ADR-030 §5.4 already specifies.
+
+**Decision D-48 — explicit reschedule.** RC1 permits at most eight delivery
+attempts per mutation. After a retryable failure, the owning worker performs a
+short conditional transaction that requires its `claim_owner`, leaves
+`delivered_at` null, sets `available_at` to the next eligible database time, and
+clears `claim_owner` and `claim_expires_at`. Delay is
+`min(300 seconds, 2^(attempt_count-1) seconds * (1 + jitter))`, where `jitter`
+is deterministically derived from `(mutation_id, attempt_count)` in the closed
+range 0 through 0.25. Configuration may lower, but not exceed, the eight-attempt
+and 300-second RC1 bounds. Failed rows are never deleted or silently skipped.
+
+**Decision D-49 — poison and exhausted work.** A structurally invalid ledger
+record, deterministic mapping failure, non-retryable Audit Service rejection,
+or row reaching the attempt bound remains durably present with
+`delivered_at IS NULL`. Exhaustion is the existing derived state in D-23; there
+is no destructive dead-letter move because the schema has no such facility.
+The projector emits a bounded failure/exhaustion observation and proceeds with
+other claimable rows. Operator diagnosis and explicit replay occur outside the
+hot path and may not alter `mutation_ledger` or delete `mutation_dispatch`.
 
 **Decision D-22 — partial delivery within one mutation.** A multi-intent
 mutation may fail after delivering some of its events. Because `event_id` is
@@ -648,9 +693,46 @@ expressed entirely by existing `mutation_dispatch` state, with no new column:
 | Delivered | `delivered_at IS NOT NULL` |
 | Exhausted | `delivered_at IS NULL`, `attempt_count` at the configured bound |
 
-**Consequence.** "Exhausted" is derived, not stored. **Open Question OQ-8**
-records whether an exhausted row requires an operator-visible signal beyond a
-metric.
+**Consequence.** "Exhausted" is derived, not stored, and is visible through the
+required exhausted-count observation and durable row state. Alerting policy is
+outside this ADR.
+
+**Decision D-50 — acknowledgement and crash recovery.** A claim transaction
+commits before any HTTP delivery begins. The projector acknowledges a mutation
+by setting `delivered_at` only after every stored intent has been accepted by
+the Audit Service. A crash before acknowledgement leaves the row undelivered;
+after `claim_expires_at`, another worker may reclaim and replay the entire
+mutation. Partial prior acceptance is safe only through D-9, D-26, and the
+Audit Service composite idempotency key. This is at-least-once, never an
+exactly-once claim.
+
+**Decision D-51 — graceful shutdown.** Shutdown first stops polling and claiming
+new work, then drains in-flight mutations for a configured deadline no greater
+than the claim lease. Fully delivered mutations may be acknowledged during the
+drain. Incomplete work remains unacknowledged; the process must not clear or
+extend its claim merely to conceal termination. Database and HTTP resources
+close only after drain completion or deadline expiry.
+
+**Decision D-52 — transaction separation and fail-closed boundary.** No HTTP
+call occurs inside the mutation transaction or a dispatch claim/acknowledgement
+transaction. There is no fallback audit sink. This asynchronous mutation
+reconciliation path does not change or weaken ADR-038's existing synchronous,
+delegated-operation fail-closed audit behavior.
+
+**Decision D-53 — operational hooks.** The projector emits structured,
+collector-ready observations for pending depth, oldest pending age, in-flight
+count, retry count, delivery failures, exhausted count, and dispatch duration.
+Dimensions are bounded and tenant-aware; secrets and payload content are
+forbidden. Dashboards, alert routing, and a new metrics backend are not required.
+
+**Decision D-54 — RC1 scalability.** RC1 uses one projector replica and a
+finite, explicitly configured tenant set. Sequential tenant polling is
+acceptable provided backlog observations remain within deployment objectives.
+Later horizontal scaling may use the existing `FOR UPDATE SKIP LOCKED` claim
+protocol, but requires unique worker identities, a shared authoritative tenant
+credential mapping, concurrency/capacity tests, and confirmation that Audit
+Service and PostgreSQL pool limits remain safe. ADR-028 does not impose HA or
+authorize wildcard/multi-tenant credentials.
 
 **Decision D-24.** Delivery failure never affects mutation correctness. The
 mutation is already committed; ADR-030's atomicity guarantees are unchanged by
@@ -707,122 +789,162 @@ database privileges denying `UPDATE` and `DELETE`. `V004__mutation_ledger.sql:12
 defines `mutation_dispatch` with no expiry column. **The existing immutable
 ledger and dispatch rows therefore make replay technically possible.**
 
-**Open Question OQ-9 remains open** for backlog policy: whether mutations
-committed before the projector is enabled are projected, and over what window.
-This ADR records only the technical possibility above; it establishes no
-requirement, obligation, or window.
+**Decision D-55 — pre-enablement backlog.** On first enablement, the projector
+processes every undelivered `audit` dispatch row for every configured tenant,
+including rows committed before deployment. There is no age window and no
+automatic expiry. A tenant without an approved credential remains preserved and
+visible until correctly onboarded.
 
 ## 14. Migration
 
-**Decision D-27.** No database migration is required. `mutation_dispatch` exists
-at V004 and already permits the `audit` channel.
+**Decision D-27.** No table, column, index, or constraint migration is required.
+`mutation_dispatch` exists at V004 and already permits the `audit` channel.
+Implementation may add a least-privilege migration granting the dedicated
+projector role only the reads and column-scoped updates required by D-14,
+including `available_at`; that is a privilege binding, not an outbox redesign.
 
 **Fact.** Migrations V003 (`mutation_idempotency`), V004 (`mutation_ledger`,
 `mutation_ledger_resource`, `mutation_dispatch`), and V005
 (`runtime_least_privilege`) are present in
 `libs/python/emg-persistence/src/emg_persistence/migrations/postgres/`.
 
-**Open Question OQ-9** records the treatment of mutations committed before the
-projector is enabled.
+Pre-enablement work is governed by D-55.
 
 ## 15. Acceptance Criteria
 
 **Decision.** An implementation satisfying this ADR must demonstrate:
 
+**RC1 authorization gate**
+
+- AC-1. A committed mutation atomically produces its immutable ledger record
+  and `audit` dispatch row; rollback produces neither.
+- AC-2. The projector claims one tenant's work without claiming another
+  tenant's work, always using `channel='audit'`, `FOR UPDATE SKIP LOCKED`,
+  `claim_owner`, `claim_expires_at`, and `attempt_count`.
+- AC-3. Audit Service outage leaves work durable, undelivered, explicitly
+  rescheduled, and retryable within D-48's bounds.
+- AC-4. Successful delivery sets `delivered_at` only after every intent for the
+  mutation has been accepted.
+- AC-5. A crash after Audit Service acceptance but before acknowledgement is
+  safe: lease expiry permits replay without authoritative duplicates.
+- AC-6. Duplicate delivery does not duplicate authoritative audit events under
+  stable `(source_principal, event_id)` identity.
+- AC-7. Poison or exhausted work remains visible and undelivered; it is neither
+  deleted nor moved destructively.
+- AC-8. Worker restart recovers expired claims and preserves attempt bounds.
+- AC-9. No Audit Service HTTP call occurs inside the mutation transaction or a
+  dispatch claim/acknowledgement transaction.
+- AC-10. No code path silently deletes, drops, or marks failed dispatch work as
+  delivered.
+- AC-11. The projector authenticates as its own explicitly registered,
+  tenant-scoped Service Principal, distinct from writer, human, and Acting
+  Service identities.
+- AC-12. Audit Service continues deriving `tenant_id` and `source_principal`
+  only from verified projector credentials; payload tenant authority remains
+  forbidden.
+- AC-13. ADR-038 delegated audit remains synchronously fail closed and unchanged.
+- AC-14. The structured backlog and delivery observations in D-53 are emitted
+  with bounded, non-sensitive dimensions.
+- AC-15. Graceful shutdown stops new claims, drains within deadline, and leaves
+  unfinished work unacknowledged and recoverable.
+
+**Supporting projection and boundary criteria**
+
 **Projection correctness (D-6, D-8, D-11, D-17, D-20)**
 
-- AC-1. Every stored `MutationAuditIntent` produces exactly one projected event.
+- SAC-1. Every stored `MutationAuditIntent` produces exactly one projected event.
   *(D-6, D-8)*
-- AC-2. `action`, `resource_type`, `resource_id`, `classification`, and `reason`
+- SAC-2. `action`, `resource_type`, `resource_id`, `classification`, and `reason`
   are carried without alteration. *(D-11, D-17)*
-- AC-3. No projected field is defaulted, truncated, or invented beyond the
+- SAC-3. No projected field is defaulted, truncated, or invented beyond the
   derivations this ADR fixes. *(D-20, D-11)*
 
 **Identity and idempotency (D-4, D-9, D-10, D-22, D-26)**
 
-- AC-4. `event_id` derivation is pure and reproducible across processes and
+- SAC-4. `event_id` derivation is pure and reproducible across processes and
   releases. *(D-9, D-10)*
-- AC-5. A multi-intent mutation produces distinct `event_id` values. *(D-9)*
-- AC-6. Redelivering a mutation creates no second audit record. *(D-4, D-22)*
-- AC-7. Clearing `delivered_at` and replaying creates no second audit record.
+- SAC-5. A multi-intent mutation produces distinct `event_id` values. *(D-9)*
+- SAC-6. Redelivering a mutation creates no second audit record. *(D-4, D-22)*
+- SAC-7. Clearing `delivered_at` and replaying creates no second audit record.
   *(D-4, D-26)*
 
 **Ordering and completeness (D-2, D-6, D-7)**
 
-- AC-8. Events for one `mutation_id` are delivered in stored collection order.
+- SAC-8. Events for one `mutation_id` are delivered in stored collection order.
   *(D-7)*
-- AC-9. No committed mutation with dispatch rows is skipped. *(D-2, D-6)*
-- AC-10. No total ordering across mutations is asserted or relied upon. *(D-7)*
+- SAC-9. No committed mutation with dispatch rows is skipped. *(D-2, D-6)*
+- SAC-10. No total ordering across mutations is asserted or relied upon. *(D-7)*
 
 **Failure and recovery (D-21, D-23, D-24)**
 
-- AC-11. A delivery failure leaves the row claimable and undelivered. *(D-21)*
-- AC-12. An expired claim becomes eligible for another worker. *(D-21)*
-- AC-13. Attempts are bounded by `attempt_count`. *(D-21, D-23)*
-- AC-14. Projector failure of any kind leaves mutation correctness unaffected.
+- SAC-11. A delivery failure leaves the row claimable and undelivered. *(D-21)*
+- SAC-12. An expired claim becomes eligible for another worker. *(D-21)*
+- SAC-13. Attempts are bounded by `attempt_count`. *(D-21, D-23)*
+- SAC-14. Projector failure of any kind leaves mutation correctness unaffected.
   *(D-24)*
 
 **Boundaries (D-11, D-13, D-14, D-15, D-16, D-17, D-27)**
 
-- AC-15. `mutation_ledger` is never written by the projector. *(D-14)*
-- AC-16. Only `attempt_count`, `claim_owner`, `claim_expires_at`, and
-  `delivered_at` are written on `mutation_dispatch`. *(D-14)*
-- AC-17. No mutation route, command, or DTO changes. *(D-11)*
-- AC-18. No ledger or dispatch schema change occurs. *(D-13, D-15, D-27)*
-- AC-19. ADR-034 audit read confinement is unchanged by this path. *(D-16)*
-- AC-20. No classification is downgraded or omitted in projection. *(D-17)*
+- SAC-15. `mutation_ledger` is never written by the projector. *(D-14)*
+- SAC-16. Only `available_at`, `attempt_count`, `claim_owner`,
+  `claim_expires_at`, and `delivered_at` are written on `mutation_dispatch`.
+  *(D-14, D-48)*
+- SAC-17. No mutation route, command, or DTO changes. *(D-11)*
+- SAC-18. No ledger or dispatch schema change occurs. *(D-13, D-15, D-27)*
+- SAC-19. ADR-034 audit read confinement is unchanged by this path. *(D-16)*
+- SAC-20. No classification is downgraded or omitted in projection. *(D-17)*
 
 **Reconciliation (D-12, D-44)**
 
-- AC-21. Mutation-sourced events are retrievable through the existing audit
+- SAC-21. Mutation-sourced events are retrievable through the existing audit
   read API alongside read-path and operation-level events, satisfying
   ADR-027 `:1319`. *(D-12, D-44)*
 
 **Tenant attribution (D-28 through D-34)**
 
-- AC-22. Work is partitioned by `mutation_dispatch.tenant_id`.
-- AC-23. The credential used for a row carries a token `tenant_id` claim equal
+- SAC-22. Work is partitioned by `mutation_dispatch.tenant_id`.
+- SAC-23. The credential used for a row carries a token `tenant_id` claim equal
   to that row's `tenant_id`.
-- AC-24. A projector credential never processes another tenant's work.
-- AC-25. No tenant value is read from `SubmittedAuditEvent` or any
+- SAC-24. A projector credential never processes another tenant's work.
+- SAC-25. No tenant value is read from `SubmittedAuditEvent` or any
   producer-controlled payload.
-- AC-26. A row for which no approved, tenant-matching credential resolves is
+- SAC-26. A row for which no approved, tenant-matching credential resolves is
   refused fail-closed and left undelivered; no fallback identity is used.
-- AC-27. `source_principal` is stable across restarts, credential rotation,
+- SAC-27. `source_principal` is stable across restarts, credential rotation,
   retries, and replay.
-- AC-28. Rotating a credential's secret does not change the logical identity
+- SAC-28. Rotating a credential's secret does not change the logical identity
   presented as `source_principal`.
-- AC-29. Redelivery and replay create no second audit record under the
+- SAC-29. Redelivery and replay create no second audit record under the
   `(source_principal, event_id)` key.
-- AC-30. ADR-034, the `SubmittedAuditEvent` contract, the audit event schema
+- SAC-30. ADR-034, the `SubmittedAuditEvent` contract, the audit event schema
   version, and `services/audit/tests/test_reporting_api.py:510` are unchanged.
 
 **Field derivation (D-35 through D-43)**
 
-- AC-31. `actor_type` is the fixed literal `"service"` on every projected event.
-- AC-32. `module` and `source_system` are the fixed literal
+- SAC-31. `actor_type` is the fixed literal `"service"` on every projected event.
+- SAC-32. `module` and `source_system` are the fixed literal
   `"knowledge-graph"` on every projected event.
-- AC-33. No projected event infers a human actor while the ADR-025 §8.9 human
+- SAC-33. No projected event infers a human actor while the ADR-025 §8.9 human
   authentication path is undelivered.
-- AC-34. `outcome` is `"success"` for ledger status `succeeded` **and** for
+- SAC-34. `outcome` is `"success"` for ledger status `succeeded` **and** for
   `no_op`.
-- AC-35. The value `"completed"` never appears in any projected field.
-- AC-36. No delivery failure produces an audit event, and no delivery failure
+- SAC-35. The value `"completed"` never appears in any projected field.
+- SAC-36. No delivery failure produces an audit event, and no delivery failure
   is mapped to `outcome = "error"` or any other `AuditOutcome` value.
-- AC-37. `correlation_id` is `None` on every projected event.
-- AC-38. No correlation identifier is generated during projection or replay;
+- SAC-37. `correlation_id` is `None` on every projected event.
+- SAC-38. No correlation identifier is generated during projection or replay;
   `new_correlation_id` is not invoked on this path.
-- AC-39. `metadata` contains exactly the four entries `revision_number`,
+- SAC-39. `metadata` contains exactly the four entries `revision_number`,
   `content_hash`, `related_resource_ids`, and `ledger_status`.
-- AC-40. Every metadata value is a deterministic string from the claimed ledger
+- SAC-40. Every metadata value is a deterministic string from the claimed ledger
   row, byte-identical across replays.
-- AC-41. Metadata stays within the 32-entry and 1024-character bounds and
+- SAC-41. Metadata stays within the 32-entry and 1024-character bounds and
   passes `validate_and_sanitize` without a `ValidationError`.
-- AC-42. `idempotency_key` appears in no projected field and no metadata entry.
-- AC-43. Metadata contains no payload or graph content, tenant credential,
+- SAC-42. `idempotency_key` appears in no projected field and no metadata entry.
+- SAC-43. Metadata contains no payload or graph content, tenant credential,
   token, classification-clearance claim, or arbitrary producer-controlled
   value.
-- AC-44. `provenance` is not populated; every projected event remains schema
+- SAC-44. `provenance` is not populated; every projected event remains schema
   version 1 with respect to provenance, and the canonical hash inputs are
   unchanged apart from the tenant value ADR-034 already includes.
 
@@ -840,8 +962,8 @@ projector is enabled.
 **Negative**
 
 - A new component enters the platform, with its own failure, claim-expiry, and
-  monitoring characteristics. Its execution and deployment topology are not
-  determined by this ADR and remain open under OQ-5.
+  monitoring characteristics. D-46 therefore gives it a separate workload and
+  lifecycle rather than hiding those concerns inside an existing request path.
 - At-least-once delivery makes correctness dependent on the audit service's
   existing `(source_principal, event_id)` duplicate rule. Should that rule
   change, this design's idempotency guarantee changes with it.
@@ -866,17 +988,18 @@ projector is enabled.
 - Reconciliation is achieved by convergence on the existing audit store rather
   than by a new reconciliation surface. Consumers gain no new API.
 
-## 17. Open Questions
+## 17. Resolution Record and Post-RC1 Revisit Triggers
 
-Each of the following lacks sufficient repository evidence to decide. None is
-answered by inference in this draft.
+All questions required to authorize RC1 implementation are resolved below.
+Items labelled as revisit triggers are future governance work and do not block
+the bounded RC1 design.
 
 ### 17.1 Resolved
 
 **OQ-1 — Tenant attribution across the producer boundary. RESOLVED.**
 Resolved by Architecture Board decision **ADR-028-OQ1-DP-01 — Option B
 (per-tenant projector identity)**. See §10.1 (D-28 through D-30), §10.2 (D-31
-through D-33), §13 (D-26, D-34), and acceptance criteria AC-22 through AC-30.
+through D-33), §13 (D-26, D-34), and supporting criteria SAC-22 through SAC-30.
 ADR-034 remains unchanged; no `SubmittedAuditEvent` contract change and no
 trusted producer tenant-override role is authorized.
 
@@ -884,8 +1007,8 @@ trusted producer tenant-override role is authorized.
 Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**. All three are
 fixed bounded literals: `actor_type = "service"`,
 `module = "knowledge-graph"`, `source_system = "knowledge-graph"`. See §7.1
-(D-35), the mandatory revisit obligation (D-36), and acceptance criteria AC-31
-through AC-33. No human actor is inferred while the ADR-025 §8.9 human
+(D-35), the mandatory revisit obligation (D-36), and supporting criteria SAC-31
+through SAC-33. No human actor is inferred while the ADR-025 §8.9 human
 authentication path is undelivered.
 
 **OQ-3 — `outcome` for projected events. RESOLVED.**
@@ -893,7 +1016,7 @@ Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**. Ledger status
 `succeeded` and `no_op` both map to `outcome = "success"`; `"completed"` is not
 in the `AuditOutcome` vocabulary and must never appear. Delivery failure is not
 an audit-event outcome and is represented only by `mutation_dispatch` state.
-See §7.1 (D-37), §12 (D-43), and acceptance criteria AC-34 through AC-36.
+See §7.1 (D-37), §12 (D-43), and supporting criteria SAC-34 through SAC-36.
 
 **OQ-4 — Correlation identifier propagation. RESOLVED.**
 Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**.
@@ -901,7 +1024,7 @@ Resolved by Architecture Board package **ADR-028-OQ2346-DP-01**.
 any accepted artefact, and no correlation identifier is generated during
 projection or replay. Durable correlation is recorded as possible future
 ADR-030 work only; ADR-030 is neither opened nor amended. See §7.1 (D-38,
-D-39) and acceptance criteria AC-37 and AC-38.
+D-39) and supporting criteria SAC-37 and SAC-38.
 
 **OQ-10 — Relationship to read-path and operation-level event volume.
 RESOLVED.**
@@ -909,63 +1032,56 @@ Resolved by Architecture Board package **ADR-028-OQ5789X-DP-01**. ADR-027
 `:1319`'s "alongside" requirement is satisfied by shared audit storage, the
 existing audit read API, and the existing `module` and `source_system` filters.
 **No reconciliation report, cross-checking, new API, new query, or new
-capability is introduced.** See §8 (D-44) and acceptance criterion AC-21.
+capability is introduced.** See §8 (D-44) and supporting criterion SAC-21.
 
-### 17.2 Partially resolved
+### 17.2 Final resolutions
 
-**OQ-6 — Delivery of ledger facts with no audit target field. PARTIALLY
-RESOLVED.**
-Resolved in part by Architecture Board package **ADR-028-OQ2346-DP-01**.
+**OQ-6 — Delivery of ledger facts with no audit target field. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ2346-DP-01** and D-41.
 `revision_number`, `content_hash`, `related_resource_ids`, and the ledger
 `status` are projected as deterministic entries in the existing
 `SubmittedAuditEvent.metadata` structure, within its 32-entry and
 1024-character bounds. No new audit field and no contract change is introduced.
-See §7.2 (D-40, D-42) and acceptance criteria AC-39 through AC-44.
+See §7.2 (D-40, D-42) and supporting criteria SAC-39 through SAC-44.
 
-**Residual, unresolved:** whether `idempotency_key` may be projected.
-It is client-supplied through the `X-Idempotency-Key` header and is therefore
-content of unknown shape; `validation.py` inspects metadata key names for
-sensitivity and redacts values by pattern, and neither guarantees an arbitrary
-client value is safe in an immutable, hash-covered record. D-41 forbids its
-projection until separately approved; it remains only in `mutation_ledger`.
-**Owner: Identity/Security, per D-31.**
+`idempotency_key` is not projected. It remains only in `mutation_ledger` under
+D-41. Any future proposal to expose it requires a new governance review and is
+not part of RC1.
 
-**OQ-7 — Dedicated service client for the projector. PARTIALLY RESOLVED.**
-Resolved in part by Architecture Board package **ADR-028-OQ5789X-DP-01**.
+**OQ-7 — Dedicated service client for the projector. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ5789X-DP-01** and D-33,
+D-45.
 Projector identities authenticate through the **existing recognized-client
 mechanism** already enforced by the audit service (§11, D-45). No new
 authentication mechanism and no alternative registration path is introduced.
 
-**Residual, unresolved:** the number of registered identities, their naming, the
-tenant-to-client registration strategy, and the scalability of that strategy.
-None is decided by this ADR.
+RC1 uses one explicitly registered, stable logical projector client per
+onboarded tenant, configured through an approved tenant-to-identity mapping.
+Wildcard registration is forbidden. D-54 defines the later scaling revisit.
 
-**OQ-8 — Operator signal for exhausted rows. PARTIALLY RESOLVED.**
-Resolved in part by Architecture Board package **ADR-028-OQ5789X-DP-01**.
+**OQ-8 — Operator signal for exhausted rows. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ5789X-DP-01**, D-49, and
+D-53.
 **Operator alerting belongs to ADR-015 / FEAT-12-3** and is recorded as out of
 scope in §5.
 
-**Residual, unresolved:** whether ADR-028 emits an exhausted-row metric at all.
-No accepted document assigns such a metric to ADR-028, and this ADR does not
-create one.
+ADR-028 requires an exhausted-count observation. Dashboards, alerts, and
+operator routing remain owned by ADR-015 / FEAT-12-3 and do not block RC1.
 
-**OQ-9 — Pre-enablement backlog. PARTIALLY RESOLVED.**
-Resolved in part by Architecture Board package **ADR-028-OQ5789X-DP-01**. The
+**OQ-9 — Pre-enablement backlog. RESOLVED.**
+Resolved by Architecture Board package **ADR-028-OQ5789X-DP-01** and D-55. The
 existing immutable ledger and dispatch rows make replay **technically
 possible** (§13).
 
-**Residual, unresolved:** backlog policy — whether mutations committed before
-the projector is enabled are projected, and over what window. This ADR
-establishes no requirement, obligation, or window.
+Every undelivered row for a configured tenant is processed, without an age
+window or automatic expiry.
 
-### 17.3 Unresolved
+### 17.3 Deployment topology
 
-**OQ-5 — Projector deployment location.**
-**Deployment topology is intentionally deferred** (§7). Whether the projector is
-a mode of an existing service, a new deployable, or a scheduled job is
-undecided, and this ADR recommends no model. The platform's existing outbox
-worker carries the same undecided question, recorded as **TD-002** in
-`docs/architecture/EMG_PRODUCTION_READINESS_ROADMAP.md:191`.
+**OQ-5 — Projector deployment location. RESOLVED.**
+The projector is the dedicated, headless, single-replica RC1 process/workload
+defined by D-46 and D-47. It is not a scheduled job or an operating mode of an
+existing service. Horizontal scaling is a post-RC1 revisit governed by D-54.
 
 ## 18. References
 
@@ -1011,6 +1127,6 @@ worker carries the same undecided question, recorded as **TD-002** in
 
 ---
 
-**This document is Draft. It is not Accepted, authorizes no implementation,
-amends no accepted ADR, and changes no product scope. No code was written or
-modified to produce it.**
+**This document is Accepted and authorizes implementation of the bounded Audit
+Projector and reconciliation behavior defined here. It amends no accepted ADR
+and changes no product scope.**
