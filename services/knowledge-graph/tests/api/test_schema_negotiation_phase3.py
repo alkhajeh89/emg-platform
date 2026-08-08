@@ -250,6 +250,14 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
         "https://keycloak.example.gov",
     )
     monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_AUDIT_SERVICE_BASE_URL",
+        "https://audit.example.gov",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_AUDIT_PRODUCER_CLIENT_SECRET",
+        "a-real-production-secret-not-the-dev-placeholder",
+    )
+    monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
         "postgresql://runtime@postgres.example.gov/emg?sslmode=verify-full",
     )

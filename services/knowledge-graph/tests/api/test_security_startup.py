@@ -42,6 +42,37 @@ def test_production_rejects_plaintext_transport(overrides: dict[str, object]) ->
         validate_secure_transport(Settings(**values))
 
 
+def test_production_rejects_dev_placeholder_audit_producer_secret() -> None:
+    """Final correction-sprint Finding 5: production startup must fail fast
+    if the committed dev-placeholder audit-producer secret is still set."""
+    settings = Settings(
+        deployment_environment="production",
+        store_backend="postgres",
+        keycloak_base_url="https://keycloak.example.gov",
+        audit_service_base_url="https://audit.example.gov",
+        postgres_dsn="postgresql://runtime@postgres/emg?sslmode=verify-full",
+        migration_postgres_dsn="postgresql://migration@postgres/emg?sslmode=verify-full",
+        audit_producer_client_secret=(
+            "emg_svc_knowledge_graph_writer_local_dev_secret_do_not_use_in_prod"
+        ),
+    )
+    with pytest.raises(RuntimeError, match="dev placeholder"):
+        validate_secure_transport(settings)
+
+
+def test_production_accepts_non_placeholder_audit_producer_secret() -> None:
+    settings = Settings(
+        deployment_environment="production",
+        store_backend="postgres",
+        keycloak_base_url="https://keycloak.example.gov",
+        audit_service_base_url="https://audit.example.gov",
+        postgres_dsn="postgresql://runtime@postgres/emg?sslmode=verify-full",
+        migration_postgres_dsn="postgresql://migration@postgres/emg?sslmode=verify-full",
+        audit_producer_client_secret="a-real-production-secret",
+    )
+    validate_secure_transport(settings)  # must not raise
+
+
 def test_production_rejects_memory_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(
         deployment_environment="production",
@@ -122,6 +153,14 @@ def test_missing_or_invalid_catalog_prevents_production_startup(
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_KEYCLOAK_BASE_URL",
         "https://keycloak.example.gov",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_AUDIT_SERVICE_BASE_URL",
+        "https://audit.example.gov",
+    )
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_AUDIT_PRODUCER_CLIENT_SECRET",
+        "a-real-production-secret-not-the-dev-placeholder",
     )
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",

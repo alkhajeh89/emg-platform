@@ -44,7 +44,12 @@ from datetime import datetime, timezone
 
 from emg_common_types import Classification
 from emg_knowledge_graph import KnowledgeGraphApplication
-from emg_knowledge_graph_api.authn import CallerContext, ServicePrincipal, require_tenant_context
+from emg_knowledge_graph_api.authn import (
+    CallerContext,
+    ServicePrincipal,
+    require_authenticated_caller,
+    require_tenant_context,
+)
 from emg_knowledge_graph_api.dependencies import (
     knowledge_graph_application_dependency,
     policy_enforcement_point_dependency,
@@ -169,6 +174,7 @@ def _client(caller: CallerContext) -> TestClient:
     app = create_app()
     app.dependency_overrides[knowledge_graph_application_dependency] = lambda: application
     app.dependency_overrides[require_tenant_context] = lambda: caller
+    app.dependency_overrides[require_authenticated_caller] = lambda: caller
     app.dependency_overrides[policy_enforcement_point_dependency] = _real_pep
     return TestClient(app)
 

@@ -36,6 +36,18 @@ services:
       - emg-policy-engine
 
 
+  studio-bff:
+    type: service
+    path: apps/studio-bff
+    dockerfile: apps/studio-bff/Dockerfile
+
+    dependencies:
+      - emg-common-types
+      - emg-errors
+      - emg-telemetry
+      - emg-api-contracts
+
+
   persistence:
     type: library
     path: libs/python/emg-persistence
@@ -79,6 +91,7 @@ services:
       - emg-persistence
       - emg-auth-client
       - emg-policy-engine
+      - emg-audit-client
 
 
   entity-resolution:

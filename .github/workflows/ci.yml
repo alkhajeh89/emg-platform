@@ -279,16 +279,24 @@ jobs:
       security-events: write
     strategy:
       fail-fast: false
+      # Final correction-sprint Finding 10: studio-bff's Dockerfile lives
+      # under apps/, not services/ — the build step below resolves the
+      # correct directory per matrix entry rather than assuming services/.
       matrix:
-        service: [identity, audit, knowledge-graph]
+        service: [identity, audit, knowledge-graph, studio-bff]
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build service image
         run: |
+          if [ -d "services/${{ matrix.service }}" ]; then
+            SERVICE_DIR="services/${{ matrix.service }}"
+          else
+            SERVICE_DIR="apps/${{ matrix.service }}"
+          fi
           docker build --pull=false \
-            -f services/${{ matrix.service }}/Dockerfile \
+            -f "$SERVICE_DIR/Dockerfile" \
             -t emg-${{ matrix.service }}:${{ github.sha }} .
 
       - name: Scan image (critical vulnerabilities block)

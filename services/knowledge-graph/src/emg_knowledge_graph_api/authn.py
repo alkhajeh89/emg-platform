@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, cast
 
 import jwt
+from emg_auth_client import Principal
 from emg_common_types import normalize_classification_clearance
 from emg_errors import AuthorizationError
 from emg_platform_core import TenantId
@@ -111,10 +112,21 @@ class ServicePrincipal:
 @dataclass(frozen=True)
 class CallerContext:
     """The authenticated caller plus the tenant their token resolves to —
-    the one object routers depend on for both "who" and "which tenant"."""
+    the one object routers depend on for both "who" and "which tenant".
 
-    principal: ServicePrincipal
+    `acting_service` (Phase 2B, ADR-038 §8.3): the authenticated Acting
+    Service's client id when this context was resolved from a Delegated
+    Credential (`DelegatedCredentialValidator`), `None` for the existing
+    plain service-to-service path (`TenantServiceTokenValidator`). Additive
+    — every pre-existing `CallerContext(...)` construction call site is
+    unchanged, since the default preserves prior behavior exactly. Per
+    ADR-038 §8.2/§8.3, the Acting Service is carried here for audit
+    attribution ONLY; it is never the authorization subject and is never
+    read by `require_permission`/the PEP."""
+
+    principal: ServicePrincipal | Principal
     tenant: TenantId
+    acting_service: str | None = None
 
 
 def _settings_singleton() -> Settings:
@@ -251,10 +263,172 @@ def require_tenant_context(
     caller's `CallerContext` (principal + resolved tenant). Raises
     AuthorizationError (mapped to HTTP 401) if the header is missing or
     malformed, the token is invalid, or the token carries no resolvable
-    tenant claim — a request can never supply or override its own tenant."""
+    tenant claim — a request can never supply or override its own tenant.
+
+    Unchanged by Phase 2B: mutation routes and any other pre-existing call
+    site depend on this exact function via `TenantContextDep` and continue
+    to accept only plain service-to-service tokens. Delegated Credentials
+    are handled by a separate, additive path below
+    (`AuthenticatedCallerDep`) — never by this one."""
     if credentials is None:
         raise AuthorizationError("Missing or malformed Authorization header")
     return validator.validate(credentials.credentials)
 
 
 TenantContextDep = Annotated[CallerContext, Depends(require_tenant_context)]
+
+
+# --- Phase 2B: Delegated Credential validation (ADR-038) -------------------
+#
+# Additive. Every symbol above this line, and every existing caller of
+# `TenantContextDep`/`TenantServiceTokenValidator`, is unchanged.
+
+# Client ids recognized as Acting Services (ADR-038 Trust Domain B) — a
+# category distinct from `_RECOGNIZED_CLIENTS` above (plain service-to-
+# service callers). Per-service, not a shared library, matching this
+# module's existing "each service validates independently" convention.
+_RECOGNIZED_ACTING_SERVICES: frozenset[str] = frozenset({"emg-studio-bff"})
+
+
+class DelegatedCredentialValidator:
+    """Independently validates a Delegated Credential (ADR-038 §7.6 / AC-9)
+    and constructs a `CallerContext` whose `principal` is the delegated
+    HUMAN Principal — never the Acting Service (ADR-038 §8.2: "The Acting
+    Service SHALL never become the authorization subject").
+
+    Trust path identical in shape to `TenantServiceTokenValidator`: RS256
+    verified against the realm JWKS, issuer checked. The audience checked
+    is `settings.delegated_credential_audience` — THIS service's own,
+    single, isolated audience (ADR-038 §7.4 Audience Restriction) — not
+    `settings.service_token_audience`, which remains exclusively the plain
+    service-to-service audience.
+    """
+
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        signing_key_resolver: SigningKeyResolver | None = None,
+    ) -> None:
+        self._settings = settings
+        self._signing_key_resolver = signing_key_resolver or self._default_signing_key_resolver
+        self._jwks_client: jwt.PyJWKClient | None = None
+
+    def _default_signing_key_resolver(self, token: str) -> object:  # pragma: no cover - network
+        if self._jwks_client is None:
+            self._jwks_client = jwt.PyJWKClient(
+                self._settings.jwks_uri, lifespan=self._settings.jwks_cache_ttl_seconds
+            )
+        return self._jwks_client.get_signing_key_from_jwt(token).key
+
+    def validate(self, token: str) -> CallerContext:
+        """Fail-closed: any failure raises AuthorizationError. In
+        particular, a missing/blank `sub` is a hard failure — this
+        validator never silently proceeds with an empty or synthetic
+        subject (Phase 2B Required Configuration #1 / capability
+        verification Finding 2)."""
+        try:
+            signing_key = self._signing_key_resolver(token)
+            payload = jwt.decode(
+                token,
+                cast(Any, signing_key),
+                algorithms=["RS256"],
+                issuer=self._settings.keycloak_issuer,
+                audience=self._settings.delegated_credential_audience,
+                options={"require": ["exp", "iat", "iss", "aud", "sub", "jti"]},
+            )
+        except jwt.PyJWTError as exc:
+            raise AuthorizationError(f"Invalid delegated credential: {exc}") from exc
+
+        # ADR-038 §7.4 "exactly one downstream audience": PyJWT's own
+        # `audience=` check above only confirms the expected value is a
+        # MEMBER of `aud` — it does not reject a token whose `aud` also
+        # names other audiences. This closes that gap explicitly.
+        raw_aud = payload.get("aud")
+        aud_values = raw_aud if isinstance(raw_aud, list) else [raw_aud]
+        if len(aud_values) != 1 or aud_values[0] != self._settings.delegated_credential_audience:
+            raise AuthorizationError(
+                "Delegated credential must be issued for exactly one downstream audience"
+            )
+
+        acting_service = payload.get("azp") or payload.get("client_id")
+        if not isinstance(acting_service, str) or acting_service not in _RECOGNIZED_ACTING_SERVICES:
+            raise AuthorizationError(f"Unrecognized Acting Service '{acting_service}'")
+
+        subject = payload.get("sub")
+        if not isinstance(subject, str) or not subject:
+            raise AuthorizationError("Delegated credential is missing the human subject claim")
+
+        realm_access = payload.get("realm_access")
+        raw_roles = realm_access.get("roles", ()) if isinstance(realm_access, dict) else ()
+        roles = tuple(str(role) for role in raw_roles) if isinstance(raw_roles, list) else ()
+
+        attributes = _extract_attributes(payload, self._settings)
+        principal = Principal(subject=subject, roles=roles, attributes=attributes)
+
+        tenant_claim_value = payload.get(self._settings.tenant_claim)
+        if not isinstance(tenant_claim_value, str) or not tenant_claim_value:
+            raise AuthorizationError(
+                "Delegated credential is missing the required "
+                f"'{self._settings.tenant_claim}' claim"
+            )
+        try:
+            tenant = TenantId.of(tenant_claim_value)
+        except _PydanticValidationError as exc:
+            raise AuthorizationError(
+                f"Delegated credential's '{self._settings.tenant_claim}' claim is not a valid "
+                f"tenant identifier: {exc}"
+            ) from exc
+
+        return CallerContext(principal=principal, tenant=tenant, acting_service=acting_service)
+
+
+def delegated_credential_validator_dependency(
+    settings: SettingsDep,
+) -> DelegatedCredentialValidator:
+    return DelegatedCredentialValidator(settings)
+
+
+DelegatedCredentialValidatorDep = Annotated[
+    DelegatedCredentialValidator, Depends(delegated_credential_validator_dependency)
+]
+
+
+def _peek_acting_service_client_id(token: str) -> str | None:
+    """Unverified peek at `azp`/`client_id`, used ONLY to decide which
+    validator to run next — never to trust anything. Whichever validator is
+    selected performs full cryptographic verification before any claim
+    from this peek is relied upon."""
+    try:
+        payload = jwt.decode(token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return None
+    value = payload.get("azp") or payload.get("client_id")
+    return value if isinstance(value, str) else None
+
+
+def require_authenticated_caller(
+    credentials: BearerCredentialsDep,
+    tenant_validator: TenantValidatorDep,
+    delegated_validator: DelegatedCredentialValidatorDep,
+) -> CallerContext:
+    """Combined dependency for routes that accept EITHER a plain service
+    token OR a Delegated Credential (Phase 2B: the read routes only —
+    mutation routes continue to depend on `TenantContextDep`/
+    `require_tenant_context` exclusively, unchanged).
+
+    Selection is by the token's own `azp`: a recognized Acting Service
+    (`_RECOGNIZED_ACTING_SERVICES`) routes to `DelegatedCredentialValidator`;
+    every other case falls back to the exact same `TenantServiceTokenValidator`
+    instance/logic the service-to-service path already used before Phase 2B
+    — behaviorally identical for every existing caller."""
+    if credentials is None:
+        raise AuthorizationError("Missing or malformed Authorization header")
+    token = credentials.credentials
+    azp = _peek_acting_service_client_id(token)
+    if azp in _RECOGNIZED_ACTING_SERVICES:
+        return delegated_validator.validate(token)
+    return tenant_validator.validate(token)
+
+
+AuthenticatedCallerDep = Annotated[CallerContext, Depends(require_authenticated_caller)]

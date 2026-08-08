@@ -1,0 +1,19 @@
+name: studio-bff
+module: "Studio Application Layer"
+owner: "EMG Founder"                       # Accountable Owner — ADR-016 Section 1
+steward: "Application Platform Team"       # Operational Steward — ADR-016 Section 1
+status: active
+feature: "Phase 2B — Human Authentication + BFF + Delegated Human Identity"
+governed_by:
+  - ADR-025  # tenant enforcement preserved unchanged downstream
+  - ADR-026  # classification enforcement preserved unchanged downstream
+  - ADR-034  # service trust (BFF authenticates as its own Service Principal)
+  - ADR-035  # Human Principal Authentication (Authorization Code + PKCE S256)
+  - ADR-036  # Application and BFF Boundary (this IS the BFF ADR-036 mandates)
+  - ADR-038  # Human Identity Delegation Architecture (OAuth 2.0 Token Exchange)
+# Scope note: this is the FIRST implementation under apps/. It is not a
+# Policy Enforcement Point (ADR-036 D-4), holds no direct datastore access
+# (ADR-036 D-10.2), and constructs no trusted identity from browser-supplied
+# input (ADR-038 §9.9). Delegated Credential caching (ADR-038 §7.9) is
+# explicitly deferred — this batch performs a fresh token exchange per
+# downstream call.

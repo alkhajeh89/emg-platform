@@ -13,15 +13,42 @@
   "ssoSessionMaxLifespan": 36000,
   "roles": {
     "realm": [
-      { "name": "platform-user", "description": "Baseline authenticated EMG platform user. Catalogued in the RBAC baseline role catalog (Sprint 5, FEAT-03-3: emg_policy_engine.roles.ROLE_CATALOG)." },
-      { "name": "investigator", "description": "Case investigator — Investigation Agent scope (Module 9 §5), local dev seed only. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
-      { "name": "decision-maker", "description": "Accountable decision-maker — Human Decision Workspace, local dev seed only. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
-      { "name": "knowledge-steward", "description": "Knowledge Graph steward — Knowledge Authoring UI, local dev seed only. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
-      { "name": "service-account", "description": "Service account role for internal EMG service authentication and controlled machine-to-machine access." },
-      { "name": "svc-identity", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the Identity Service's own service principal. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
-      { "name": "svc-authorization", "description": "Authorization service role for managing policy evaluation and access control decisions across EMG services." },
-      { "name": "svc-audit", "description": "Sprint 3 (FEAT-02-3): least-privilege role for the (not-yet-implemented, EPIC-04) Audit Service's service principal — registered now for the same reason. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." },
-      { "name": "svc-knowledge-graph-writer", "description": "ADR-027 (Revision 2) Stage 0: least-privilege role for a service principal authorized to mutate the Knowledge Graph (e.g. a future ADR-020 ingestion service) — registered ahead of a concrete grantee, the same precedent svc-audit set. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)." }
+      {
+        "name": "platform-user",
+        "description": "Baseline authenticated EMG platform user. Catalogued in the RBAC baseline role catalog (Sprint 5, FEAT-03-3: emg_policy_engine.roles.ROLE_CATALOG)."
+      },
+      {
+        "name": "investigator",
+        "description": "Case investigator \u2014 Investigation Agent scope (Module 9 \u00a75), local dev seed only. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)."
+      },
+      {
+        "name": "decision-maker",
+        "description": "Accountable decision-maker \u2014 Human Decision Workspace, local dev seed only. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)."
+      },
+      {
+        "name": "knowledge-steward",
+        "description": "Knowledge Graph steward \u2014 Knowledge Authoring UI, local dev seed only. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)."
+      },
+      {
+        "name": "service-account",
+        "description": "Service account role for internal EMG service authentication and controlled machine-to-machine access."
+      },
+      {
+        "name": "svc-identity",
+        "description": "Sprint 3 (FEAT-02-3): least-privilege role for the Identity Service's own service principal. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)."
+      },
+      {
+        "name": "svc-authorization",
+        "description": "Authorization service role for managing policy evaluation and access control decisions across EMG services."
+      },
+      {
+        "name": "svc-audit",
+        "description": "Sprint 3 (FEAT-02-3): least-privilege role for the (not-yet-implemented, EPIC-04) Audit Service's service principal \u2014 registered now for the same reason. Catalogued in emg_policy_engine.roles.ROLE_CATALOG (FEAT-03-3)."
+      },
+      {
+        "name": "svc-knowledge-graph-writer",
+        "description": "ADR-027 (Rev 2) Stage 0: least-privilege role for a service principal authorized to mutate the Knowledge Graph. Catalogued in emg_policy_engine.roles.ROLE_CATALOG."
+      }
     ]
   },
   "clientScopes": [
@@ -44,7 +71,7 @@
     },
     {
       "name": "emg-human-classification-attributes",
-      "description": "Group D Phase 1 Remediation (Blocking Fix 1, 2026-07-27): projects the classification_clearance and department user attributes (set below on dev.investigator/dev.decisionmaker) into the access token as top-level claims, so services/identity's login flow can read them from verified token claims. Prior to this fix, no protocol mapper emitted these user attributes into any token at all, so they were never actually reachable from the access token regardless of how the token was decoded.",
+      "description": "Group D Phase 1 Remediation (2026-07-27): projects classification_clearance and department user attributes into the access token as top-level claims for services/identity's login flow. See docs/security for full rationale.",
       "protocol": "openid-connect",
       "protocolMappers": [
         {
@@ -73,6 +100,88 @@
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-human-tenant-claim",
+      "description": "Phase 2B (ADR-035 D-5 / ADR-038 8.5): projects tenant_id into the access token for human principals, mirroring the service tenant mapper. Attached to emg-identity-service and emg-studio-bff. See docs/security for full rationale.",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "emg-human-tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "emg-human-delegated-claims",
+      "description": "Phase 2B (ADR-038 Ch. VII): attached to emg-knowledge-graph-audience. Restores sub/tenant_id/classification_clearance/roles on the exchanged Delegated Credential. See docs/security/adr-038/02_KEYCLOAK_VERIFICATION_CONFIG.md.",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "emg-delegated-subject-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "id",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "emg-delegated-tenant-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "emg-delegated-clearance-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "classification_clearance",
+            "claim.name": "classification_clearance",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "emg-delegated-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
           }
         }
       ]
@@ -124,6 +233,39 @@
           }
         }
       ]
+    },
+    {
+      "name": "emg-human-identity-claims",
+      "description": "Finding 3: restores sub and realm_access.roles on the human access token. emg-studio-bff's scopes fully replace Keycloak's built-ins, so neither claim appears without this -- confirmed via a real Authorization Code flow.",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "emg-human-subject-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "id",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "emg-human-realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "clients": [
@@ -143,14 +285,66 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": true,
-      "defaultClientScopes": ["emg-human-classification-attributes"],
+      "defaultClientScopes": [
+        "emg-human-classification-attributes",
+        "emg-human-tenant-claim"
+      ],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "emg-studio-bff",
+      "name": "EMG Studio BFF",
+      "description": "ADR-035 D-3 / ADR-036: confidential client owned by the Studio BFF. Terminates Authorization Code + PKCE S256 for human sessions; secret never reaches the browser. Also the Acting Service (ADR-038) performing RFC 8693 token exchange.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "emg_studio_bff_local_dev_secret_do_not_use_in_prod",
+      "redirectUris": [
+        "http://localhost:8010/auth/callback"
+      ],
+      "webOrigins": [],
+      "fullScopeAllowed": true,
+      "defaultClientScopes": [
+        "emg-human-classification-attributes",
+        "emg-human-tenant-claim",
+        "emg-human-identity-claims"
+      ],
+      "attributes": {
+        "access.token.lifespan": "300",
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "emg-knowledge-graph-audience",
+      "name": "EMG Knowledge Graph Delegated-Credential Audience",
+      "description": "ADR-038 Ch. IV Trust Domain D: bearer-only client representing Knowledge Graph as one isolated downstream audience for token exchange. A second Platform Service needs its own audience client, never this one reused.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "defaultClientScopes": [
+        "emg-human-delegated-claims"
+      ],
       "attributes": {
         "access.token.lifespan": "300"
       }
     },
     {
       "clientId": "emg-svc-identity",
-      "name": "EMG Service Principal — Identity Service",
+      "name": "EMG Service Principal \u2014 Identity Service",
       "description": "Sprint 3 FEAT-02-3: Identity service account client for M2M OAuth2 authentication.",
       "enabled": true,
       "protocol": "openid-connect",
@@ -164,14 +358,17 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
+      "defaultClientScopes": [
+        "emg-internal-services-audience",
+        "emg-service-security-claims"
+      ],
       "attributes": {
         "access.token.lifespan": "300"
       }
     },
     {
       "clientId": "emg-svc-authorization",
-      "name": "EMG Service Principal — Authorization Service",
+      "name": "EMG Service Principal \u2014 Authorization Service",
       "description": "Enterprise identity and access management configuration for EMG platform users, roles, and security policies.",
       "enabled": true,
       "protocol": "openid-connect",
@@ -185,14 +382,17 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
+      "defaultClientScopes": [
+        "emg-internal-services-audience",
+        "emg-service-security-claims"
+      ],
       "attributes": {
         "access.token.lifespan": "300"
       }
     },
     {
       "clientId": "emg-svc-audit",
-      "name": "EMG Service Principal — Audit Service",
+      "name": "EMG Service Principal \u2014 Audit Service",
       "description": "Sprint 3 (FEAT-02-3): representative development service identity for the future Audit Service (Module 6, EPIC-04). Registered now so service-to-service auth exists from day one; no Audit Service business logic is implemented in this sprint.",
       "enabled": true,
       "protocol": "openid-connect",
@@ -206,14 +406,17 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
+      "defaultClientScopes": [
+        "emg-internal-services-audience",
+        "emg-service-security-claims"
+      ],
       "attributes": {
         "access.token.lifespan": "300"
       }
     },
     {
       "clientId": "emg-svc-knowledge-graph-writer",
-      "name": "EMG Service Principal — Knowledge Graph Writer",
+      "name": "EMG Service Principal \u2014 Knowledge Graph Writer",
       "description": "SRS-2: approved least-privilege client for ADR-027 mutations.",
       "enabled": true,
       "protocol": "openid-connect",
@@ -227,7 +430,10 @@
       "redirectUris": [],
       "webOrigins": [],
       "fullScopeAllowed": false,
-      "defaultClientScopes": ["emg-internal-services-audience", "emg-service-security-claims"],
+      "defaultClientScopes": [
+        "emg-internal-services-audience",
+        "emg-service-security-claims"
+      ],
       "attributes": {
         "access.token.lifespan": "300"
       }
@@ -242,12 +448,26 @@
       "firstName": "Dev",
       "lastName": "Investigator",
       "credentials": [
-        { "type": "password", "value": "dev_local_password_only", "temporary": false }
+        {
+          "type": "password",
+          "value": "dev_local_password_only",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["platform-user", "investigator"],
+      "realmRoles": [
+        "platform-user",
+        "investigator"
+      ],
       "attributes": {
-        "classification_clearance": ["INTERNAL"],
-        "department": ["Investigations"]
+        "classification_clearance": [
+          "INTERNAL"
+        ],
+        "department": [
+          "Investigations"
+        ],
+        "tenant_id": [
+          "tenant-dev"
+        ]
       }
     },
     {
@@ -258,52 +478,94 @@
       "firstName": "Dev",
       "lastName": "DecisionMaker",
       "credentials": [
-        { "type": "password", "value": "dev_local_password_only", "temporary": false }
+        {
+          "type": "password",
+          "value": "dev_local_password_only",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["platform-user", "decision-maker"],
+      "realmRoles": [
+        "platform-user",
+        "decision-maker"
+      ],
       "attributes": {
-        "classification_clearance": ["CONFIDENTIAL"],
-        "department": ["Executive"]
+        "classification_clearance": [
+          "CONFIDENTIAL"
+        ],
+        "department": [
+          "Executive"
+        ],
+        "tenant_id": [
+          "tenant-dev"
+        ]
       }
     },
     {
       "username": "service-account-emg-svc-identity",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-identity",
-      "realmRoles": ["service-account", "svc-identity"],
+      "realmRoles": [
+        "service-account",
+        "svc-identity"
+      ],
       "attributes": {
-        "tenant_id": ["tenant-dev"],
-        "classification_clearance": ["INTERNAL"]
+        "tenant_id": [
+          "tenant-dev"
+        ],
+        "classification_clearance": [
+          "INTERNAL"
+        ]
       }
     },
     {
       "username": "service-account-emg-svc-authorization",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-authorization",
-      "realmRoles": ["service-account", "svc-authorization"],
+      "realmRoles": [
+        "service-account",
+        "svc-authorization"
+      ],
       "attributes": {
-        "tenant_id": ["tenant-dev"],
-        "classification_clearance": ["INTERNAL"]
+        "tenant_id": [
+          "tenant-dev"
+        ],
+        "classification_clearance": [
+          "INTERNAL"
+        ]
       }
     },
     {
       "username": "service-account-emg-svc-audit",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-audit",
-      "realmRoles": ["service-account", "svc-audit"],
+      "realmRoles": [
+        "service-account",
+        "svc-audit"
+      ],
       "attributes": {
-        "tenant_id": ["tenant-dev"],
-        "classification_clearance": ["SECRET"]
+        "tenant_id": [
+          "tenant-dev"
+        ],
+        "classification_clearance": [
+          "SECRET"
+        ]
       }
     },
     {
       "username": "service-account-emg-svc-knowledge-graph-writer",
       "enabled": true,
       "serviceAccountClientId": "emg-svc-knowledge-graph-writer",
-      "realmRoles": ["service-account", "svc-knowledge-graph-writer"],
+      "realmRoles": [
+        "service-account",
+        "svc-knowledge-graph-writer"
+      ],
       "attributes": {
-        "tenant_id": ["tenant-dev"],
-        "classification_clearance": ["SECRET"]
+        "tenant_id": [
+          "tenant-dev"
+        ],
+        "classification_clearance": [
+          "SECRET"
+        ]
       }
     }
   ]
