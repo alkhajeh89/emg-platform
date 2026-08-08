@@ -1,0 +1,10 @@
+# Required PostgreSQL settings for RC-1B. Operators must substitute paths for
+# their installation; no provider-specific transport is assumed.
+wal_level = replica
+archive_mode = on
+archive_command = '/opt/emg/tools/backup/archive-wal.sh "%p" "%f"'
+archive_timeout = 300
+max_wal_senders = 3
+wal_compression = on
+# Enable data checksums at initdb time (or offline with pg_checksums); the
+# data_checksums server parameter is read-only.

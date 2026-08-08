@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "backupId": "20250101T010000Z",
+  "createdAt": "2025-01-01T01:00:00Z",
+  "postgres": {"majorVersion": 16, "startLsn": "0/1000000", "stopLsn": "0/2000000", "startWal": "000000010000000000000001", "stopWal": "000000010000000000000002", "database": "emg"},
+  "encryption": {"required": true, "keyReference": "example-key-2025"},
+  "artifacts": [
+    {"role": "base", "path": "base.tar.gz.enc", "size": 1, "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "encrypted": true},
+    {"role": "wal", "path": "pg_wal.tar.gz.enc", "size": 1, "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "encrypted": true}
+  ],
+  "tablespaces": [],
+  "evidenceAnchors": {
+    "audit": {"rowCount": 0, "terminalSequence": null, "terminalHash": null},
+    "custody": {"rowCount": 0, "terminalSequence": null, "terminalHash": null}
+  }
+}

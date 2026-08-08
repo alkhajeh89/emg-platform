@@ -1,0 +1,28 @@
+apiVersion: emg.io/v1
+kind: PostgreSQLBackupPolicy
+metadata:
+  name: production
+spec:
+  repository:
+    type: filesystem
+    path: /var/lib/emg-backup
+  schedule:
+    full: "0 1 * * *"
+    walArchive: continuous
+  retention:
+    fullBackups: 35
+    minimumDays: 35
+  encryption:
+    required: true
+    command: /opt/emg/backup/encrypt-wrapper
+    decryptCommand: /opt/emg/backup/decrypt-wrapper
+    manifestSignCommand: /opt/emg/backup/sign-manifest-wrapper
+    manifestVerifyCommand: /opt/emg/backup/verify-manifest-wrapper
+    keySource: external-secret-file
+  integrity:
+    algorithm: sha256
+    verifyAfterBackup: true
+    rehearseRestoreEveryDays: 90
+  objectives:
+    rpoMinutes: 5
+    rtoMinutes: 240
