@@ -21,5 +21,5 @@ class ProjectionError(PermanentDeliveryError):
     """Immutable ledger content cannot be projected without fabrication."""
 
 
-class ShutdownRequested(RetryableDeliveryError):
-    """Shutdown interrupted a multi-intent delivery before acknowledgement."""
+class ShutdownRequested(ProjectorError):
+    """The drain deadline interrupted delivery; preserve the claim for lease recovery."""

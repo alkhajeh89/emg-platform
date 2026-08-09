@@ -15,7 +15,7 @@ from emg_persistence.postgres import PostgresMutationRepository, TransactionProv
 
 from .config import Settings, TenantCredential
 from .delivery import AuditDeliveryClient
-from .errors import PermanentDeliveryError, RetryableDeliveryError
+from .errors import PermanentDeliveryError, RetryableDeliveryError, ShutdownRequested
 from .projection import project_audit_events
 from .telemetry import ProjectorObserver, StructuredProjectorObserver
 
@@ -102,9 +102,16 @@ class AuditProjectorWorker:
             credential.tenant_id: credential for credential in settings.tenant_credentials
         }
         self._last_telemetry = float("-inf")
+        self._drain_deadline: float | None = None
 
     def stop(self) -> None:
+        if not self._stop.is_set():
+            self._drain_deadline = self._monotonic() + self._settings.drain_timeout_seconds
         self._stop.set()
+
+    def _drain_deadline_reached(self) -> bool:
+        deadline = self._drain_deadline
+        return self._stop.is_set() and deadline is not None and self._monotonic() >= deadline
 
     def run(self) -> None:
         while not self._stop.is_set():
@@ -154,8 +161,10 @@ class AuditProjectorWorker:
             self._delivery.deliver(
                 events,
                 credential=credential,
-                shutdown_requested=self._stop.is_set,
+                shutdown_requested=self._drain_deadline_reached,
             )
+            if self._drain_deadline_reached():
+                raise ShutdownRequested("projector drain deadline reached before acknowledgement")
             with self._transactions.transaction() as connection:
                 self._repository_factory(connection).complete_dispatch(
                     tenant_id=item.tenant_id,
@@ -164,6 +173,15 @@ class AuditProjectorWorker:
                     worker=self._settings.worker_id,
                 )
             self._observe_delivery(item, started=started, outcome="success")
+        except ShutdownRequested as exc:
+            # D-51: termination is not a delivery failure. Leave the active
+            # claim untouched so its existing lease is the sole recovery path.
+            self._observe_delivery(
+                item,
+                started=started,
+                outcome="lease_recovery",
+                failure_class=type(exc).__name__,
+            )
         except PermanentDeliveryError as exc:
             self._exhaust(item)
             self._observe_delivery(
