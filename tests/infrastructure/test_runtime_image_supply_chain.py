@@ -163,6 +163,22 @@ def test_workflow_builds_once_and_scan_blocks_publication() -> None:
     assert "^sha256:[0-9a-f]{64}$" in publish["run"]
 
 
+def test_audit_projector_image_is_smoked_before_scan_and_publication() -> None:
+    workflow = _workflow()
+    build_steps = workflow["jobs"]["build-scan"]["steps"]
+    names = [step["name"] for step in build_steps]
+    smoke = next(
+        step
+        for step in build_steps
+        if step["name"] == "Smoke audit-projector runtime and provisioning entrypoints"
+    )
+
+    assert names.index(smoke["name"]) < names.index("Mandatory Trivy security gate")
+    assert smoke["if"] == "matrix.service == 'audit-projector'"
+    assert "smoke_audit_projector_image.py" in smoke["run"]
+    assert '"emg-release/audit-projector:${GITHUB_SHA}" python /smoke.py' in smoke["run"]
+
+
 def test_workflow_signs_verifies_attests_and_records_every_matrix_digest() -> None:
     workflow = _workflow()
     release = workflow["jobs"]["publish-sign-attest"]

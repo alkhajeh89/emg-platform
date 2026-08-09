@@ -9,6 +9,11 @@ COPY libs/python/emg-common-types /build/libs/python/emg-common-types
 COPY libs/python/emg-errors /build/libs/python/emg-errors
 COPY libs/python/emg-telemetry /build/libs/python/emg-telemetry
 COPY libs/python/emg-audit-client /build/libs/python/emg-audit-client
+COPY libs/python/emg-ontology /build/libs/python/emg-ontology
+COPY libs/python/emg-knowledge-lifecycle /build/libs/python/emg-knowledge-lifecycle
+COPY libs/python/emg-knowledge-pipeline /build/libs/python/emg-knowledge-pipeline
+COPY libs/python/emg-semantic-layer /build/libs/python/emg-semantic-layer
+COPY libs/python/emg-trust-scoring /build/libs/python/emg-trust-scoring
 COPY libs/python/emg-memory-graph /build/libs/python/emg-memory-graph
 COPY libs/python/emg-platform-core /build/libs/python/emg-platform-core
 COPY libs/python/emg-persistence /build/libs/python/emg-persistence
@@ -19,6 +24,11 @@ RUN pip install --no-deps --no-build-isolation \
     /build/libs/python/emg-errors \
     /build/libs/python/emg-telemetry \
     /build/libs/python/emg-audit-client \
+    /build/libs/python/emg-ontology \
+    /build/libs/python/emg-knowledge-lifecycle \
+    /build/libs/python/emg-knowledge-pipeline \
+    /build/libs/python/emg-semantic-layer \
+    /build/libs/python/emg-trust-scoring \
     /build/libs/python/emg-memory-graph \
     /build/libs/python/emg-platform-core \
     /build/libs/python/emg-persistence \

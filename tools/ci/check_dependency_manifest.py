@@ -1,9 +1,12 @@
+import re
 import sys
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).parents[2]
+_COPY_PACKAGE = re.compile(r"^COPY\s+libs/python/(emg-[A-Za-z0-9-]+)\s", re.MULTILINE)
+_INSTALL_PACKAGE = re.compile(r"/build/libs/python/(emg-[A-Za-z0-9-]+)(?:\s|\\|$)")
 
 
 def load_manifest(root: Path = ROOT) -> dict:
@@ -47,7 +50,34 @@ def check_production_service_coverage(manifest: dict, root: Path = ROOT) -> bool
     return success
 
 
-def check_component(name: str, component: dict, root: Path = ROOT) -> bool:
+def internal_dependency_closure(manifest: dict, component_name: str) -> set[str]:
+    """Resolve the recursively required internal distributions for a component.
+
+    Manifest entries continue to describe direct dependencies. This resolver is
+    used only at the production-image boundary, where ``pip --no-deps`` requires
+    every transitive internal distribution to be copied and installed explicitly.
+    """
+    components = manifest.get("services", {})
+    pending = list(components[component_name].get("dependencies", []))
+    closure: set[str] = set()
+    while pending:
+        dependency = pending.pop()
+        if not dependency.startswith("emg-") or dependency in closure:
+            continue
+        closure.add(dependency)
+        dependency_name = dependency.removeprefix("emg-")
+        dependency_component = components.get(dependency_name)
+        if dependency_component is None:
+            raise ValueError(
+                f"{component_name}: internal dependency {dependency} is not registered"
+            )
+        pending.extend(dependency_component.get("dependencies", []))
+    return closure
+
+
+def check_component(
+    name: str, component: dict, root: Path = ROOT, manifest: dict | None = None
+) -> bool:
 
     # Libraries do not have Dockerfiles
     if component.get("type") == "library":
@@ -73,13 +103,27 @@ def check_component(name: str, component: dict, root: Path = ROOT) -> bool:
 
     success = True
 
-    for dependency in component.get("dependencies", []):
+    if component.get("type") == "deployment-tool":
+        for dependency in component.get("dependencies", []):
+            if f"libs/python/{dependency}" not in content:
+                print(f"❌ {name}: missing {dependency}")
+                success = False
+        return success
 
-        expected = f"libs/python/{dependency}"
+    required = (
+        internal_dependency_closure(manifest, name)
+        if manifest is not None
+        else set(component.get("dependencies", []))
+    )
+    copied = set(_COPY_PACKAGE.findall(content))
+    installed = set(_INSTALL_PACKAGE.findall(content))
 
-        if expected not in content:
-            print(f"❌ {name}: missing {dependency}")
-            success = False
+    for dependency in sorted(required - copied):
+        print(f"❌ {name}: Dockerfile does not copy {dependency}")
+        success = False
+    for dependency in sorted(required - installed):
+        print(f"❌ {name}: Dockerfile does not install {dependency}")
+        success = False
 
     return success
 
@@ -96,7 +140,7 @@ def main() -> None:
 
     for name, component in manifest["services"].items():
 
-        if not check_component(name, component):
+        if not check_component(name, component, manifest=manifest):
             failed = True
 
     if failed:
