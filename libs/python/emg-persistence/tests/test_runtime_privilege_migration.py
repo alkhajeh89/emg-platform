@@ -29,10 +29,11 @@ def test_runtime_privilege_migrations_are_discovered_in_order() -> None:
         default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
     )
 
-    assert [(migration.version, migration.name) for migration in migrations[-3:]] == [
+    assert [(migration.version, migration.name) for migration in migrations[-4:]] == [
         (5, "runtime_least_privilege"),
         (6, "runtime_column_privileges"),
         (7, "audit_projector_privileges"),
+        (8, "evidence_ledger_hardening"),
     ]
 
 
