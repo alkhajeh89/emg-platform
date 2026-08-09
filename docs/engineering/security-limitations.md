@@ -236,20 +236,24 @@ boundary.
   events are not lost during a brief audit outage; a real message queue /
   streaming pipeline and cross-node durability are later infrastructure
   (EPIC-11/12).
-- **First-tier persistence only** (Sprint 6). Single-node PostgreSQL, plain
-  idempotent init SQL (no Alembic — schema-migration tooling is a documented
-  later production-hardening item), no table partitioning, retention, or
-  HA/DR. Retention-*ready* fields (timestamp, classification) exist; retention
-  *enforcement* is later.
-- **Audit forwarding is disabled by default** (Sprint 6). To preserve Sprint
-  2-5 behavior exactly, `EMG_IDENTITY_AUDIT_FORWARDING_ENABLED` defaults to
-  False (telemetry-only); enabling it activates the durable-delivery path once
-  the audit service is present. The plumbing is fully tested with a fake
-  forwarder regardless.
-- **Minimal query only, no human reporting surface** (Sprint 6). Only the
-  US-04 query (by actor, time range, correlation id) is implemented, for
-  `svc-audit` service principals. The richer human compliance-reporting
-  interface is FEAT-04-4, a later Audit sprint.
+- **Audit persistence is migration-governed, but the RC1 topology remains
+  single-replica.** ADR-041 provides the separate `emg_audit_migrator`-owned
+  Audit migration stream and `audit_schema_migrations` history; local seed SQL
+  is not production schema authority. ADR-039 provides physical backup,
+  retention-safety, WAL/PITR, restore, and evidence-anchor tooling. Production
+  scheduling, encryption/KMS custody, remote failure-domain storage, and a
+  witnessed recovery rehearsal remain environment prerequisites. HA, table
+  partitioning, and automated retention execution are not implemented in RC1.
+- **Identity Audit forwarding is enabled by the production deployment.** The
+  application default for `EMG_IDENTITY_AUDIT_FORWARDING_ENABLED` remains
+  `False` so development and tests do not silently require an Audit Service;
+  the production manifest explicitly sets it to `true` and mounts persistent
+  spool storage. Transient delivery failures are durably spooled and surfaced
+  through readiness.
+- **Audit query and bounded reporting are implemented; no human reporting UI
+  exists.** FEAT-04-4 provides classification-aware Audit and custody filters,
+  keyset pagination, and bounded JSON/CSV export for authenticated service
+  principals. A human compliance-reporting application remains outside RC1.
 - **Provenance is producer-asserted** (Sprint 7, FEAT-04-2 — trust-model note,
   not a gap). A producer supplies its own provenance (source system, originating
   actor, transformation history, parent references, evidence origin/collection
@@ -270,60 +274,43 @@ boundary.
   approach; **no PKI / asymmetric signatures** were introduced (that would be a
   new architectural element requiring an ADR). External cryptographic anchoring
   and signature-based non-repudiation are later hardening.
-- **Classification on reads is a *filter*, not clearance-based access
-  enforcement** (Sprint 8, FEAT-04-4 — explicit scope boundary, not a gap).
-  FEAT-04-4 lets an `svc-audit` reader *filter* audit and custody records by
-  classification (and by module / action / outcome / source system /
-  provenance-presence) and export them as JSON/CSV. It does **not** yet restrict
-  *which* classifications a given principal may read: every audit/custody read is
-  still gated only by the `svc-audit` service role, and a holder of that role can
-  read and export records at any classification. Clearance-based
-  classification-aware read *authorization* — a human compliance-officer/auditor
-  principal whose clearance bounds the classifications returned, enforced via the
-  policy engine — is a deliberate **follow-up**. It was intentionally not built
-  this sprint because it needs a human reader role (none exists in
-  `ROLE_CATALOG`; inventing one was out of scope) and an authorization-model
-  decision (likely a new ADR). Until then, treat the audit read plane as a
-  uniformly-trusted `svc-audit` surface. This is the single most important
-  boundary a reviewer of FEAT-04-4 should note.
+- **Audit reads enforce tenant and clearance boundaries for service
+  principals.** ADR-034 assigns the tenant from the verified token, and the
+  Audit PEP computes the allowed classifications from the principal's
+  `classification_clearance`; query, page, export, and integrity paths do not
+  accept a caller-supplied authority override. A human compliance-officer role
+  and human reporting surface remain post-v1 work rather than an RC1 control.
 - **Report export is bounded, not streamed** (Sprint 8, FEAT-04-4). JSON/CSV
   export walks the filtered result set by keyset pagination (one store query per
   page, never per row — no N+1) and is capped at `EXPORT_MAX_ROWS` (100k). A
   result set larger than the cap is truncated rather than streamed; true
   streaming/chunked export for very large ranges is later hardening.
 
-## Known technical debt (Sprint 6/7/8 — must be resolved for production)
+## Remaining technical debt and RC1 resilience closure
 
-These items are safe for the current scope (in-memory store + identity
-forwarding disabled by default) but must be resolved before the PostgreSQL
-path and real audit ingestion are enabled in a shared or production
-environment. **Both were again carried forward unchanged in Sprint 8 (FEAT-04-4)
-by explicit decision — FEAT-04-4 adds only read/query/report paths and
-index-only SQL, so neither `emg-service-auth` consolidation nor connection
-pooling was triggered by a proven Sprint-8 defect.** They should be resolved
-before production load.
+The duplicated validator remains maintainability debt. The former PostgreSQL
+connection-lifecycle defect is closed and is recorded here so this historical
+limitations document does not misstate current production behavior.
 
 - **Duplicated service-token validator.** `services/audit`'s
   `ServiceTokenValidator` (`authn.py`) is a deliberate copy of
   `services/identity`'s Sprint 3 validator, to avoid a service→service import.
-  The two can drift. Production use requires consolidating them into a single
-  shared, independently-validated library (e.g. an `emg-service-auth`
-  package). Both validators' negative paths (expired / wrong-audience /
+  The two can drift. Consolidating them into a single shared,
+  independently-validated library (for example, an `emg-service-auth`
+  package) is a post-v1 maintainability improvement. Both validators' negative paths (expired / wrong-audience /
   wrong-issuer / tampered-signature / unrecognized-client / insufficient-role)
   are covered by tests on each side, but the duplication itself remains debt.
   Sprint 7 added custody authorization (`svc-audit`-only) reusing the same local
   validator; consolidation was still intentionally **not** done, to avoid
   expanding scope.
-- **PostgreSQL connection pooling / async-safe DB access.** The audit service
-  holds a single `psycopg` connection per process and the ingest/query/
-  integrity handlers (now including the Sprint 7 custody handlers) are
-  `async def` invoking synchronous, blocking DB calls, which serialize on and
-  block the event loop. Production hardening requires a connection pool
-  (`psycopg_pool`) and offloading DB I/O (e.g. `run_in_executor`) or synchronous
-  handlers. Correctness under concurrency is already ensured (transaction-level
-  advisory locks — a distinct lock per chain — + `UNIQUE` sequence constraints +
-  bounded retry), so this is a throughput/availability hardening item, not a
-  correctness defect.
+- **PostgreSQL connection resilience is implemented.** The Audit Service owns
+  a bounded `psycopg_pool.ConnectionPool`, acquires a connection per operation,
+  rolls back before reuse, replaces failed `OperationalError` connections, and
+  bounds acquisition, connect, statement, lock, and shutdown timeouts. Its
+  synchronous request handlers run through Starlette's established threadpool;
+  asynchronous startup, readiness, and shutdown explicitly offload blocking
+  pool operations. Append idempotency, advisory locks, and transaction
+  boundaries remain unchanged.
 
 ## Controls and limitations (Sprint 9, FEAT-05-1 Core Ontology)
 
