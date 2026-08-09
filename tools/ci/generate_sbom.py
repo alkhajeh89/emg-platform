@@ -10,7 +10,10 @@ import re
 import uuid
 from pathlib import Path
 
-import tomli
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on the supported Python 3.10 floor
+    import tomli as tomllib
 
 _PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^\\s\\\\]+)")
 
@@ -37,10 +40,11 @@ def generate(
     if repository_root is not None:
         manifests = sorted(repository_root.glob("libs/python/*/pyproject.toml"))
         manifests += sorted(repository_root.glob("services/*/pyproject.toml"))
+        manifests += sorted(repository_root.glob("apps/*/pyproject.toml"))
         for manifest in manifests:
             if not manifest.read_text(encoding="utf-8").strip():
                 continue
-            project = tomli.loads(manifest.read_text(encoding="utf-8")).get("project", {})
+            project = tomllib.loads(manifest.read_text(encoding="utf-8")).get("project", {})
             name = project.get("name")
             component_version = project.get("version")
             if isinstance(name, str) and isinstance(component_version, str):
