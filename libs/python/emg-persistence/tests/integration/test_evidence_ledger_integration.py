@@ -26,6 +26,7 @@ from emg_persistence.postgres.evidence_repository import (
 )
 from emg_platform_core import TenantId
 from psycopg import Connection
+from psycopg.errors import CheckViolation, NotNullViolation, RaiseException
 
 _PG_DSN = os.environ.get("EMG_PERSISTENCE_TEST_POSTGRES_DSN")
 requires_postgres = pytest.mark.skipif(
@@ -48,6 +49,43 @@ def _evidence(locator: str, *, description: str | None = None) -> EvidenceRef:
         correlation_id=f"correlation-{locator}",
         metadata=Metadata.from_mapping({"classification": "internal"}),
     )
+
+
+def _insert_raw_entry(
+    connection: Connection[Any],
+    *,
+    tenant_id: str,
+    seq: int,
+    prev_hash: str | None,
+    entry_hash: str,
+) -> None:
+    with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO evidence_ledger (tenant_id, seq, evidence_id, prev_hash, "
+            "entry_hash, source, locator, source_principal, captured_at, payload) "
+            "VALUES (%s, %s, %s, %s, %s, 'pdf', %s, 'svc-evidence', %s, '{}'::jsonb)",
+            (
+                tenant_id,
+                seq,
+                f"evidence-{tenant_id}-{seq}",
+                prev_hash,
+                entry_hash,
+                f"{tenant_id}-{seq}.pdf",
+                CAPTURED_AT,
+            ),
+        )
+
+
+def _tamper_out_of_band(
+    connection: Connection[Any], statement: str, parameters: tuple[object, ...]
+) -> None:
+    """Model a privileged actor bypassing the trigger, then restore it."""
+    with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE evidence_ledger DISABLE TRIGGER evidence_ledger_append_only")
+        try:
+            cursor.execute(statement, parameters)
+        finally:
+            cursor.execute("ALTER TABLE evidence_ledger ENABLE TRIGGER evidence_ledger_append_only")
 
 
 @pytest.fixture
@@ -106,6 +144,117 @@ def test_append_duplicate_capture_read_and_tenant_isolation(
     assert repository.verify_range(TENANT_A, start_seq=1, end_seq=100).valid is True
     assert repository.verify_range(TENANT_A, start_seq=2, end_seq=2).valid is True
     assert repository.verify_range(TENANT_B, start_seq=1, end_seq=100).valid is True
+
+
+@requires_postgres
+def test_database_accepts_canonical_genesis_and_chained_repository_appends(
+    connection: Connection[Any],
+) -> None:
+    repository = PostgresEvidenceLedgerRepository(connection)
+
+    first = repository.append(TENANT_A, _evidence("canonical-genesis.pdf"))
+    second = repository.append(TENANT_A, _evidence("canonical-chain.pdf"))
+
+    assert first.seq == 1
+    assert first.prev_hash == GENESIS_PREV_HASH
+    assert second.seq == 2
+    assert second.prev_hash == first.entry_hash
+    assert repository.verify_range(TENANT_A, start_seq=1, end_seq=2).valid is True
+
+
+@requires_postgres
+@pytest.mark.parametrize("invalid_seq", [0, -1])
+def test_database_rejects_non_positive_sequence(
+    connection: Connection[Any], invalid_seq: int
+) -> None:
+    with pytest.raises(CheckViolation, match="ck_evidence_ledger_seq_positive"):
+        _insert_raw_entry(
+            connection,
+            tenant_id=f"invalid-seq-{invalid_seq}",
+            seq=invalid_seq,
+            prev_hash=GENESIS_PREV_HASH,
+            entry_hash="a" * 64,
+        )
+
+
+@requires_postgres
+@pytest.mark.parametrize(
+    "invalid_prev_hash",
+    ["", "a" * 63, "A" * 64, "g" * 64, "a" * 64 + "\n"],
+)
+def test_database_rejects_malformed_prev_hash(
+    connection: Connection[Any], invalid_prev_hash: str
+) -> None:
+    with pytest.raises(CheckViolation, match="ck_evidence_ledger_prev_hash_format"):
+        _insert_raw_entry(
+            connection,
+            tenant_id=f"invalid-prev-{len(invalid_prev_hash)}-{invalid_prev_hash[:1]}",
+            seq=2,
+            prev_hash=invalid_prev_hash,
+            entry_hash="a" * 64,
+        )
+
+
+@requires_postgres
+def test_database_rejects_null_non_genesis_prev_hash(connection: Connection[Any]) -> None:
+    with pytest.raises(NotNullViolation, match="prev_hash"):
+        _insert_raw_entry(
+            connection,
+            tenant_id="null-prev",
+            seq=2,
+            prev_hash=None,
+            entry_hash="a" * 64,
+        )
+
+
+@requires_postgres
+def test_database_rejects_noncanonical_genesis_prev_hash(connection: Connection[Any]) -> None:
+    with pytest.raises(CheckViolation, match="ck_evidence_ledger_genesis_prev_hash"):
+        _insert_raw_entry(
+            connection,
+            tenant_id="invalid-genesis",
+            seq=1,
+            prev_hash="a" * 64,
+            entry_hash="b" * 64,
+        )
+
+
+@requires_postgres
+@pytest.mark.parametrize(
+    "invalid_entry_hash",
+    ["", "a" * 63, "A" * 64, "g" * 64, "a" * 64 + "\n"],
+)
+def test_database_rejects_malformed_entry_hash(
+    connection: Connection[Any], invalid_entry_hash: str
+) -> None:
+    with pytest.raises(CheckViolation, match="ck_evidence_ledger_entry_hash_format"):
+        _insert_raw_entry(
+            connection,
+            tenant_id=f"invalid-entry-{len(invalid_entry_hash)}-{invalid_entry_hash[:1]}",
+            seq=1,
+            prev_hash=GENESIS_PREV_HASH,
+            entry_hash=invalid_entry_hash,
+        )
+
+
+@requires_postgres
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE evidence_ledger SET locator = 'forbidden' " "WHERE tenant_id = %s AND seq = 1",
+        "DELETE FROM evidence_ledger WHERE tenant_id = %s AND seq = 1",
+    ],
+)
+def test_database_rejects_update_and_delete(connection: Connection[Any], statement: str) -> None:
+    repository = PostgresEvidenceLedgerRepository(connection)
+    repository.append(TENANT_A, _evidence("append-only.pdf"))
+
+    with (
+        pytest.raises(RaiseException, match="evidence_ledger is append-only"),
+        connection.transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(statement, (TENANT_A.value,))
 
 
 @requires_postgres
@@ -193,11 +342,11 @@ def test_corrupt_entry_fails_closed_but_historical_break_does_not_block_append(
     for index in range(1, 4):
         repository.append(TENANT_A, _evidence(f"corrupt-{index}.pdf", description="canary"))
 
-    with connection.transaction(), connection.cursor() as cursor:
-        cursor.execute(
-            "UPDATE evidence_ledger SET locator = 'tampered' " "WHERE tenant_id = %s AND seq = 2",
-            (TENANT_A.value,),
-        )
+    _tamper_out_of_band(
+        connection,
+        "UPDATE evidence_ledger SET locator = 'tampered' WHERE tenant_id = %s AND seq = 2",
+        (TENANT_A.value,),
+    )
 
     with pytest.raises(EvidenceLedgerIntegrityError, match="evidence-tenant-a.*seq 2") as caught:
         repository.get(TENANT_A, 2)
@@ -231,12 +380,12 @@ def test_range_verification_detects_validly_rehashed_broken_link(
         evidence=second.evidence,
     )
 
-    with connection.transaction(), connection.cursor() as cursor:
-        cursor.execute(
-            "UPDATE evidence_ledger SET prev_hash = %s, entry_hash = %s "
-            "WHERE tenant_id = %s AND seq = %s",
-            (wrong_prev_hash, rehashed, TENANT_A.value, second.seq),
-        )
+    _tamper_out_of_band(
+        connection,
+        "UPDATE evidence_ledger SET prev_hash = %s, entry_hash = %s "
+        "WHERE tenant_id = %s AND seq = %s",
+        (wrong_prev_hash, rehashed, TENANT_A.value, second.seq),
+    )
 
     assert repository.get(TENANT_A, 2) is not None
     report = repository.verify_range(TENANT_A, start_seq=1, end_seq=3)
@@ -255,11 +404,11 @@ def test_range_verification_detects_sequence_gap(
     for index in range(1, 4):
         repository.append(TENANT_A, _evidence(f"gap-{index}.pdf"))
 
-    with connection.transaction(), connection.cursor() as cursor:
-        cursor.execute(
-            "DELETE FROM evidence_ledger WHERE tenant_id = %s AND seq = 2",
-            (TENANT_A.value,),
-        )
+    _tamper_out_of_band(
+        connection,
+        "DELETE FROM evidence_ledger WHERE tenant_id = %s AND seq = 2",
+        (TENANT_A.value,),
+    )
 
     report = repository.verify_range(TENANT_A, start_seq=1, end_seq=3)
 

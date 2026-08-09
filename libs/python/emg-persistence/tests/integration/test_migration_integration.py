@@ -10,13 +10,14 @@ packaged baseline migrations.
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from emg_persistence import PersistenceSettings
-from emg_persistence.migrate import migration_status, run_migrations
+from emg_persistence.migrate import default_migrations_dir, migration_status, run_migrations
 from emg_persistence.migrations import (
     ChecksumMismatchError,
     DirtyMigrationError,
@@ -113,7 +114,7 @@ def neo4j_executor() -> Iterator[object]:  # pragma: no cover - runs only with a
 @requires_postgres
 def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
     applied = run_migrations(pg_executor)
-    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"
@@ -121,6 +122,7 @@ def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # ty
     assert applied[4].name == "runtime_least_privilege"
     assert applied[5].name == "runtime_column_privileges"
     assert applied[6].name == "audit_projector_privileges"
+    assert applied[7].name == "evidence_ledger_hardening"
     assert run_migrations(pg_executor) == ()
     assert migration_status(pg_executor).is_up_to_date is True
 
@@ -145,6 +147,74 @@ def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # ty
             "current_schema() || '.mutation_idempotency', 'DELETE')"
         )
         assert cursor.fetchone() == (True, False, True)
+        cursor.execute(
+            "SELECT is_nullable FROM information_schema.columns "
+            "WHERE table_schema = current_schema() "
+            "AND table_name = 'evidence_ledger' AND column_name = 'prev_hash'"
+        )
+        assert cursor.fetchone() == ("NO",)
+        cursor.execute(
+            "SELECT conname FROM pg_constraint "
+            "WHERE conrelid = 'evidence_ledger'::regclass "
+            "AND conname LIKE 'ck_evidence_ledger_%' ORDER BY conname"
+        )
+        assert [row[0] for row in cursor.fetchall()] == [
+            "ck_evidence_ledger_entry_hash_format",
+            "ck_evidence_ledger_genesis_prev_hash",
+            "ck_evidence_ledger_prev_hash_format",
+            "ck_evidence_ledger_seq_positive",
+        ]
+        cursor.execute(
+            "SELECT tgname FROM pg_trigger WHERE tgrelid = 'evidence_ledger'::regclass "
+            "AND NOT tgisinternal"
+        )
+        assert cursor.fetchone() == ("evidence_ledger_append_only",)
+        cursor.execute(
+            "SELECT "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.evidence_ledger', 'SELECT'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.evidence_ledger', 'INSERT'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.evidence_ledger', 'UPDATE'), "
+            "has_table_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.evidence_ledger', 'DELETE'), "
+            "has_function_privilege('emg_knowledge_graph_app', "
+            "current_schema() || '.reject_evidence_ledger_change()', 'EXECUTE')"
+        )
+        assert cursor.fetchone() == (True, True, False, False, False)
+
+
+@requires_postgres
+def test_el10_migration_fails_closed_without_rewriting_invalid_history(
+    pg_executor, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
+    migrations = default_migrations_dir(MigrationKind.POSTGRES)
+    for migration in sorted(migrations.glob("V00[1-7]__*.sql")):
+        shutil.copy2(migration, tmp_path / migration.name)
+    run_migrations(pg_executor, tmp_path)
+
+    connection = pg_executor._connection
+    with connection.transaction(), connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO evidence_ledger (tenant_id, seq, evidence_id, prev_hash, "
+            "entry_hash, source, locator, source_principal, captured_at, payload) "
+            "VALUES ('invalid-history', 0, 'evidence-1', NULL, %s, 'pdf', "
+            "'invalid.pdf', 'svc-evidence', clock_timestamp(), '{}'::jsonb)",
+            ("a" * 64,),
+        )
+
+    hardening = migrations / "V008__evidence_ledger_hardening.sql"
+    shutil.copy2(hardening, tmp_path / hardening.name)
+    with pytest.raises(FailedMigrationError, match="evidence_ledger contains seq < 1"):
+        run_migrations(pg_executor, tmp_path)
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT seq, prev_hash, entry_hash FROM evidence_ledger "
+            "WHERE tenant_id = 'invalid-history'"
+        )
+        assert cursor.fetchone() == (0, None, "a" * 64)
 
 
 @requires_postgres
