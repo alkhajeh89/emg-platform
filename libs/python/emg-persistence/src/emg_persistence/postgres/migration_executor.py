@@ -12,6 +12,7 @@ are marked ``# pragma: no cover`` here because they cannot run without PostgreSQ
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -21,8 +22,15 @@ from ..migrations.model import AppliedMigration, Migration, MigrationKind
 if TYPE_CHECKING:
     from psycopg import Connection
 
-_HISTORY_DDL = """
-CREATE TABLE IF NOT EXISTS schema_migrations (
+_HISTORY_TABLE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+
+
+def _history_sql(history_table: str) -> tuple[str, str, str, str]:
+    if not _HISTORY_TABLE_PATTERN.fullmatch(history_table):
+        raise ValueError("PostgreSQL migration history table must be a simple identifier")
+    quoted = f'"{history_table}"'
+    history_ddl = f"""
+CREATE TABLE IF NOT EXISTS {quoted} (
     kind        text        NOT NULL,
     version     integer     NOT NULL,
     name        text        NOT NULL,
@@ -33,26 +41,38 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     PRIMARY KEY (kind, version)
 )
 """
-_SELECT_APPLIED = (
-    "SELECT version, name, checksum, applied_at, success, dirty "
-    "FROM schema_migrations WHERE kind = %(kind)s ORDER BY version"
-)
-_INSERT_SUCCESS = (
-    "INSERT INTO schema_migrations (kind, version, name, checksum, applied_at, success, dirty) "
-    "VALUES (%(kind)s, %(version)s, %(name)s, %(checksum)s, %(applied_at)s, true, false)"
-)
-_MARK_DIRTY = (
-    "INSERT INTO schema_migrations (kind, version, name, checksum, applied_at, success, dirty) "
-    "VALUES (%(kind)s, %(version)s, %(name)s, %(checksum)s, %(applied_at)s, false, true) "
-    "ON CONFLICT (kind, version) DO UPDATE SET success = false, dirty = true"
-)
+    select_applied = (
+        "SELECT version, name, checksum, applied_at, success, dirty "
+        f"FROM {quoted} WHERE kind = %(kind)s ORDER BY version"
+    )
+    insert_success = (
+        f"INSERT INTO {quoted} "
+        "(kind, version, name, checksum, applied_at, success, dirty) "
+        "VALUES (%(kind)s, %(version)s, %(name)s, %(checksum)s, %(applied_at)s, true, false)"
+    )
+    mark_dirty = (
+        f"INSERT INTO {quoted} "
+        "(kind, version, name, checksum, applied_at, success, dirty) "
+        "VALUES (%(kind)s, %(version)s, %(name)s, %(checksum)s, %(applied_at)s, false, true) "
+        "ON CONFLICT (kind, version) DO UPDATE SET success = false, dirty = true"
+    )
+    return history_ddl, select_applied, insert_success, mark_dirty
 
 
 class PostgresMigrationExecutor:
     """A :class:`MigrationExecutor` backed by a PostgreSQL connection."""
 
-    def __init__(self, connection: Connection[Any]) -> None:
+    def __init__(
+        self, connection: Connection[Any], *, history_table: str = "schema_migrations"
+    ) -> None:
         self._connection = connection
+        (
+            self._history_ddl,
+            self._select_applied,
+            self._insert_success,
+            self._mark_dirty_sql,
+        ) = _history_sql(history_table)
+        self._history_table = history_table
 
     @property
     def kind(self) -> MigrationKind:
@@ -60,12 +80,12 @@ class PostgresMigrationExecutor:
 
     def ensure_history(self) -> None:  # pragma: no cover - requires a live PostgreSQL
         with self._connection.cursor() as cur:
-            cur.execute(_HISTORY_DDL)
+            cur.execute(self._history_ddl)
         self._connection.commit()
 
     def fetch_applied(self) -> tuple[AppliedMigration, ...]:  # pragma: no cover - live DB
         with self._connection.cursor() as cur:
-            cur.execute(_SELECT_APPLIED, {"kind": MigrationKind.POSTGRES.value})
+            cur.execute(self._select_applied, {"kind": MigrationKind.POSTGRES.value})
             rows = cur.fetchall()
         # psycopg starts an implicit transaction for the SELECT above. End that
         # read-only scope so each subsequent ``apply()`` owns a real top-level
@@ -97,7 +117,7 @@ class PostgresMigrationExecutor:
         try:
             with self._connection.transaction(), self._connection.cursor() as cur:
                 cur.execute(migration.statements)
-                cur.execute(_INSERT_SUCCESS, params)
+                cur.execute(self._insert_success, params)
         except Exception as exc:
             self._mark_dirty(params)
             raise FailedMigrationError(
@@ -116,7 +136,7 @@ class PostgresMigrationExecutor:
     def _mark_dirty(self, params: dict[str, object]) -> None:  # pragma: no cover - live DB
         try:
             with self._connection.transaction(), self._connection.cursor() as cur:
-                cur.execute(_MARK_DIRTY, params)
+                cur.execute(self._mark_dirty_sql, params)
         except Exception:
             # Best-effort; the migration failure is already being raised.
             self._connection.rollback()

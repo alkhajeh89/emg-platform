@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: emg-audit}
+metadata:
+  name: emg-audit
+  annotations: {emg.platform/bootstrap-stage: "60-audit-service"}
 spec:
   replicas: 1
   strategy: {type: Recreate}
@@ -18,7 +20,7 @@ spec:
           envFrom: [{configMapRef: {name: emg-audit-config}}]
           env:
             - {name: EMG_AUDIT_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-secrets, key: postgres-dsn}}}
-            - {name: EMG_AUDIT_PROJECTOR_CLIENT_IDS, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: audit-client-ids}}}
+            - {name: EMG_AUDIT_PROJECTOR_IDENTITY_INVENTORY_JSON, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: identity-inventory-json}}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: "1", memory: 512Mi}}
           volumeMounts: [{name: tmp, mountPath: /tmp}]

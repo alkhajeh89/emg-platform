@@ -23,6 +23,36 @@ Before deployment, the platform operator must:
 6. Add environment-specific egress NetworkPolicies or CNI policy for each
    approved external dependency.
 
+## ADR-041 ordered provisioning contract
+
+Kubernetes does not infer dependencies between Jobs and Deployments. The
+operator/CD system must execute these stages in order and wait for each Job to
+complete successfully before continuing:
+
+1. Apply the ExternalSecret resources and wait for the bootstrap, migration,
+   Keycloak, inventory, and runtime references required by the Jobs to exist.
+   This is part of the external-infrastructure-prerequisite stage; it does not
+   make workloads deployable.
+2. Run `emg-database-bootstrap` (`10-database-roles`).
+3. Run both `emg-audit-migration` and `emg-knowledge-graph-migration`
+   (`20-postgresql-migrations`) after database bootstrap succeeds.
+4. Run `emg-keycloak-provision` (`30-keycloak-projector-clients`).
+5. Confirm External Secrets has synchronized the final workload material.
+6. Run `emg-provisioning-validate` (`50-consistency-validation`). Both its
+   database and identity containers must succeed.
+7. Roll out `emg-audit` (`60-audit-service`) and wait for readiness.
+8. Roll out `emg-audit-projector` (`70-audit-projector`).
+
+Run the repository preflight before finalization:
+
+```sh
+.venv/bin/python tools/ci/validate_production_provisioning.py
+```
+
+The `emg.platform/bootstrap-stage` annotations are machine-checkable ordering
+metadata, not a claim that `kubectl apply` enforces the sequence. A Kustomize
+render or readiness probe never substitutes for completed provisioning.
+
 ## Network boundary
 
 Portable Kubernetes NetworkPolicy enforces default-deny ingress and egress for
@@ -40,8 +70,12 @@ fail closed because their mandatory dependencies are unreachable.
 
 The checked-in `ExternalSecret` resources contain remote keys only. Kubernetes
 Secrets are created by the operator; absent Secrets prevent container startup.
-The Knowledge Graph migration credential is mounted only in the migration Job.
-The Keycloak administrator credential is mounted only in the provisioning Job.
+The database bootstrap administrator credential is mounted only in the
+database-bootstrap Job. Audit and Knowledge Graph migration credentials are
+mounted only in migration/validation Jobs. The Keycloak administrator
+credential is mounted only in provisioning/validation Jobs. Audit and
+projector workloads receive the same non-secret identity inventory; only the
+projector receives the secret-bearing tenant credential mapping.
 
 ## Runtime limitations
 

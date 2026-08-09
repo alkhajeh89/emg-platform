@@ -30,6 +30,12 @@ def default_migrations_dir(kind: MigrationKind) -> Path:
     return _MIGRATIONS_ROOT / _SUBDIR[kind]
 
 
+def audit_migrations_dir() -> Path:
+    """Return the packaged ADR-041 Audit PostgreSQL migration stream."""
+
+    return _MIGRATIONS_ROOT / "audit_postgres"
+
+
 def run_migrations(
     executor: MigrationExecutor, migrations_dir: Path | None = None
 ) -> tuple[AppliedMigration, ...]:

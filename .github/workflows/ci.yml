@@ -68,6 +68,9 @@ jobs:
           kubectl kustomize infra/environments/production > /tmp/emg-production.yaml
           test -s /tmp/emg-production.yaml
 
+      - name: Validate ADR-041 production provisioning contract
+        run: .venv/bin/python tools/ci/validate_production_provisioning.py
+
       - name: Validate backup and recovery artifacts
         run: |
           bash -n tools/backup/*.sh

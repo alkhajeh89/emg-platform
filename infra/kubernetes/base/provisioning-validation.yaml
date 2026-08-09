@@ -1,20 +1,30 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: emg-keycloak-provision
-  annotations: {emg.platform/bootstrap-stage: "30-keycloak-projector-clients"}
+  name: emg-provisioning-validate
+  annotations: {emg.platform/bootstrap-stage: "50-consistency-validation"}
 spec:
-  backoffLimit: 3
+  backoffLimit: 1
   template:
-    metadata: {labels: {app.kubernetes.io/name: emg-keycloak-provision, app.kubernetes.io/part-of: emg-platform}}
+    metadata: {labels: {app.kubernetes.io/name: emg-provisioning-validate, app.kubernetes.io/part-of: emg-platform}}
     spec:
       restartPolicy: Never
       serviceAccountName: emg-keycloak-provision
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
-        - name: provision
-          image: registry.invalid/emg/keycloak-provisioner@sha256:0000000000000000000000000000000000000000000000000000000000000005
+        - name: database-validation
+          image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          command: [python, -m, emg_persistence.provisioning, validate-database]
+          env:
+            - {name: EMG_AUDIT_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: migration-postgres-dsn}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 250m, memory: 128Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+        - name: identity-validation
+          image: registry.invalid/emg/keycloak-provisioner@sha256:0000000000000000000000000000000000000000000000000000000000000006
+          args: [--validate-only]
           env:
             - {name: EMG_KEYCLOAK_BASE_URL, value: https://keycloak.production.example.invalid}
             - {name: EMG_KEYCLOAK_REALM, value: emg}

@@ -42,3 +42,21 @@ def test_production_accepts_required_transport_posture() -> None:
     )
 
     validate_runtime_configuration(configured)
+
+
+def test_production_rejects_credentials_divergent_from_inventory() -> None:
+    configured = settings(
+        deployment_environment="production",
+        keycloak_base_url="https://keycloak.example",
+        audit_service_base_url="https://audit.example",
+        postgres_dsn="postgresql://projector@postgres/emg?sslmode=verify-full",
+        identity_inventory_json=json.dumps(
+            {
+                "version": 1,
+                "projector_identities": [{"tenant_id": "tenant-b", "client_id": "projector-b"}],
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="exactly match"):
+        validate_runtime_configuration(configured)

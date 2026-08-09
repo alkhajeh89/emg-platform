@@ -28,6 +28,23 @@ def test_postgres_executor_kind_and_protocol() -> None:
     assert isinstance(ex, MigrationExecutor)
 
 
+def test_postgres_executor_supports_isolated_audit_history_namespace() -> None:
+    ex = PostgresMigrationExecutor(
+        connection=object(), history_table="audit_schema_migrations"  # type: ignore[arg-type]
+    )
+    assert ex._history_table == "audit_schema_migrations"
+    assert '"audit_schema_migrations"' in ex._history_ddl
+
+
+def test_postgres_executor_rejects_unsafe_history_identifier() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="simple identifier"):
+        PostgresMigrationExecutor(
+            connection=object(), history_table="schema_migrations; DROP TABLE audit_events"  # type: ignore[arg-type]
+        )
+
+
 def test_neo4j_executor_kind_and_protocol() -> None:
     ex = Neo4jMigrationExecutor(driver=object())  # type: ignore[arg-type]
     assert ex.kind is MigrationKind.NEO4J

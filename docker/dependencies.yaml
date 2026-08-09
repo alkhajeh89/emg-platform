@@ -65,7 +65,8 @@ services:
     path: tools
     dockerfile: tools/keycloak-provisioner.Dockerfile
 
-    dependencies: []
+    dependencies:
+      - emg-common-types
 
 
   persistence:
