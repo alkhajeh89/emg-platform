@@ -44,6 +44,7 @@ from emg_persistence.postgres import (
     PostgresRevisionRepository,
     connect,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_persistence.revisions import Revision
 from emg_persistence.store import PostgresNeo4jGraphStore
 from emg_platform_core import PrincipalRef, TenantId
@@ -153,7 +154,7 @@ def neo4j_settings() -> PersistenceSettings:  # pragma: no cover - live DB only
 def revision_repository(pg_settings: PersistenceSettings) -> Iterator[PostgresRevisionRepository]:
     # pragma: no cover - live DB only
     connection = connect(pg_settings)
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     try:
@@ -431,7 +432,7 @@ def test_store_read_falls_back_to_postgresql_when_neo4j_is_unreachable(
     pg_settings: PersistenceSettings,
 ) -> None:  # pragma: no cover - live DB only
     connection = connect(pg_settings)
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()

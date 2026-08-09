@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from _migr_helpers import FakeMigrationExecutor
 from emg_persistence.migrate import (
     audit_migrations_dir,
@@ -11,6 +14,8 @@ from emg_persistence.migrate import (
 )
 from emg_persistence.migrations import MigrationKind, discover_migrations
 from emg_persistence.provisioning import run_knowledge_graph_migrations
+
+ROOT = Path(__file__).resolve().parents[4]
 
 
 def test_default_dirs_contain_baseline() -> None:
@@ -85,3 +90,19 @@ def test_run_migrations_explicit_dir(tmp_path) -> None:  # type: ignore[no-untyp
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     applied = run_migrations(ex, tmp_path)
     assert [a.version for a in applied] == [1]
+
+
+def test_functional_kg_tests_do_not_bypass_canonical_orchestration() -> None:
+    stale_call = re.compile(r"run_migrations\(PostgresMigrationExecutor\([^)]*\)\)")
+    search_roots = (
+        ROOT / "services/knowledge-graph/tests",
+        ROOT / "services/audit-projector/tests/integration",
+        ROOT / "libs/python/emg-persistence/tests/integration",
+    )
+    stale_files = []
+    for search_root in search_roots:
+        for path in search_root.rglob("*.py"):
+            if stale_call.search(path.read_text(encoding="utf-8")):
+                stale_files.append(path.relative_to(ROOT).as_posix())
+
+    assert stale_files == []

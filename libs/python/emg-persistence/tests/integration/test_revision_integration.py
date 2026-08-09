@@ -51,16 +51,16 @@ def _rev(  # pragma: no cover - only used by DB-gated tests
 
 @pytest.fixture
 def repo():  # type: ignore[no-untyped-def]  # pragma: no cover - runs only with a live DB
-    from emg_persistence.migrate import run_migrations
     from emg_persistence.postgres import (
         PostgresMigrationExecutor,
         PostgresRevisionRepository,
         connect,
     )
+    from emg_persistence.provisioning import run_knowledge_graph_migrations
 
     settings = PersistenceSettings(postgres_dsn=_PG_DSN)
     conn = connect(settings)
-    run_migrations(PostgresMigrationExecutor(conn))  # ensure baseline schema
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(conn))
     truncate_persistence_tables(conn)
     conn.commit()
     try:
@@ -156,17 +156,17 @@ def test_revalidate_head_rejects_expected_for_another_tenant(repo) -> None:  # t
 
 @requires_postgres
 def test_revalidation_lock_blocks_concurrent_head_advance() -> None:  # pragma: no cover
-    from emg_persistence.migrate import run_migrations
     from emg_persistence.postgres import (
         PostgresMigrationExecutor,
         PostgresRevisionRepository,
         connect,
     )
+    from emg_persistence.provisioning import run_knowledge_graph_migrations
 
     settings = PersistenceSettings(postgres_dsn=_PG_DSN)
     primary_connection = connect(settings)
     competing_connection = connect(settings)
-    run_migrations(PostgresMigrationExecutor(primary_connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(primary_connection))
     truncate_persistence_tables(primary_connection)
     primary_connection.commit()
     primary_repo = PostgresRevisionRepository(primary_connection)

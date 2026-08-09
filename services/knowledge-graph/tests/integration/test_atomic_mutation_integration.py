@@ -22,7 +22,6 @@ from emg_knowledge_graph import (
 from emg_knowledge_graph_infrastructure import PostgresAtomicMutationExecution
 from emg_ontology import Entity, ProvenanceReference
 from emg_persistence import PersistenceSettings
-from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres import (
     ContextBoundTransactionProvider,
     PostgresMigrationExecutor,
@@ -30,6 +29,7 @@ from emg_persistence.postgres import (
     PostgresRevisionRepository,
     connect,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_persistence.store import PostgresNeo4jGraphStore
 from emg_platform_core import PrincipalRef, TenantId, WriteReceipt
 from psycopg import Connection
@@ -110,7 +110,7 @@ def settings() -> Iterator[PersistenceSettings]:  # pragma: no cover - live DB
         cursor.execute(f"CREATE SCHEMA {_SCHEMA}")
         cursor.execute(f"SET search_path TO {_SCHEMA}")
     connection.commit()
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     connection.close()
     try:
         yield configured

@@ -28,7 +28,6 @@ from emg_persistence import (
     PostgresNeo4jGraphStore,
     build_graph_store,
 )
-from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres import (
     DirectConnectionProvider,
     PostgresMigrationExecutor,
@@ -36,6 +35,7 @@ from emg_persistence.postgres import (
     PostgresTransactionProvider,
     connect,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_persistence.revisions import Revision, RevisionHead, RevisionRepository
 from emg_platform_core import GraphStore, PrincipalRef, TenantId, TransactionStateError
 from psycopg import Connection
@@ -83,7 +83,7 @@ def settings() -> PersistenceSettings:  # pragma: no cover - live DB only
 @pytest.fixture(autouse=True)
 def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: no cover
     connection = connect(settings)
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()
