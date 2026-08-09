@@ -57,7 +57,7 @@ stage:
 
 ```text
 external infrastructure and secret references
-→ database role bootstrap
+→ database role bootstrap and bounded existing-Audit ownership adoption
 → Audit and Knowledge Graph migrations
 → Keycloak projector client provisioning
 → final External Secret synchronization
@@ -65,6 +65,13 @@ external infrastructure and secret references
 → Audit Service rollout
 → Audit Projector rollout
 ```
+
+Stage 10 validates the exact accepted pre-existing Audit schema before
+transferring its two governed tables to `emg_audit_migrator`; it never rewrites
+Audit or custody rows. If an earlier V001 attempt is already dirty from the
+ownership defect, follow the explicit `audit-retry-v001` procedure in
+`infra/environments/production/README.md`. Do not clear or delete the dirty
+history row manually.
 
 Run `tools/ci/validate_production_provisioning.py` against the production
 overlay before finalization. A successful render or readiness probe does not

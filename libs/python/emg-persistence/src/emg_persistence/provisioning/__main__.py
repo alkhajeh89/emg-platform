@@ -7,6 +7,7 @@ import os
 
 from .database import (
     bootstrap_database_roles,
+    retry_dirty_audit_v001,
     run_audit_migrations,
     validate_provisioned_databases,
 )
@@ -22,7 +23,13 @@ def _required(name: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="ADR-041 database provisioning")
     parser.add_argument(
-        "command", choices=("database-bootstrap", "audit-migrate", "validate-database")
+        "command",
+        choices=(
+            "database-bootstrap",
+            "audit-migrate",
+            "audit-retry-v001",
+            "validate-database",
+        ),
     )
     args = parser.parse_args()
     if args.command == "database-bootstrap":
@@ -36,6 +43,8 @@ def main() -> None:
         )
     elif args.command == "audit-migrate":
         run_audit_migrations(_required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"))
+    elif args.command == "audit-retry-v001":
+        retry_dirty_audit_v001(_required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"))
     else:
         validate_provisioned_databases(
             _required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"),

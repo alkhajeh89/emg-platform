@@ -35,7 +35,11 @@ complete successfully before continuing:
    Keycloak, inventory, and runtime references required by the Jobs to exist.
    This is part of the external-infrastructure-prerequisite stage; it does not
    make workloads deployable.
-2. Run `emg-database-bootstrap` (`10-database-roles`).
+2. Run `emg-database-bootstrap` (`10-database-roles`). In addition to converging
+   the three governed roles, this command validates any pre-existing local-seed
+   Audit tables against the accepted schema contract and transfers ownership of
+   only `audit_events` and `evidence_custody_events` to
+   `emg_audit_migrator`. A mismatch fails the stage without changing ownership.
 3. Run both `emg-audit-migration` and `emg-knowledge-graph-migration`
    (`20-postgresql-migrations`) after database bootstrap succeeds.
 4. Run `emg-keycloak-provision` (`30-keycloak-projector-clients`).
@@ -44,6 +48,27 @@ complete successfully before continuing:
    database and identity containers must succeed.
 7. Roll out `emg-audit` (`60-audit-service`) and wait for readiness.
 8. Roll out `emg-audit-projector` (`70-audit-projector`).
+
+### Transactionally failed Audit V001 recovery
+
+`audit-migrate` deliberately halts when a prior attempt left a dirty marker. If
+V001 failed solely because the seed-created Audit tables had not yet completed
+the Stage 10 ownership handoff:
+
+1. Preserve the failed Job output and migration-history evidence.
+2. Re-run `emg-database-bootstrap`; it must complete the schema-validated,
+   bounded ownership handoff successfully.
+3. Run the migration image once with
+   `python -m emg_persistence.provisioning audit-retry-v001` and the existing
+   `EMG_AUDIT_MIGRATION_POSTGRES_DSN` secret.
+4. Re-run the ordinary `emg-audit-migration` Job and then the Stage 50
+   provisioning validator.
+
+The recovery command accepts only the exact packaged V001 checksum with one
+`success=false, dirty=true` history row. It re-executes V001 and marks success
+in one PostgreSQL transaction. Any schema mismatch, altered checksum, later
+history, non-V001 failure, or second recovery attempt is rejected. Operators
+must not edit or delete migration history manually.
 
 Run the repository preflight before finalization:
 

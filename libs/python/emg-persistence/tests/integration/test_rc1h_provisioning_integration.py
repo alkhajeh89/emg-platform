@@ -12,9 +12,11 @@ import psycopg
 import pytest
 from emg_persistence.migrate import default_migrations_dir, run_migrations
 from emg_persistence.migrations import MigrationKind
+from emg_persistence.migrations.errors import FailedMigrationError
 from emg_persistence.postgres import PostgresMigrationExecutor
 from emg_persistence.provisioning import (
     bootstrap_database_roles,
+    retry_dirty_audit_v001,
     run_audit_migrations,
     validate_provisioned_databases,
 )
@@ -73,10 +75,9 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
     }
 
     bootstrap_database_roles(admin_dsn, role_dsns)
-    bootstrap_database_roles(admin_dsn, role_dsns)
 
     # Simulate a populated database initialized by the former local seed path,
-    # but owned by the now-canonical migration principal.
+    # executed by the bootstrap identity exactly as docker-entrypoint-initdb.d is.
     seed_names = (
         "001_audit_events.sql",
         "002_audit_provenance.sql",
@@ -84,7 +85,7 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
         "004_audit_reporting_indexes.sql",
         "006_audit_tenant.sql",
     )
-    with psycopg.connect(migrator_dsn) as connection:
+    with psycopg.connect(admin_dsn) as connection:
         for name in seed_names:
             connection.execute(
                 (ROOT / "tools/seed-data/postgres" / name).read_text(encoding="utf-8")
@@ -99,9 +100,42 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
             "'tenant-existing')",
             ("0" * 64, "a" * 64),
         )
+        connection.execute(
+            "INSERT INTO evidence_custody_events (custody_event_id, source_principal, "
+            "chain_sequence, custody_sequence, transfer_timestamp, ingest_time, prev_hash, "
+            "event_hash, evidence_id, custody_action, custodian, metadata) VALUES "
+            "('existing-custody', 'existing-source', 1, 1, clock_timestamp(), "
+            "clock_timestamp(), %s, %s, 'evidence-1', 'acquire', 'custodian', '{}'::jsonb)",
+            ("0" * 64, "b" * 64),
+        )
 
-    applied = run_audit_migrations(migrator_dsn)
-    assert [item.name for item in applied] == ["audit_schema"]
+    with pytest.raises(FailedMigrationError, match="must be owner"):
+        run_audit_migrations(migrator_dsn)
+    with psycopg.connect(migrator_dsn) as connection:
+        history = connection.execute(
+            "SELECT version, name, checksum, success, dirty FROM audit_schema_migrations"
+        ).fetchall()
+        assert len(history) == 1
+        assert history[0][0:2] == (1, "audit_schema")
+        assert history[0][3:5] == (False, True)
+        canonical_checksum = history[0][2]
+        connection.execute(
+            "UPDATE audit_schema_migrations SET checksum = %s WHERE version = 1",
+            ("0" * 64,),
+        )
+    with pytest.raises(RuntimeError, match="exact canonical dirty V001 state"):
+        retry_dirty_audit_v001(migrator_dsn)
+    with psycopg.connect(migrator_dsn) as connection:
+        connection.execute(
+            "UPDATE audit_schema_migrations SET checksum = %s WHERE version = 1",
+            (canonical_checksum,),
+        )
+
+    # Stage 10 is idempotent and performs the bounded, schema-validated handoff.
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    recovered = retry_dirty_audit_v001(migrator_dsn)
+    assert recovered.name == "audit_schema"
     assert run_audit_migrations(migrator_dsn) == ()
 
     with psycopg.connect(migrator_dsn) as connection:
@@ -109,6 +143,21 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
             "SELECT tenant_id, event_hash FROM audit_events WHERE event_id = 'existing-event'"
         ).fetchone()
         assert row == ("tenant-existing", "a" * 64)
+        assert connection.execute(
+            "SELECT event_hash FROM evidence_custody_events "
+            "WHERE custody_event_id = 'existing-custody'"
+        ).fetchone() == ("b" * 64,)
+        assert connection.execute(
+            "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = current_schema() "
+            "AND tablename IN ('audit_events', 'evidence_custody_events', "
+            "'audit_schema_migrations') ORDER BY tablename"
+        ).fetchall() == [
+            ("audit_events", "emg_audit_migrator"),
+            ("audit_schema_migrations", "emg_audit_migrator"),
+            ("evidence_custody_events", "emg_audit_migrator"),
+        ]
+    with pytest.raises(RuntimeError, match="exact canonical dirty V001 state"):
+        retry_dirty_audit_v001(migrator_dsn)
 
     with psycopg.connect(app_dsn) as connection, pytest.raises(InsufficientPrivilege):
         connection.execute("CREATE TABLE runtime_must_not_create_schema (id integer)")
@@ -131,3 +180,45 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
         connection.rollback()
         with pytest.raises(InsufficientPrivilege):
             connection.execute("DELETE FROM mutation_dispatch")
+
+
+@requires_postgres
+def test_fresh_audit_database_migrates_without_adoption(
+    provisioned_database: tuple[str, str, str, str],
+) -> None:  # pragma: no cover
+    admin_dsn, migrator_dsn, app_dsn, projector_dsn = provisioned_database
+    bootstrap_database_roles(
+        admin_dsn,
+        {
+            "emg_audit_migrator": migrator_dsn,
+            "emg_audit_app": app_dsn,
+            "emg_audit_projector": projector_dsn,
+        },
+    )
+
+    assert [migration.name for migration in run_audit_migrations(migrator_dsn)] == ["audit_schema"]
+    assert run_audit_migrations(migrator_dsn) == ()
+
+
+@requires_postgres
+def test_audit_adoption_rejects_schema_mismatch(
+    provisioned_database: tuple[str, str, str, str],
+) -> None:  # pragma: no cover
+    admin_dsn, migrator_dsn, app_dsn, projector_dsn = provisioned_database
+    role_dsns = {
+        "emg_audit_migrator": migrator_dsn,
+        "emg_audit_app": app_dsn,
+        "emg_audit_projector": projector_dsn,
+    }
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute("CREATE TABLE audit_events (event_id text PRIMARY KEY)")
+        connection.execute("CREATE TABLE evidence_custody_events (custody_event_id text)")
+
+    with pytest.raises(RuntimeError, match="does not match the governed Audit adoption contract"):
+        bootstrap_database_roles(admin_dsn, role_dsns)
+
+    with psycopg.connect(admin_dsn) as connection:
+        assert connection.execute(
+            "SELECT tableowner FROM pg_tables WHERE tablename = 'audit_events'"
+        ).fetchone() != ("emg_audit_migrator",)
