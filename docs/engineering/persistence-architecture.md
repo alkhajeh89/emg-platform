@@ -4,14 +4,14 @@
 **Governing authority:** `docs/phases/phase-2/PHASE2_ARCHITECTURE.md` Revision 3
 (ADR-1 … ADR-6); Product Architecture Freeze §12; accepted addendum
 `docs/architecture/EMG_P02_EVIDENCE_LEDGER_CONTRACT_ADDENDUM.md` (P-02).
-**Status baseline:** `develop` at `e578d31` (2026-08-03), after P-01 … P-05.
+**Status baseline:** `develop` at `69e2267` (2026-08-09), after RC-1C … RC-1H.
 **Scope:** describes what `libs/python/emg-persistence` implements today. It
 creates no architecture decision and amends none (GR-001 Rule 8).
 
 > **How to read the status labels.** Every capability below is tagged
-> **[Implemented]**, **[Accepted — not implemented]**, **[Production-readiness
-> dependency]**, or **[Non-goal]**. Nothing tagged other than *Implemented* is
-> present in the repository today.
+> **[Implemented]**, **[Operational prerequisite]**, **[Post-v1]**, or
+> **[Non-goal]**. Repository implementation does not imply that a production
+> environment has executed or configured it.
 
 ---
 
@@ -105,10 +105,16 @@ claim predicate carries `attempt_count < %(max_attempts)s`, so a permanently
 failing row cannot be reclaimed without limit. Claiming uses
 `FOR UPDATE SKIP LOCKED` with an explicit `limit`.
 
-**[Accepted — not implemented]** No consumer of the `audit` channel exists.
-`claim_dispatch` and `complete_dispatch` have no production caller. Audit
-delivery is governed by ADR-028, **Accepted 2026-08-09**; RC-1C implementation
-remains outstanding — see §11.
+**[Implemented — ADR-028 / RC-1C]** `services/audit-projector` is the dedicated
+consumer of the `audit` channel. It claims tenant-partitioned work through
+`PostgresMutationRepository.claim_dispatch()`, projects immutable
+`audit_intents` to deterministic SubmittedAuditEvents, and delivers them at
+least once to authenticated `POST /audit/events`. Completion occurs only after
+all intents succeed; partial delivery replays the mutation and Audit Service
+idempotency suppresses duplicates. Retry, attempt exhaustion, lease recovery,
+D-51 graceful shutdown, and backlog visibility use existing
+`mutation_dispatch` state. V007 grants `emg_audit_projector` schema `USAGE`,
+table `SELECT`, and only the five required mutable dispatch columns.
 
 ## 6. Evidence ledger
 
@@ -141,6 +147,13 @@ Governing contract: `EMG_P02_EVIDENCE_LEDGER_CONTRACT_ADDENDUM.md`, Accepted
 
 **[Non-goal]** P-02 introduced **no ingestion wiring, API route, worker, UI, or
 product capability**, and the repository has no production caller today.
+
+**[Implemented — EL-10 / V008]** PostgreSQL now enforces `prev_hash NOT NULL`,
+positive sequence values, lowercase SHA-256 field shape, the genesis sentinel,
+and an owner-binding `BEFORE UPDATE OR DELETE` append-only trigger. Migration
+preflight rejects incompatible existing rows without rewriting them. These are
+structural database controls; `verify_range()` remains responsible for
+cryptographic entry recomputation and chain-link verification.
 
 ## 7. PostgreSQL pooling and connection ownership
 
@@ -180,6 +193,8 @@ Current PostgreSQL migration set:
 | V004 | `mutation_ledger`, `mutation_ledger_resource`, `mutation_dispatch` + append-only triggers |
 | V005 | Runtime least privilege — migrator owns objects; app role gets narrow DML |
 | V006 | **P-03** — runtime column-level `UPDATE` privileges |
+| V007 | Audit Projector role grants: schema/table reads plus five dispatch update columns |
+| V008 | **EL-10** — evidence-ledger preflight, structural constraints, and append-only trigger |
 
 **[Implemented — P-03, `b99b9af`, PR #50]** V006 revokes table-wide `UPDATE`
 from `emg_knowledge_graph_app` on `graph_head`, `outbox`,
@@ -189,14 +204,15 @@ changes remain conditional so deployments managing roles externally still apply
 the schema.
 
 **[Implemented]** `evidence_ledger` is granted `SELECT, INSERT` only
-(`V005:65-67`) — no `UPDATE`, no `DELETE` for the runtime role.
+(`V005`) and V008's trigger binds the owner as well as runtime roles. No role
+may update or delete ledger rows through ordinary SQL.
 
-**[Production-readiness dependency]** `evidence_ledger` has **no**
-database-enforced append-only trigger, unlike `mutation_ledger`. Append-only
-currently rests on role grants, which do not bind the table owner. P-02 EL-10
-requires this hardening (plus `prev_hash NOT NULL`, `seq >= 1`, and hash-format
-checks) **before the ledger is relied upon as an evidentiary record**, and
-explicitly not before implementing the repository contract.
+**[Implemented — ADR-041]** Audit Service schema evolution is a distinct
+packaged stream inside this same migration framework. It uses
+`audit_schema_migrations`, is owned by `emg_audit_migrator`, safely adopts the
+existing schema shape, and grants `emg_audit_app` append/read privileges only.
+Local seed SQL remains a development fixture, not production migration
+authority.
 
 ## 9. Tenant isolation
 
@@ -251,21 +267,18 @@ avoid a reverse dependency from this reusable library into a service.
 - No product capability.
 - No event-sourcing capability beyond the outbox and the evidence chain.
 
-**[Accepted — not implemented]**
+**[Post-v1]**
 
-- **Audit dispatch delivery.** `mutation_dispatch` rows on channel `audit`
-  accumulate undelivered; no consumer exists. ADR-028 governs this and its
-  repository status is **Accepted (2026-08-09), implementation authorized but
-  not implemented**. Nothing in this document alters ADR-028's decisions.
-- **P-02 EL-10 schema hardening.** Required before evidentiary reliance; see §8.
+- Continuous Neo4j `ProjectionWorker` daemon and lifecycle — TD-002. This is
+  distinct from the implemented Audit Projector.
 
-**[Production-readiness dependency]**
+**[Operational prerequisite]**
 
-- Continuous `ProjectionWorker` daemon and lifecycle — TD-002.
 - Metrics collection, dashboards, tracing, and alerting — owned by ADR-015 /
   FEAT-12-3, not by this package.
-- Backup, restore, and disaster-recovery procedure — see
-  `persistence-operations.md` §8.
+- Target-environment backup scheduling, KMS/cross-region configuration, and a
+  witnessed recovery rehearsal. Provider-neutral backup/PITR/restore tooling
+  is implemented; see `persistence-operations.md` §8.
 
 ---
 

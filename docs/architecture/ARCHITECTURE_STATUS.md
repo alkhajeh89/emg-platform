@@ -8,7 +8,13 @@ Engineering Phase: Active
 
 Current Branch: See repository branch and release records; this document is not the authoritative source for the active Git branch.
 
-Current Delivery Focus: Studio Phase 2B security enablement — ADR-038 accepted; implementation remains gated by mandatory non-production delegation capability verification.
+Current Delivery Focus: RC1 release governance. Repository implementation is
+complete for ADR-028 Audit Projector delivery, ADR-038 delegated identity,
+ADR-040 runtime image supply chain, ADR-041 production provisioning, EL-10
+evidence-ledger hardening, and authoritative mutation-to-audit reconciliation.
+Target-environment release, identity, secret, TLS, egress, and recovery gates
+remain operational prerequisites; this status does not claim production
+deployment or certification.
 
 ## Delivery Track Taxonomy
 
@@ -89,7 +95,7 @@ status.
 | Modules 1–3 (Foundation) | Complete | Sprint 1 — monorepo, shared library scaffolding, local dev environment, CI skeleton |
 | Module 4 (Identity & Authentication) | Implemented through Sprint 3 | FEAT-02-1, FEAT-02-2 (Sprint 2); FEAT-02-3, FEAT-02-4 (Sprint 3) |
 | Module 5 (Authorization & Policy) | Authorization baseline complete through FEAT-03-4; **first live enforcement adopter delivered (ADR-025, 2026-07-27)** | FEAT-03-1, FEAT-03-2 (Sprint 4); FEAT-03-3 (RBAC Baseline Roles), FEAT-03-4 (Authorization Testing Harness) (Sprint 5). `services/authz` remains scaffolded (library-first approach; see Sprint 4 and Sprint 5 design docs). FEAT-04-1 (Audit Event Pipeline), grouped with FEAT-03-3/03-4 in the Backlog's Sprint 5 row, is rescheduled to the next Audit sprint (see Sprint 5 scope note below). ADR-025 (Knowledge Graph Integration Closure, Group C) makes `services/knowledge-graph` the first service to actually enforce (not just introspect) an authorization decision using this module's PEP/`emg-policy-engine` stack — see Module 7 row and the ADR-025 entry in the ADRs table below. |
-| Module 6 (Audit) | Complete through FEAT-04-4 — **EPIC-04 complete (merged)** | FEAT-04-1 (Sprint 6, PR #6, `1fe6bc7`); FEAT-04-2 + FEAT-04-3 (Sprint 7, PR #7); FEAT-04-4 (Audit Query & Reporting Interface — Sprint 8, **merged PR #8, merge commit `79eaae6`**) adds classification-aware audit + custody queries, opaque-cursor keyset pagination, and JSON/CSV report export (backend only, `svc-audit`, no new role/ADR). **EPIC-04 (Audit Platform) is complete (FEAT-04-1 → FEAT-04-4)**; the EPIC-05 (Module 7) dependency gate is unblocked. SRS-2 adds verified-tenant confinement and PEP-backed classification authorization to event lookup, listing, pagination, and export. |
+| Module 6 (Audit) | Complete through FEAT-04-4 plus RC1 reconciliation and evidence hardening | EPIC-04 remains complete. ADR-028 is implemented by the dedicated Audit Projector with tenant-partitioned at-least-once delivery into the authenticated Audit Service. RC-1E proves the authoritative PostgreSQL mutation-to-audit path, including duplicate replay and partial multi-intent recovery. V008 implements EL-10 structural constraints and an owner-binding append-only trigger; application chain verification remains the cryptographic integrity authority. ADR-041 adds the `emg_audit_migrator`-owned Audit migration stream and restricted `emg_audit_app` runtime. Production execution remains environment-owned. |
 | Module 7 (Knowledge Graph) | In Progress — domain libraries complete; query API and ADR-027 Revision 5 Stage 4 complete (PR #45, `6536b73`); ADR-033 Revision 2 complete through Phase 3 | FEAT-05-1 through FEAT-05-5 are implemented as libraries. `services/knowledge-graph` exposes the ADR-022/023/024 query surface with ADR-025/026 authorization and classification enforcement, plus exactly the five mutation routes approved by ADR-027 Revision 5. Phase 4A completed at PR #37 (`aefc82c`). Phase 4B observability emission was implemented at `c6c28bb` and merged through PR #45 (`6536b73`). Phases 4C and 4D are closed as not required, and Phase 4E governance and conformance closure is complete. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. ADR-029 replacement semantics and ADR-030 atomic mutation ledger are implemented. ADR-033 Revision 2's canonical-only production catalog remains active through Phase 3; its separate Phase 4 has not started, and no second schema version or production normalizer exists. ADR-027 Stage 5 documentation is complete at `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md` and claims no production readiness; Stage 5 production rollout remains open. **Updated 2026-08-03:** the Neo4j serving-projection binding is no longer deferred — `services/knowledge-graph` now composes the lazy Neo4j projection and the bounded PostgreSQL pool with explicit lifecycle ownership (P-01, P-04). |
 | Module 8 (Search / GraphRAG / Retrieval) | Scaffolded | `services/retrieval/service.yaml`: `status: scaffolded`. No implementation yet. |
 | Module 9 (AI Orchestration) | Scaffolded | `services/ai-orchestration/service.yaml`: `status: scaffolded`. No implementation yet. |
@@ -132,9 +138,10 @@ architecture decision and change no ADR:
 
 Current implementation detail now lives in two living documents:
 `docs/engineering/persistence-architecture.md` and
-`docs/engineering/persistence-operations.md`. Deferred items — the continuous
-`ProjectionWorker` daemon (TD-002), the P-02 EL-10 evidence-ledger schema
-hardening, and audit dispatch delivery — remain open and are recorded there.
+`docs/engineering/persistence-operations.md`. The continuous Neo4j
+`ProjectionWorker` daemon (TD-002) remains post-v1 work. EL-10 hardening and
+Audit dispatch delivery are implemented; production recovery rehearsal and
+target-environment execution remain operational prerequisites.
 
 ---
 
@@ -159,16 +166,19 @@ Only the following Architecture Decision Records are currently present in
 | ADR-025 | Knowledge Graph Tenant & Authorization Model | **Accepted — implemented (Group C, 2026-07-27)** |
 | ADR-026 (Revision 2) | Knowledge Graph Classification Enforcement Model | **Accepted — fully implemented (Phase 1 + Phase 2, D1–D13, 2026-07-27)** |
 | ADR-027 (Revision 5) | Knowledge Graph Mutation API | **Accepted — Stage 4 complete (PR #45, merge commit `6536b73`, 2026-08-01)**: Phase 4A HTTP/API delivery conformance completed at `aefc82c`. Phase 4B mutation-path observability emission was implemented at `c6c28bb` and merged through PR #45 at `6536b73`. Phases 4C and 4D are closed as not required; Phase 4E governance and conformance closure is complete. Exactly five approved HTTP mutation routes remain unchanged and authoritative. ADR-027 owns metric emission; ADR-015 / FEAT-12-3 owns collection, storage, dashboards, tracing, and alerting. Stage 5 deployment documentation is complete at `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md`; it documents role, policy-rule, and claim provisioning requirements only and claims no production readiness. Production rollout prerequisites remain open. |
-| ADR-028 | Audit Reconciliation | **Accepted (2026-08-09) — implementation authorized, not implemented.** Establishes a dedicated single-replica RC1 Audit Projector, distinct tenant-scoped Service Principals, tenant-partitioned claims, at-least-once delivery, stable idempotent event identity, bounded durable retry/reschedule, poison/exhausted preservation, crash recovery, graceful shutdown, and backlog observations. No consumer exists yet. Registered 2026-08-03; accepted 2026-08-09 |
+| ADR-028 | Audit Reconciliation | **Accepted and implemented.** The dedicated single-replica RC1 Audit Projector consumes tenant-partitioned audit dispatch, uses tenant-scoped Service Principals, delivers at least once with stable event identities, preserves exhausted work, recovers expired leases, drains with the D-51 bound, and exposes structured backlog observations. RC-1E proves delivery into authoritative Audit PostgreSQL |
 | ADR-029 (Revision 2) | Canonical Entity/Relationship Identity, Lifecycle, and Supersession Model | **Accepted — implemented (commit `97b211d`, tag `adr-029-approved-implementation`)** |
 | ADR-030 (Revision 4) | Mutation Ledger & Atomic Idempotency | **Accepted — implemented (Stage 3, commit `2dab646`, tag `adr-027-stage-3`)** |
 | ADR-032 | Knowledge Graph Schema Versioning & Evolution | **Accepted — mutation-path negotiation implemented; read-path adoption remains governed separately** |
 | ADR-033 (Revision 2) | Schema Registry and Negotiation Service | **Accepted — implemented through Phase 3 (commit `5288392`)**: the canonical-only production catalog and mutation-path negotiation are active. ADR-033 Phase 4—the first genuine second schema version and its production normalizer—has not started. Supported-schema discovery remains governance-blocked pending an approved transport contract. |
 | ADR-034 | Security State and Service Trust Hardening | **Accepted — implemented by SRS-2 (2026-07-30)** |
-| ADR-035 | Human Principal Authentication | **Accepted (2026-08-03) — not implemented.** Discharges the ADR-025 §8.9 reserved extension point. Defines OIDC Authorization Code with PKCE S256 through a confidential BFF client and rejects ROPC for browser use. The existing authorization call site remains unchanged. Requires Keycloak realm configuration because no client currently enables the Authorization Code flow. Downstream delegated human identity is governed separately by ADR-038. This ADR authorizes no code or realm configuration. |
-| ADR-036 | Application and BFF Boundary | **Accepted (2026-08-03) — not implemented.** A BFF remains mandatory: the browser can never hold a Service Principal credential without violating the ADR-034 trust model. The BFF is **not** a PEP; service-side authorization and ADR-026 denial shapes remain authoritative. This branch contains no Studio frontend or production BFF. ADR-038 resolves the downstream human-delegation sub-decision formerly recorded in §5, but Phase 2B remains blocked pending ADR-038 capability verification. Closes frontend decision D-F-006. |
+| ADR-035 | Human Principal Authentication | **Accepted and implemented in Phase 2B.** Studio BFF implements OIDC Authorization Code with PKCE S256 and opaque server-side sessions; browser bearer credentials remain prohibited. Production Keycloak values and TLS remain environment-owned |
+| ADR-036 | Application and BFF Boundary | **Accepted and implemented in Phase 2B.** `apps/studio-bff` is the mandatory browser boundary, is not a PEP, and has no direct datastore access. Service-side authorization remains authoritative and ADR-038 governs downstream human delegation. Production rollout remains an operational prerequisite |
 | ADR-037 | Decision Domain Model | **Accepted (2026-08-03) — not implemented.** Defines `Decision`, `DecisionOption`, `DecisionRationale`, and `Approval` at the ontology layer, superseding the EPIC-08 deferral at `emg-ontology/references.py:10-12`. Introduces **no new `NodeType`, no new `EdgeType`, and no new mutation route** — the frozen graph vocabulary already carries every required relationship, so Freeze §14 is untouched. Every `Decision` requires at least one `EvidenceRef`. Unblocks four of six frozen Freeze §23 dashboard indicators and completes a fifth |
-| ADR-038 | Human Identity Delegation Architecture | **Accepted (2026-08-07) — not implemented.** Selects OAuth 2.0 Token Exchange (RFC 8693) as the authoritative downstream human-identity delegation architecture. Preserves the Human Principal as the authorization subject and the Studio BFF as an independently identifiable Acting Service. Requires a single-audience Delegated Credential, scope reduction, tenant and clearance integrity, bounded lifetime, independent downstream validation, fail-closed behaviour, and complete audit attribution. Resolves ADR-036 §5. Acceptance does not imply implementation; Phase 2B remains blocked until mandatory non-production capability verification and ADR-038 conformance criteria succeed. |
+| ADR-038 | Human Identity Delegation Architecture | **Accepted and implemented in Phase 2B.** RFC 8693 token exchange preserves the Human Principal and independently attributable Studio BFF Acting Service with single-audience delegated credentials, tenant/clearance integrity, bounded lifetime, independent downstream validation, and synchronous fail-closed audit attribution. The mandatory Keycloak 25 capability suite passed; production configuration remains environment-owned |
+| ADR-039 | Backup, PITR and Recovery Governance | **Accepted and implemented in repository.** Provider-neutral physical backup, WAL/PITR, retention, encrypted-wrapper, manifest, restore, and evidence-anchor tooling is present and validated. Scheduler/KMS/cross-region choices and witnessed production rehearsal remain operational prerequisites |
+| ADR-040 | Runtime Image Supply Chain | **Accepted and implemented in repository.** Governed images build once, pass Trivy before GHCR publication, are deployed by immutable digest, receive keyless Cosign signatures and GitHub provenance, and produce complete deployment/rollback evidence. Protected release configuration and a live first release remain operational prerequisites |
+| ADR-041 | Production Provisioning Ownership & Bootstrap Contract | **Accepted and implemented in repository.** The bounded database bootstrap, Audit migration stream, projector identity inventory, per-tenant Keycloak provisioning, derived Audit allow-list, External Secret references, stage metadata, and consistency validation are present. Operator/CD ordering and target-environment values remain operational prerequisites |
 
 
 *Implementation Notes (Authorization/Policy):*
@@ -180,7 +190,10 @@ be described as approved, frozen, or existing until they are actually added
 under `docs/architecture/`. ADR-022/023/024 (Knowledge Graph Revision Build
 Workflow / Revision History & Navigation / Query Engine) are referenced
 elsewhere in this document's Module 7 notes but are not repeated in this
-table. The Knowledge Graph and application-security decision chain is recorded here through ADR-038. Engineering implementation status remains tracked separately and SHALL NOT be inferred solely from ADR acceptance.
+table. The Knowledge Graph, application-security, recovery, release, and
+provisioning decision chain is recorded here through ADR-041. Engineering
+implementation status remains distinct from ADR acceptance and from
+target-environment proof.
 
 ADR-019/020/021 accompany `PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md` and
 `IMPLEMENTATION_GAP_ANALYSIS.md` (2026-07-25). They are architecture-only —
@@ -433,6 +446,13 @@ No redesign without ADR.
 ---
 
 ## Last Updated
+
+**RC1 reconciliation (2026-08-09, `develop` at `69e2267`).** ADR-028,
+ADR-038, ADR-040, ADR-041, authoritative Audit E2E, and EL-10 are implemented
+and repository-validated. The production Kustomize/release/provisioning
+foundation exists. Target-environment release, secret, identity, TLS, egress,
+observability, and recovery gates remain open. The sprint narrative below is
+retained as delivery history and does not supersede this current status.
 
 Sprint 6 (`feature/sprint-6-audit-event-pipeline`, EPIC-04 Audit Platform —
 FEAT-04-1 Audit Event Pipeline) **merged successfully** (PR #6, merge commit

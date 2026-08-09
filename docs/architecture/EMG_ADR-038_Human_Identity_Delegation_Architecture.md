@@ -22,6 +22,12 @@ ADR-036 (Application and BFF Boundary)
 
 **Closes:** Former ADR-036 §5 Delegation Sub-Decision
 
+> **Implementation status — 2026-08-09.** The mandatory Keycloak 25
+> capability verification passed and Phase 2B subsequently implemented this
+> architecture in the Studio BFF and delegated-credential-aware Knowledge Graph
+> boundary, including synchronous fail-closed audit attribution. Production
+> realm values, secrets, TLS, and deployment remain operational prerequisites.
+
 ---
 
 # Chapter I — Purpose
@@ -1281,27 +1287,32 @@ Partial implementation, vendor defaults, or deployment-specific configuration SH
 
 # Chapter XIV — Migration Strategy
 
-## 14.1 Current State
+## 14.1 Accepted Baseline State
 
-The currently implemented EMG authentication path authenticates registered Service Principals only.
-
----
-
-## 14.2 Transitional State
-
-ADR-038 is Accepted and not implemented. Acceptance does not imply implementation.
-
-Capability verification remains mandatory, and Phase 2B remains blocked until it succeeds.
+At acceptance, the implemented EMG authentication path authenticated registered Service Principals only.
 
 ---
 
-## 14.3 Verified Implementation State
+## 14.2 Historical Transitional State
 
-After successful capability verification and conformant implementation:
+ADR-038 was Accepted before implementation. Acceptance alone did not imply implementation.
+
+Capability verification was mandatory, and Phase 2B remained blocked until it succeeded.
+
+---
+
+## 14.3 Current Verified Implementation State
+
+Capability verification and conformant Phase 2B implementation are complete in
+the repository:
 
 - ADR-036 Section 5 remains resolved by this Accepted ADR;
 - OAuth 2.0 Token Exchange remains the authoritative delegation architecture;
-- delegated human execution becomes available.
+- delegated human execution is implemented through `apps/studio-bff` and the
+  delegated-credential-aware Knowledge Graph boundary.
+
+Production Keycloak values, TLS, secrets, and deployment remain operational
+prerequisites and are not implied by repository conformance.
 
 ---
 
@@ -1441,4 +1452,9 @@ Review Outcome:
 
 No blocking architectural issues were identified.
 
-Acceptance records the architecture decision only and does not imply implementation. This ADR is the authoritative specification governing delegated human identity throughout the EMG platform and resolves the open delegation sub-decision recorded in ADR-036. Capability verification remains mandatory, and Phase 2B remains blocked until verification succeeds.
+Acceptance recorded the architecture decision and did not itself imply
+implementation. This ADR remains the authoritative specification governing
+delegated human identity and resolves ADR-036's former open sub-decision. The
+mandatory capability verification and Phase 2B implementation subsequently
+completed without weakening its invariants; target-environment configuration
+and deployment remain operational prerequisites.

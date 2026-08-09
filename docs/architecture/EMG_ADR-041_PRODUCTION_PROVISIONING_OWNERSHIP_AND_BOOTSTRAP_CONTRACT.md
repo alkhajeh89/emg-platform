@@ -18,6 +18,13 @@ ADR-038 (Human Identity Delegation Architecture), ADR-040 (Runtime Image Supply 
 > or runtime changes. RC-1H implementation must conform to this decision and remains a
 > separate review.
 
+> **Implementation status — 2026-08-09.** RC-1H subsequently implemented and
+> repository-validated this contract: governed role bootstrap, the distinct Audit migration
+> stream, the canonical projector identity inventory, per-tenant Keycloak provisioning,
+> derived Audit allow-list, External Secret references, ordered stage metadata, and
+> fail-closed consistency validation. Environment values and operator/CD execution remain
+> operational prerequisites; Kubernetes still does not enforce cross-resource ordering.
+
 ---
 
 ## 1. Context
