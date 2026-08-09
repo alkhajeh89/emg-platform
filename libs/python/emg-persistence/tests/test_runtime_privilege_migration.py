@@ -29,11 +29,12 @@ def test_runtime_privilege_migrations_are_discovered_in_order() -> None:
         default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
     )
 
-    assert [(migration.version, migration.name) for migration in migrations[-4:]] == [
+    assert [(migration.version, migration.name) for migration in migrations[-5:]] == [
         (5, "runtime_least_privilege"),
         (6, "runtime_column_privileges"),
         (7, "audit_projector_privileges"),
         (8, "evidence_ledger_hardening"),
+        (9, "scoped_runtime_privileges"),
     ]
 
 
@@ -98,3 +99,43 @@ def test_audit_projector_privileges_are_column_scoped_and_schema_neutral() -> No
     assert "ALTER TABLE" not in normalized
     assert "CREATE ROLE" not in normalized
     assert "UPDATE ON mutation_ledger" not in normalized
+
+
+def test_future_kg_migrations_cannot_use_schema_wide_privilege_operations() -> None:
+    migrations = discover_migrations(
+        default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
+    )
+    forbidden = ("ALL TABLES IN SCHEMA", "ALL FUNCTIONS IN SCHEMA", "ALL SEQUENCES IN SCHEMA")
+
+    for migration in migrations:
+        if migration.version == 5:
+            continue  # immutable historical exception, superseded by V009
+        upper = migration.statements.upper()
+        assert all(operation not in upper for operation in forbidden), migration.name
+
+
+def test_v009_scopes_privileges_to_knowledge_graph_inventory() -> None:
+    sql = (
+        default_migrations_dir(MigrationKind.POSTGRES) / "V009__scoped_runtime_privileges.sql"
+    ).read_text(encoding="utf-8")
+    normalized = " ".join(sql.split())
+
+    assert "REVOKE ALL ON TABLE schema_migrations, tenants" in normalized
+    assert "audit_events" not in normalized
+    assert "audit_schema_migrations" not in normalized
+    assert "identity_refresh_tokens" not in normalized
+    assert "ALL TABLES IN SCHEMA" not in normalized
+    assert "ALL FUNCTIONS IN SCHEMA" not in normalized
+    assert "ALL SEQUENCES IN SCHEMA" not in normalized
+
+
+def test_local_kg_role_seed_does_not_cross_stream_object_boundaries() -> None:
+    seed = (
+        default_migrations_dir(MigrationKind.POSTGRES).parents[6]
+        / "tools/seed-data/postgres/005_knowledge_graph_role.sql"
+    ).read_text(encoding="utf-8")
+    upper = seed.upper()
+
+    assert "GRANT ALL PRIVILEGES ON ALL TABLES" not in upper
+    assert "GRANT ALL PRIVILEGES ON ALL FUNCTIONS" not in upper
+    assert "GRANT ALL PRIVILEGES ON ALL SEQUENCES" not in upper

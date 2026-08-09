@@ -18,12 +18,12 @@ from emg_persistence.evidence import (
     EvidenceIntegrityFailureKind,
     compute_evidence_entry_hash,
 )
-from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres import PostgresMigrationExecutor, connect
 from emg_persistence.postgres.evidence_repository import (
     _ADVISORY_LOCK_NAMESPACE,
     PostgresEvidenceLedgerRepository,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_platform_core import TenantId
 from psycopg import Connection
 from psycopg.errors import CheckViolation, NotNullViolation, RaiseException
@@ -96,7 +96,7 @@ def settings() -> PersistenceSettings:  # pragma: no cover - live DB only
 @pytest.fixture(autouse=True)
 def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: no cover
     connection = connect(settings)
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()

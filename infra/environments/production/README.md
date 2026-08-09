@@ -70,6 +70,28 @@ in one PostgreSQL transaction. Any schema mismatch, altered checksum, later
 history, non-V001 failure, or second recovery attempt is rejected. Operators
 must not edit or delete migration history manually.
 
+### Transactionally failed Knowledge Graph V005 recovery
+
+Historical V005 is checksum-immutable. New migration runs apply its recorded
+version/checksum through the scoped V009 privilege contract, which names only
+Knowledge Graph objects; V006-V009 then continue normally. Existing successful
+V005 histories remain valid and receive V009 as a forward migration.
+
+For the exact released V005 failure caused by co-located Audit or Identity
+objects, preserve the failed Job evidence and run the Knowledge Graph image
+once with:
+
+```sh
+python -m emg_persistence.provisioning knowledge-graph-retry-v005
+```
+
+using `EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN`. The command accepts only
+canonical successful V001-V004 plus canonical `success=false, dirty=true`
+V005. It executes the scoped privilege contract and marks V005 successful in
+one transaction. Then rerun the ordinary Knowledge Graph migration Job to
+apply V006-V009 and run Stage 50 validation. Never edit or delete the V005
+history record manually.
+
 Run the repository preflight before finalization:
 
 ```sh

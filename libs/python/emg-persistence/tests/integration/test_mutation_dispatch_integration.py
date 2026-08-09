@@ -15,7 +15,6 @@ from emg_audit_projector.config import Settings as ProjectorSettings
 from emg_audit_projector.worker import AuditProjectorWorker
 from emg_memory_graph import EvidenceRef, EvidenceSource, MemoryGraph, MemoryNode
 from emg_persistence import PersistenceSettings, PostgresNeo4jGraphStore
-from emg_persistence.migrate import run_migrations
 from emg_persistence.mutations import DispatchWorkItem, LedgerAppend, LedgerResource
 from emg_persistence.postgres import (
     DirectConnectionProvider,
@@ -24,6 +23,7 @@ from emg_persistence.postgres import (
     PostgresTransactionProvider,
     connect,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_platform_core import PrincipalRef, TenantId
 
 _PG_DSN = os.environ.get("EMG_PERSISTENCE_TEST_POSTGRES_DSN")
@@ -44,7 +44,7 @@ def settings() -> PersistenceSettings:  # pragma: no cover - live DB only
 @pytest.fixture(autouse=True)
 def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: no cover
     connection = connect(settings)
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()

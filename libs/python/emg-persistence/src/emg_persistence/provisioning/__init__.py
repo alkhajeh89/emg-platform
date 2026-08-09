@@ -5,7 +5,9 @@ from .database import (
     GOVERNED_DATABASE_ROLES,
     bootstrap_database_roles,
     retry_dirty_audit_v001,
+    retry_dirty_knowledge_graph_v005,
     run_audit_migrations,
+    run_knowledge_graph_migrations,
     validate_provisioned_databases,
 )
 
@@ -14,6 +16,8 @@ __all__ = [
     "GOVERNED_DATABASE_ROLES",
     "bootstrap_database_roles",
     "retry_dirty_audit_v001",
+    "retry_dirty_knowledge_graph_v005",
     "run_audit_migrations",
+    "run_knowledge_graph_migrations",
     "validate_provisioned_databases",
 ]

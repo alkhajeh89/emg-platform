@@ -14,6 +14,9 @@ def _run(command: str) -> None:
     provisioning.bootstrap_database_roles = lambda *_args: calls.append("database-bootstrap")
     provisioning.run_audit_migrations = lambda *_args: calls.append("audit-migrate")
     provisioning.retry_dirty_audit_v001 = lambda *_args: calls.append("audit-retry-v001")
+    provisioning.retry_dirty_knowledge_graph_v005 = lambda *_args: calls.append(
+        "knowledge-graph-retry-v005"
+    )
     provisioning.validate_provisioned_databases = lambda *_args: calls.append("validate-database")
     os.environ.update(
         {
@@ -34,6 +37,7 @@ for provisioning_command in (
     "database-bootstrap",
     "audit-migrate",
     "audit-retry-v001",
+    "knowledge-graph-retry-v005",
     "validate-database",
 ):
     _run(provisioning_command)

@@ -13,7 +13,6 @@ from _outbox_helpers import make_outbox_event
 from _persistence_integration_helpers import truncate_persistence_tables
 from emg_memory_graph import EvidenceRef, EvidenceSource, MemoryGraph, MemoryNode
 from emg_persistence import PersistenceSettings, PostgresNeo4jGraphStore
-from emg_persistence.migrate import run_migrations
 from emg_persistence.outbox import OutboxEvent
 from emg_persistence.postgres import (
     DirectConnectionProvider,
@@ -22,6 +21,7 @@ from emg_persistence.postgres import (
     PostgresTransactionProvider,
     connect,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_platform_core import GraphStore, PrincipalRef, TenantId
 from psycopg import sql
 from psycopg.errors import UniqueViolation
@@ -68,7 +68,7 @@ def settings() -> PersistenceSettings:  # pragma: no cover - live DB only
 @pytest.fixture(autouse=True)
 def clean_database(settings: PersistenceSettings) -> Iterator[None]:  # pragma: no cover
     connection = connect(settings)
-    run_migrations(PostgresMigrationExecutor(connection))
+    run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
     truncate_persistence_tables(connection)
     connection.commit()
     connection.close()

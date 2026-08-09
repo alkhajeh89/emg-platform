@@ -32,13 +32,13 @@ from emg_knowledge_graph import CreateEntityCommand, KnowledgeGraphApplication
 from emg_knowledge_graph_infrastructure import PostgresAtomicMutationExecution
 from emg_ontology import Entity, ProvenanceReference
 from emg_persistence import PersistenceSettings, PostgresNeo4jGraphStore
-from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres import (
     ContextBoundTransactionProvider,
     DirectConnectionProvider,
     PostgresMigrationExecutor,
     PostgresMutationRepository,
 )
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 from emg_platform_core import PrincipalRef, TenantId
 from fastapi.testclient import TestClient
 from psycopg import sql
@@ -72,7 +72,7 @@ def _initialize_database(postgres_dsn: str) -> None:
     settings = PersistenceSettings(postgres_dsn=postgres_dsn)
     connection = psycopg.connect(postgres_dsn)
     try:
-        run_migrations(PostgresMigrationExecutor(connection))
+        run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
         seed_root = ROOT / "tools/seed-data/postgres"
         with connection.cursor() as cursor:
             for script_name in _AUDIT_SCHEMA_SCRIPTS:
