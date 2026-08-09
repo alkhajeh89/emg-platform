@@ -99,6 +99,16 @@ class DispatchWorkItem:
     source_position: LsnPosition | None
 
 
+@dataclass(frozen=True, slots=True)
+class DispatchBacklog:
+    """Operational snapshot of one tenant/channel dispatch work set."""
+
+    pending_count: int
+    in_flight_count: int
+    exhausted_count: int
+    oldest_pending_age_seconds: float
+
+
 def _lsn_value(value: str) -> int:
     high, separator, low = value.partition("/")
     if separator != "/" or not high or not low:

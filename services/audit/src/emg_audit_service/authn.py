@@ -70,6 +70,16 @@ _RECOGNIZED_CLIENTS: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+def _recognized_clients(settings: Settings) -> dict[str, tuple[str, tuple[str, ...]]]:
+    clients = dict(_RECOGNIZED_CLIENTS)
+    for client_id in settings.projector_client_ids:
+        clients[client_id] = (
+            "audit-projector",
+            ("service-account", "svc-audit-projector"),
+        )
+    return clients
+
+
 def _extract_attributes(payload: dict[str, Any], settings: Settings) -> dict[str, str]:
     """Extract the `classification_clearance` claim into an attributes dict
     (ADR-026 Revision 2, Amendment 2, Group D5), following exactly the
@@ -127,11 +137,12 @@ class ServiceTokenValidator:
         except jwt.PyJWTError as exc:
             raise AuthorizationError(f"Invalid service token: {exc}") from exc
 
+        recognized_clients = _recognized_clients(self._settings)
         client_id = payload.get("azp") or payload.get("client_id")
-        if not isinstance(client_id, str) or client_id not in _RECOGNIZED_CLIENTS:
+        if not isinstance(client_id, str) or client_id not in recognized_clients:
             raise AuthorizationError(f"Unrecognized service client '{client_id}'")
 
-        service_name, roles = _RECOGNIZED_CLIENTS[client_id]
+        service_name, roles = recognized_clients[client_id]
         realm_access = payload.get("realm_access")
         raw_roles = realm_access.get("roles", ()) if isinstance(realm_access, dict) else ()
         token_roles = tuple(str(role) for role in raw_roles) if isinstance(raw_roles, list) else ()

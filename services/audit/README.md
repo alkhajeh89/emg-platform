@@ -115,6 +115,7 @@ tests only; local compose is not a production deployment profile.
 | `EMG_AUDIT_POSTGRES_POOL_MAX_SIZE` | `10` | Maximum concurrent audit PostgreSQL connections. |
 | `EMG_AUDIT_POSTGRES_RECONNECT_ATTEMPTS` | `2` | Bounded attempts for reconnect-safe idempotent store operations. |
 | `EMG_AUDIT_POSTGRES_SHUTDOWN_TIMEOUT_SECONDS` | `5` | Maximum pool drain/close wait during shutdown. |
+| `EMG_AUDIT_PROJECTOR_CLIENT_IDS` | `[]` | Exact JSON list of registered tenant-scoped Audit Projector client IDs; wildcard trust is not supported. |
 | `EMG_AUDIT_KEYCLOAK_BASE_URL` | `http://localhost:8080` | Keycloak base URL (token issuer/JWKS). |
 | `EMG_AUDIT_KEYCLOAK_REALM` | `emg` | Keycloak realm. |
 | `EMG_AUDIT_SERVICE_TOKEN_AUDIENCE` | `emg-internal-services` | Expected `aud` on inbound service tokens. |

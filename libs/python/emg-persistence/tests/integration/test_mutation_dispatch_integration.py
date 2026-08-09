@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 from collections.abc import Iterator
@@ -10,6 +11,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from _persistence_integration_helpers import truncate_persistence_tables
+from emg_audit_projector.config import Settings as ProjectorSettings
+from emg_audit_projector.worker import AuditProjectorWorker
 from emg_memory_graph import EvidenceRef, EvidenceSource, MemoryGraph, MemoryNode
 from emg_persistence import PersistenceSettings, PostgresNeo4jGraphStore
 from emg_persistence.migrate import run_migrations
@@ -93,7 +96,7 @@ def _seed_dispatch(
         resource_type="entity",
         resource_id=graph.nodes[0].node_id,
         action="create_entity",
-        classification="internal",
+        classification="INTERNAL",
         reason=None,
     )
     intent: dict[str, object] = {
@@ -442,3 +445,58 @@ def test_complete_dispatch_behavior_is_unchanged(settings: PersistenceSettings) 
         )
         == ()
     )
+
+
+class _AcceptingAuditDelivery:
+    def __init__(self) -> None:
+        self.event_ids: list[str] = []
+
+    def deliver(self, events, **kwargs) -> None:
+        del kwargs
+        self.event_ids.extend(event.event_id for event in events)
+
+
+@requires_postgres
+def test_live_projector_claims_projects_delivers_and_acknowledges(
+    settings: PersistenceSettings,
+) -> None:
+    mutation_id = _seed_dispatch(
+        settings, tenant_id="dispatch-tenant-a", idempotency_key="projector-live"
+    )
+    delivery = _AcceptingAuditDelivery()
+    projector_settings = ProjectorSettings(
+        deployment_environment="test",
+        postgres_dsn=settings.postgres_dsn,
+        tenant_credentials_json=json.dumps(
+            [
+                {
+                    "tenant_id": "dispatch-tenant-a",
+                    "client_id": "emg-svc-audit-projector-dispatch-tenant-a",
+                    "client_secret": "integration-only",
+                }
+            ]
+        ),
+        worker_id="live-projector",
+        telemetry_interval_seconds=300,
+    )
+    worker = AuditProjectorWorker(
+        projector_settings,
+        PostgresTransactionProvider(DirectConnectionProvider(settings)),
+        delivery,  # type: ignore[arg-type]
+    )
+
+    assert worker.run_cycle() is True
+
+    assert delivery.event_ids == [f"kg-mutation:{mutation_id}:0"]
+    connection = connect(settings)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT delivered_at IS NOT NULL, claim_owner, claim_expires_at, "
+                "attempt_count FROM mutation_dispatch "
+                "WHERE mutation_id = %s AND channel = 'audit'",
+                (mutation_id,),
+            )
+            assert cursor.fetchone() == (True, None, None, 1)
+    finally:
+        connection.close()

@@ -1,0 +1,7 @@
+name: audit-projector
+module: "Audit Reconciliation — ADR-028"
+owner: "CISO / Chief Data Officer (joint)"
+steward: "Audit Platform Team"
+status: active
+feature: "RC-1C — Audit Dispatch Resilience"
+sprint: RC-1C

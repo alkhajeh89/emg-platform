@@ -145,3 +145,35 @@ def test_validate_still_populates_roles_and_service_name(settings, rsa_keypair, 
     assert principal.client_id == "emg-svc-audit"
     assert principal.service_name == "audit"
     assert "svc-audit" in principal.roles
+
+
+def test_explicit_projector_client_is_recognized(settings, rsa_keypair):
+    private_key, public_key = rsa_keypair
+    projector_id = "emg-svc-audit-projector-tenant-a"
+    configured = settings.model_copy(update={"projector_client_ids": (projector_id,)})
+    validator = ServiceTokenValidator(configured, signing_key_resolver=lambda token: public_key)
+    token = _issue_service_token(
+        configured,
+        private_key,
+        client_id=projector_id,
+        scope="svc-audit-projector",
+    )
+
+    principal = validator.validate(token)
+
+    assert principal.client_id == projector_id
+    assert principal.service_name == "audit-projector"
+    assert principal.tenant_id == "tenant-a"
+
+
+def test_unconfigured_projector_client_is_rejected(settings, rsa_keypair, validator):
+    private_key, _ = rsa_keypair
+    token = _issue_service_token(
+        settings,
+        private_key,
+        client_id="emg-svc-audit-projector-tenant-a",
+        scope="svc-audit-projector",
+    )
+
+    with pytest.raises(AuthorizationError, match="Unrecognized service client"):
+        validator.validate(token)

@@ -24,7 +24,7 @@ def test_production_manifests_render_without_literal_secrets() -> None:
     objects = _objects()
     assert objects
     assert not [obj for obj in objects if obj["kind"] == "Secret"]
-    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 5
+    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 6
 
 
 def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
@@ -32,6 +32,7 @@ def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
     assert {obj["metadata"]["name"] for obj in deployments} == {
         "emg-identity",
         "emg-audit",
+        "emg-audit-projector",
         "emg-knowledge-graph",
         "emg-studio-bff",
     }
@@ -52,8 +53,12 @@ def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
             assert security["allowPrivilegeEscalation"] is False
             assert security["readOnlyRootFilesystem"] is True
             assert security["capabilities"]["drop"] == ["ALL"]
-            assert container["livenessProbe"]["httpGet"]["path"] == "/healthz"
-            assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
+            if deployment["metadata"]["name"] == "emg-audit-projector":
+                assert container["livenessProbe"]["exec"]
+                assert container["readinessProbe"]["exec"]
+            else:
+                assert container["livenessProbe"]["httpGet"]["path"] == "/healthz"
+                assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
 
 
 def test_one_shot_jobs_are_hardened_and_digest_pinned() -> None:
