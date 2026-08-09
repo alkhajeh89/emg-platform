@@ -255,6 +255,10 @@ jobs:
         run: |
           .venv/bin/pytest services/knowledge-graph/tests/integration/test_atomic_mutation_integration.py -v
 
+      - name: Authoritative mutation-to-audit end-to-end proof (real PostgreSQL)
+        run: |
+          .venv/bin/pytest services/audit-projector/tests/integration/test_authoritative_audit_e2e.py -v
+
   security:
     name: Dependency, secret & SBOM security gates
     runs-on: ubuntu-latest
