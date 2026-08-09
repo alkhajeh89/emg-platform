@@ -302,8 +302,30 @@ jobs:
           name: security-artifacts
           path: artifacts/
 
+  container-inventory:
+    name: Governed runtime image inventory
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.inventory.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.10"
+
+      - name: Install hash-locked inventory dependency
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+
+      - name: Derive governed image matrix
+        id: inventory
+        run: python tools/ci/runtime_image_release.py inventory --github-output >> "$GITHUB_OUTPUT"
+
   container-security:
     name: Container vulnerability gates
+    needs: container-inventory
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -311,24 +333,15 @@ jobs:
       security-events: write
     strategy:
       fail-fast: false
-      # Final correction-sprint Finding 10: studio-bff's Dockerfile lives
-      # under apps/, not services/ — the build step below resolves the
-      # correct directory per matrix entry rather than assuming services/.
-      matrix:
-        service: [identity, audit, audit-projector, knowledge-graph, studio-bff]
+      matrix: ${{ fromJSON(needs.container-inventory.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build service image
         run: |
-          if [ -d "services/${{ matrix.service }}" ]; then
-            SERVICE_DIR="services/${{ matrix.service }}"
-          else
-            SERVICE_DIR="apps/${{ matrix.service }}"
-          fi
           docker build --pull=false \
-            -f "$SERVICE_DIR/Dockerfile" \
+            -f "${{ matrix.dockerfile }}" \
             -t emg-${{ matrix.service }}:${{ github.sha }} .
 
       - name: Scan image (critical vulnerabilities block)

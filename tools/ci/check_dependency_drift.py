@@ -46,7 +46,10 @@ def main():
         pyproject = path / "pyproject.toml"
 
         if not pyproject.exists():
-            print(f"⚠️ {name}: no pyproject.toml found")
+            if service.get("type") == "deployment-tool":
+                print(f"✅ {name}: governed standalone deployment tool")
+            else:
+                print(f"⚠️ {name}: no pyproject.toml found")
             continue
 
         declared = set(service.get("dependencies", []))

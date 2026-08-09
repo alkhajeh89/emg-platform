@@ -39,6 +39,21 @@ def test_audit_projector_is_registered_with_accurate_dependencies() -> None:
     assert manifest_check.check_component("audit-projector", projector, ROOT)
 
 
+def test_keycloak_provisioner_is_registered_as_emg_built_deployment_tool() -> None:
+    manifest = manifest_check.load_manifest(ROOT)
+    provisioner = manifest["services"]["keycloak-provisioner"]
+
+    assert provisioner == {
+        "type": "deployment-tool",
+        "path": "tools",
+        "dockerfile": "tools/keycloak-provisioner.Dockerfile",
+        "dependencies": [],
+    }
+    assert manifest_check.check_component("keycloak-provisioner", provisioner, ROOT)
+    dockerfile = (ROOT / provisioner["dockerfile"]).read_text(encoding="utf-8")
+    assert "tools/scripts/provision-keycloak-realm.py" in dockerfile
+
+
 def test_real_repository_has_complete_production_service_coverage() -> None:
     manifest = manifest_check.load_manifest(ROOT)
 

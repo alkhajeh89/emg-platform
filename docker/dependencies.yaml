@@ -60,6 +60,14 @@ services:
       - emg-api-contracts
 
 
+  keycloak-provisioner:
+    type: deployment-tool
+    path: tools
+    dockerfile: tools/keycloak-provisioner.Dockerfile
+
+    dependencies: []
+
+
   persistence:
     type: library
     path: libs/python/emg-persistence

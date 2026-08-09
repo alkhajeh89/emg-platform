@@ -1,0 +1,316 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools/ci"))
+
+from runtime_image_release import (  # noqa: E402
+    ReleaseValidationError,
+    build_image_record,
+    governed_images,
+    load_complete_records,
+    release_manifest,
+    resolved_bundle,
+    validate_finalized_bundle,
+)
+
+WORKFLOW_PATH = ROOT / ".github/workflows/runtime-image-release.yml"
+COMMIT = "1a" * 20
+SOURCE_REPOSITORY = "emg/example"
+EXPECTED_APPLICATION_IMAGES = {
+    "identity",
+    "audit",
+    "audit-projector",
+    "knowledge-graph",
+    "studio-bff",
+}
+EXPECTED_RELEASE_IMAGES = EXPECTED_APPLICATION_IMAGES | {"keycloak-provisioner"}
+
+
+def _workflow() -> dict[str, Any]:
+    return yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+
+
+def _trigger(workflow: dict[str, Any]) -> dict[str, Any]:
+    # PyYAML 1.1 reads the unquoted GitHub Actions `on` key as boolean true.
+    return workflow.get("on", workflow.get(True, {}))
+
+
+def _all_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    return [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+
+
+def _records(tmp_path: Path) -> tuple[Path, list[dict[str, Any]]]:
+    directory = tmp_path / "records"
+    directory.mkdir(parents=True)
+    records: list[dict[str, Any]] = []
+    for image in governed_images():
+        service = image["service"]
+        sbom = directory / f"{service}.cdx.json"
+        sbom.write_text(
+            json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.5"}) + "\n",
+            encoding="utf-8",
+        )
+        digest = "sha256:" + hashlib.sha256(service.encode()).hexdigest()
+        record = build_image_record(
+            service=service,
+            owner="emg",
+            digest=digest,
+            commit=COMMIT,
+            source_repository=SOURCE_REPOSITORY,
+            workflow_identity=".github/workflows/runtime-image-release.yml@refs/tags/v1.0.0",
+            workflow_run="https://github.com/emg/example/actions/runs/1",
+            sbom_path=sbom,
+            provenance_reference="https://github.com/emg/example/attestations",
+        )
+        (directory / f"{service}.image.json").write_text(json.dumps(record), encoding="utf-8")
+        records.append(record)
+    return directory, records
+
+
+def _source_bundle() -> str:
+    documents = []
+    for index, service in enumerate(sorted(EXPECTED_RELEASE_IMAGES), start=1):
+        documents.append(
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {"name": service},
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": service,
+                                    "image": "registry.invalid/emg/"
+                                    f"{service}@sha256:{index:064x}",
+                                }
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+    return yaml.safe_dump_all(documents, sort_keys=False)
+
+
+def test_canonical_inventory_governs_applications_and_keycloak_provisioner() -> None:
+    inventory = {image["service"]: image for image in governed_images()}
+
+    assert set(inventory) == EXPECTED_RELEASE_IMAGES
+    assert {
+        service for service, image in inventory.items() if image["component_type"] == "service"
+    } == EXPECTED_APPLICATION_IMAGES
+    provisioner = inventory["keycloak-provisioner"]
+    assert provisioner["component_type"] == "deployment-tool"
+    assert provisioner["dockerfile"] == "tools/keycloak-provisioner.Dockerfile"
+    dockerfile = (ROOT / provisioner["dockerfile"]).read_text(encoding="utf-8")
+    assert "tools/scripts/provision-keycloak-realm.py" in dockerfile
+    assert "ENTRYPOINT" in dockerfile
+
+
+def test_release_workflow_has_only_the_trusted_tag_trigger_and_environment() -> None:
+    workflow = _workflow()
+    trigger = _trigger(workflow)
+    privileged = workflow["jobs"]["publish-sign-attest"]
+
+    assert trigger == {"push": {"tags": ["v*"]}}
+    assert "pull_request" not in trigger
+    assert "workflow_dispatch" not in trigger
+    assert workflow["permissions"] == {"contents": "read"}
+    assert privileged["environment"] == "production-release"
+    assert privileged["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+        "attestations": "write",
+    }
+    assert workflow["jobs"]["build-scan"]["permissions"] == {"contents": "read"}
+    assert workflow["jobs"]["finalize-release"]["permissions"] == {"contents": "read"}
+
+
+def test_workflow_builds_once_and_scan_blocks_publication() -> None:
+    workflow = _workflow()
+    build = workflow["jobs"]["build-scan"]
+    release = workflow["jobs"]["publish-sign-attest"]
+    workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+    scan = next(step for step in build["steps"] if step["name"] == "Mandatory Trivy security gate")
+
+    assert workflow_text.count("docker build --pull=false") == 1
+    assert "build-scan" in release["needs"]
+    assert scan["with"]["severity"] == "CRITICAL"
+    assert scan["with"]["ignore-unfixed"] is True
+    assert scan["with"]["exit-code"] == "1"
+    assert "continue-on-error" not in scan
+    publish = next(
+        step
+        for step in release["steps"]
+        if step["name"] == "Publish the scanned image and capture its digest"
+    )
+    assert "docker load" in publish["run"]
+    assert "docker push" in publish["run"]
+    assert re.search(r"docker build(?:\s|$)", publish["run"]) is None
+    assert "^sha256:[0-9a-f]{64}$" in publish["run"]
+
+
+def test_workflow_signs_verifies_attests_and_records_every_matrix_digest() -> None:
+    workflow = _workflow()
+    release = workflow["jobs"]["publish-sign-attest"]
+    steps = {step["name"]: step for step in release["steps"]}
+
+    assert "fromJSON(needs.inventory.outputs.matrix)" in release["strategy"]["matrix"]
+    assert "cosign sign --yes" in steps["Sign immutable digest with keyless OIDC"]["run"]
+    verify = steps["Verify the approved signing identity"]
+    assert "--certificate-identity" in verify["run"]
+    assert "--certificate-oidc-issuer" in verify["run"]
+    assert "runtime-image-release.yml@${{ github.ref }}" in verify["env"]["EXPECTED_IDENTITY"]
+    attest = steps["Attest runtime image provenance"]
+    assert attest["with"]["subject-digest"] == "${{ steps.publish.outputs.digest }}"
+    assert attest["with"]["push-to-registry"] is True
+    record = steps["Record verified image evidence"]["run"]
+    assert "--sbom" in record
+    assert "--provenance-reference" in record
+    assert "--digest" in record
+
+
+def test_workflow_actions_are_sha_pinned_and_release_evidence_uses_default_retention() -> None:
+    workflow = _workflow()
+    action_reference = re.compile(r"^[^@]+@[0-9a-f]{40}$")
+    for step in _all_steps(workflow):
+        if "uses" in step:
+            assert action_reference.fullmatch(step["uses"]), step["uses"]
+
+    final_upload = next(
+        step
+        for step in workflow["jobs"]["finalize-release"]["steps"]
+        if step["name"] == "Upload retained runtime release evidence"
+    )
+    assert "retention-days" not in final_upload["with"]
+    assert final_upload["with"]["path"] == "release-evidence/"
+
+
+def test_complete_manifest_binds_all_images_and_is_rollback_complete(tmp_path: Path) -> None:
+    directory, expected_records = _records(tmp_path)
+    records = load_complete_records(directory)
+    manifest = release_manifest(
+        records, version="v1.0.0", commit=COMMIT, repository=SOURCE_REPOSITORY
+    )
+
+    assert records == sorted(expected_records, key=lambda record: record["service"])
+    assert {image["service"] for image in manifest["images"]} == EXPECTED_RELEASE_IMAGES
+    assert set(manifest["rollback"]["completeImageSet"]) == EXPECTED_RELEASE_IMAGES
+    for image in manifest["images"]:
+        assert image["imageReference"].endswith("@" + image["digest"])
+        assert image["sbom"]["format"] == "CycloneDX"
+        assert image["signature"]["status"] == "verified"
+        assert image["provenance"]["status"] == "attested"
+
+
+def test_missing_or_duplicate_image_record_fails_finalization(tmp_path: Path) -> None:
+    directory, _ = _records(tmp_path)
+    (directory / "identity.image.json").unlink()
+    with pytest.raises(ReleaseValidationError, match="incomplete"):
+        load_complete_records(directory)
+
+    directory, _ = _records(tmp_path / "duplicate")
+    original = directory / "identity.image.json"
+    (directory / "identity-copy.image.json").write_bytes(original.read_bytes())
+    with pytest.raises(ReleaseValidationError, match="duplicate"):
+        load_complete_records(directory)
+
+
+def test_missing_or_modified_retained_sbom_fails_finalization(tmp_path: Path) -> None:
+    directory, _ = _records(tmp_path)
+    (directory / "identity.cdx.json").unlink()
+    with pytest.raises(ReleaseValidationError, match="retained SBOM"):
+        load_complete_records(directory)
+
+    directory, _ = _records(tmp_path / "modified")
+    (directory / "identity.cdx.json").write_text(
+        '{"bomFormat":"CycloneDX","changed":true}\n', encoding="utf-8"
+    )
+    with pytest.raises(ReleaseValidationError, match="checksum differs"):
+        load_complete_records(directory)
+
+
+def test_resolved_bundle_is_immutable_complete_and_placeholder_free(tmp_path: Path) -> None:
+    _, records = _records(tmp_path)
+    manifest = release_manifest(
+        records, version="v1.0.0", commit=COMMIT, repository=SOURCE_REPOSITORY
+    )
+    source = tmp_path / "production-template.yaml"
+    source.write_text(_source_bundle(), encoding="utf-8")
+
+    first = resolved_bundle(source, manifest)
+    second = resolved_bundle(source, manifest)
+
+    assert first == second
+    assert "registry.invalid" not in first
+    assert set(re.findall(r"ghcr\.io/[^\s]+@sha256:[0-9a-f]{64}", first))
+    validate_finalized_bundle(first, EXPECTED_RELEASE_IMAGES)
+
+
+def test_actual_production_overlay_resolves_every_governed_image(tmp_path: Path) -> None:
+    _, records = _records(tmp_path)
+    manifest = release_manifest(
+        records, version="v1.0.0", commit=COMMIT, repository=SOURCE_REPOSITORY
+    )
+    rendered = subprocess.run(
+        ["kubectl", "kustomize", str(ROOT / "infra/environments/production")],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    source = tmp_path / "actual-production-template.yaml"
+    source.write_text(rendered, encoding="utf-8")
+
+    finalized = resolved_bundle(source, manifest)
+
+    validate_finalized_bundle(finalized, EXPECTED_RELEASE_IMAGES)
+    assert "registry.invalid" not in finalized
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "registry.invalid/emg/identity@sha256:" + "1" * 64,
+        "ghcr.io/emg/emg-platform/identity:latest",
+        "ghcr.io/emg/emg-platform/identity@sha256:" + "0" * 64,
+        "ghcr.io/emg/emg-platform/identity@sha256:" + "0" * 63 + "1",
+    ],
+)
+def test_finalized_bundle_rejects_placeholders_mutable_tags_and_synthetic_digests(
+    image: str,
+) -> None:
+    rendered = yaml.safe_dump(
+        {"kind": "Pod", "spec": {"containers": [{"name": "identity", "image": image}]}}
+    )
+    with pytest.raises(ReleaseValidationError):
+        validate_finalized_bundle(rendered, {"identity"})
+
+
+def test_release_record_rejects_synthetic_digest(tmp_path: Path) -> None:
+    sbom = tmp_path / "identity.cdx.json"
+    sbom.write_text('{"bomFormat":"CycloneDX"}\n', encoding="utf-8")
+    with pytest.raises(ReleaseValidationError, match="synthetic"):
+        build_image_record(
+            service="identity",
+            owner="emg",
+            digest="sha256:" + "a" * 64,
+            commit=COMMIT,
+            source_repository=SOURCE_REPOSITORY,
+            workflow_identity="workflow",
+            workflow_run="run",
+            sbom_path=sbom,
+            provenance_reference="attestations",
+        )
