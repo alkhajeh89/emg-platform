@@ -47,10 +47,11 @@ Each entry carries:
 ## Manifest Workflow
 1. A package's real dependencies live in its own `pyproject.toml`
    (`[project.dependencies]`), same as any Python package.
-2. `docker/dependencies.yaml` restates the internal-`emg-*` subset of those
-   dependencies for two purposes: verifying a service's Dockerfile actually
-   `COPY`s and installs every declared dependency, and detecting drift between
-   what the code imports and what the manifest lists.
+2. `docker/dependencies.yaml` restates the direct internal-`emg-*` subset of
+   those dependencies. The validator resolves that graph recursively at each
+   service image boundary and verifies the Dockerfile explicitly `COPY`s and
+   installs the complete internal runtime closure. This distinction preserves
+   direct package ownership while making `pip --no-deps` images complete.
 3. When you add a new internal dependency to a package, update both files in
    the same change: the package's `pyproject.toml`, and its entry in
    `docker/dependencies.yaml`. If the package is a `type: service`, also add
@@ -75,10 +76,10 @@ than invent a new shape:
    from the Dockerfile fails the build immediately rather than surfacing later
    as a runtime `ImportError`. CI catches the equivalent gap even earlier, via
    `check_dependency_manifest.py`, before an image is even built.
-4. **Match `pyproject.toml` exactly** — the set of libraries copied and
-   installed must equal the package's declared internal dependencies; neither
-   more (unused `COPY`s bloat the image and hide real coupling) nor fewer
-   (missing at runtime).
+4. **Match the recursive runtime closure** — manifest entries continue to
+   match each package's direct `pyproject.toml` dependencies exactly. A service
+   Dockerfile must copy and install the transitive closure of those direct
+   dependencies because `pip --no-deps` deliberately performs no resolution.
 5. **Multi-stage build** — a `base` stage compiles and installs everything; a
    slim `runtime` stage copies only `site-packages` and installed console
    scripts out of it, runs as a non-root user, and defines a `HEALTHCHECK`.
@@ -88,9 +89,11 @@ The `dependency-validation` job in `.github/workflows/ci.yml` runs on every
 `push` and `pull_request`, installing `pyyaml` + `tomli` + `pytest` and then
 running, in order:
 1. `tools/ci/check_dependency_manifest.py` — for every `type: service` entry,
-   confirms its Dockerfile exists and contains a `COPY libs/python/{dependency}`
-   line for each declared dependency. Libraries are skipped (they have no
-   Dockerfile). Exits 1 on any missing entry.
+   confirms its Dockerfile exists, recursively resolves internal dependencies,
+   and requires distinct copy and install entries for every package in that
+   closure. Libraries are skipped as image boundaries (they have no Dockerfile)
+   but their direct edges participate in closure resolution. Exits 1 on any
+   missing entry or unregistered internal dependency.
 2. `tools/ci/check_dependency_drift.py` — for every entry (service or
    library), parses its `pyproject.toml`, extracts the `emg-*` dependencies
    actually declared in code, and compares that set against the manifest's

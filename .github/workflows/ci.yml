@@ -346,6 +346,13 @@ jobs:
             -f "${{ matrix.dockerfile }}" \
             -t emg-${{ matrix.service }}:${{ github.sha }} .
 
+      - name: Smoke audit-projector runtime and provisioning entrypoints
+        if: matrix.service == 'audit-projector'
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/tools/ci/smoke_audit_projector_image.py:/smoke.py:ro" \
+            emg-audit-projector:${{ github.sha }} python /smoke.py
+
       - name: Scan image (critical vulnerabilities block)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:

@@ -36,7 +36,33 @@ def test_audit_projector_is_registered_with_accurate_dependencies() -> None:
     }
     actual = drift.get_pyproject_dependencies(ROOT / "services/audit-projector/pyproject.toml")
     assert actual == set(projector["dependencies"])
-    assert manifest_check.check_component("audit-projector", projector, ROOT)
+    assert manifest_check.check_component("audit-projector", projector, ROOT, manifest=manifest)
+
+
+def test_audit_projector_dockerfile_contains_complete_internal_closure() -> None:
+    manifest = manifest_check.load_manifest(ROOT)
+    expected = {
+        "emg-audit-client",
+        "emg-common-types",
+        "emg-errors",
+        "emg-knowledge-lifecycle",
+        "emg-knowledge-pipeline",
+        "emg-memory-graph",
+        "emg-ontology",
+        "emg-persistence",
+        "emg-platform-core",
+        "emg-semantic-layer",
+        "emg-telemetry",
+        "emg-trust-scoring",
+    }
+
+    assert manifest_check.internal_dependency_closure(manifest, "audit-projector") == expected
+    assert manifest_check.check_component(
+        "audit-projector",
+        manifest["services"]["audit-projector"],
+        ROOT,
+        manifest=manifest,
+    )
 
 
 def test_keycloak_provisioner_is_registered_as_emg_built_deployment_tool() -> None:
@@ -49,7 +75,9 @@ def test_keycloak_provisioner_is_registered_as_emg_built_deployment_tool() -> No
         "dockerfile": "tools/keycloak-provisioner.Dockerfile",
         "dependencies": ["emg-common-types"],
     }
-    assert manifest_check.check_component("keycloak-provisioner", provisioner, ROOT)
+    assert manifest_check.check_component(
+        "keycloak-provisioner", provisioner, ROOT, manifest=manifest
+    )
     dockerfile = (ROOT / provisioner["dockerfile"]).read_text(encoding="utf-8")
     assert "tools/scripts/provision-keycloak-realm.py" in dockerfile
 
@@ -91,3 +119,30 @@ def test_corrupt_production_service_registration_fails(tmp_path: Path) -> None:
     }
 
     assert not manifest_check.check_production_service_coverage(manifest, tmp_path)
+
+
+def test_transitive_internal_dependency_missing_from_dockerfile_fails(tmp_path: Path) -> None:
+    service = tmp_path / "services/example"
+    service.mkdir(parents=True)
+    (service / "Dockerfile").write_text(
+        "COPY libs/python/emg-middle /build/libs/python/emg-middle\n"
+        "RUN pip install /build/libs/python/emg-middle\n"
+    )
+    manifest = {
+        "services": {
+            "example": {
+                "type": "service",
+                "dockerfile": "services/example/Dockerfile",
+                "dependencies": ["emg-middle"],
+            },
+            "middle": {
+                "type": "library",
+                "dependencies": ["emg-leaf"],
+            },
+            "leaf": {"type": "library", "dependencies": []},
+        }
+    }
+
+    assert not manifest_check.check_component(
+        "example", manifest["services"]["example"], tmp_path, manifest=manifest
+    )
