@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 OVERLAY = ROOT / "infra/environments/production"
+sys.path.insert(0, str(ROOT / "tools/ci"))
+from validate_production_provisioning import ProvisioningValidationError  # noqa: E402
+from validate_production_provisioning import validate as validate_provisioning  # noqa: E402
 
 
 def _objects() -> list[dict]:
@@ -24,7 +29,7 @@ def test_production_manifests_render_without_literal_secrets() -> None:
     objects = _objects()
     assert objects
     assert not [obj for obj in objects if obj["kind"] == "Secret"]
-    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 6
+    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 7
 
 
 def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
@@ -64,8 +69,11 @@ def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
 def test_one_shot_jobs_are_hardened_and_digest_pinned() -> None:
     jobs = [obj for obj in _objects() if obj["kind"] == "Job"]
     assert {job["metadata"]["name"] for job in jobs} == {
+        "emg-database-bootstrap",
+        "emg-audit-migration",
         "emg-knowledge-graph-migration",
         "emg-keycloak-provision",
+        "emg-provisioning-validate",
     }
     digest = re.compile(r"^[^:]+(?:/[^:]+)+@sha256:[0-9a-f]{64}$")
     for job in jobs:
@@ -87,10 +95,15 @@ def test_privileged_credentials_are_confined_to_jobs() -> None:
     objects = _objects()
     deployment_text = yaml.safe_dump_all([obj for obj in objects if obj["kind"] == "Deployment"])
     assert "migration-postgres-dsn" not in deployment_text
+    assert "admin-postgres-dsn" not in deployment_text
     assert "admin-password" not in deployment_text
     assert "admin-username" not in deployment_text
 
     jobs = {obj["metadata"]["name"]: obj for obj in objects if obj["kind"] == "Job"}
+    bootstrap = yaml.safe_dump(jobs["emg-database-bootstrap"])
+    assert "admin-postgres-dsn" in bootstrap
+    assert "database-bootstrap" in bootstrap
+    assert "migration-postgres-dsn" in yaml.safe_dump(jobs["emg-audit-migration"])
     assert "migration-postgres-dsn" in yaml.safe_dump(jobs["emg-knowledge-graph-migration"])
     provision = yaml.safe_dump(jobs["emg-keycloak-provision"])
     assert "admin-password" in provision
@@ -98,6 +111,39 @@ def test_privileged_credentials_are_confined_to_jobs() -> None:
     assert "EMG_KNOWLEDGE_GRAPH_API_STORE_BACKEND" in yaml.safe_dump(
         jobs["emg-knowledge-graph-migration"]
     )
+
+
+def test_adr_041_provisioning_contract_is_complete_and_ordered() -> None:
+    objects = _objects()
+    validate_provisioning(objects)
+    stages = {
+        obj["metadata"]["name"]: obj["metadata"]
+        .get("annotations", {})
+        .get("emg.platform/bootstrap-stage")
+        for obj in objects
+        if obj["kind"] in {"Job", "Deployment"}
+    }
+    assert stages["emg-database-bootstrap"] == "10-database-roles"
+    assert stages["emg-audit-migration"] == "20-postgresql-migrations"
+    assert stages["emg-keycloak-provision"] == "30-keycloak-projector-clients"
+    assert stages["emg-provisioning-validate"] == "50-consistency-validation"
+    assert stages["emg-audit"] == "60-audit-service"
+    assert stages["emg-audit-projector"] == "70-audit-projector"
+
+
+def test_provisioning_validation_rejects_inventory_or_allow_list_divergence() -> None:
+    objects = _objects()
+    audit = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Deployment" and obj["metadata"]["name"] == "emg-audit"
+    )
+    audit["spec"]["template"]["spec"]["containers"][0]["env"].append(
+        {"name": "EMG_AUDIT_PROJECTOR_CLIENT_IDS", "value": "unknown-client"}
+    )
+
+    with pytest.raises(ProvisioningValidationError, match="independent projector allow-list"):
+        validate_provisioning(objects)
 
 
 def test_external_secrets_are_provider_neutral() -> None:

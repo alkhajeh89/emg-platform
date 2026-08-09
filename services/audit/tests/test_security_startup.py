@@ -1,6 +1,17 @@
+import json
+
 import pytest
 from emg_audit_service.config import Settings, validate_runtime_configuration
 from pydantic import ValidationError
+
+_PROJECTOR_INVENTORY = json.dumps(
+    {
+        "version": 1,
+        "projector_identities": [
+            {"tenant_id": "tenant-a", "client_id": "emg-svc-audit-projector-tenant-a"}
+        ],
+    }
+)
 
 
 def test_unknown_audit_backend_is_rejected() -> None:
@@ -29,8 +40,24 @@ def test_production_accepts_postgres_storage() -> None:
             store_backend="postgres",
             keycloak_base_url="https://keycloak.example.gov",
             postgres_dsn="postgresql://audit:production-password@postgres.example.gov/emg?sslmode=verify-full",
+            projector_identity_inventory_json=_PROJECTOR_INVENTORY,
         )
     )
+
+
+def test_production_rejects_missing_projector_identity_inventory() -> None:
+    with pytest.raises(RuntimeError, match="identity inventory"):
+        validate_runtime_configuration(
+            Settings(
+                deployment_environment="production",
+                store_backend="postgres",
+                keycloak_base_url="https://keycloak.example.gov",
+                postgres_dsn=(
+                    "postgresql://audit:production-password@postgres.example.gov/"
+                    "emg?sslmode=verify-full"
+                ),
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -46,6 +73,7 @@ def test_production_rejects_plaintext_transport(overrides: dict[str, object]) ->
         "store_backend": "postgres",
         "keycloak_base_url": "https://keycloak.example.gov",
         "postgres_dsn": "postgresql://audit:production-password@postgres/emg?sslmode=verify-full",
+        "projector_identity_inventory_json": _PROJECTOR_INVENTORY,
     }
     values.update(overrides)
     with pytest.raises(RuntimeError, match="transport"):

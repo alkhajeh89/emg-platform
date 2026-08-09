@@ -12,6 +12,7 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
 from emg_api_contracts import reject_unknown_environment
+from emg_common_types import parse_projector_identity_inventory, projector_client_allow_list
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -59,6 +60,7 @@ class Settings(BaseSettings):
     classification_clearance_claim: str = "classification_clearance"
     tenant_claim: str = "tenant_id"
     policy_config_path: Path = Path("services/audit/config/policy.example.yaml")
+    projector_identity_inventory_json: str = ""
     projector_client_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
@@ -69,7 +71,23 @@ class Settings(BaseSettings):
             not client_id.strip() for client_id in self.projector_client_ids
         ):
             raise ValueError("projector_client_ids must be unique non-blank client identifiers")
+        if self.projector_identity_inventory_json:
+            derived = projector_client_allow_list(
+                parse_projector_identity_inventory(self.projector_identity_inventory_json)
+            )
+            if self.projector_client_ids and self.projector_client_ids != derived:
+                raise ValueError(
+                    "projector_client_ids must exactly match the canonical identity inventory"
+                )
         return self
+
+    @property
+    def effective_projector_client_ids(self) -> tuple[str, ...]:
+        if not self.projector_identity_inventory_json:
+            return self.projector_client_ids
+        return projector_client_allow_list(
+            parse_projector_identity_inventory(self.projector_identity_inventory_json)
+        )
 
     @property
     def keycloak_issuer(self) -> str:
@@ -103,3 +121,7 @@ def validate_runtime_configuration(settings: Settings) -> None:
             )
         if not settings.policy_config_path.is_file():
             raise RuntimeError("audit production policy configuration file is missing")
+        if not settings.projector_identity_inventory_json:
+            raise RuntimeError("audit production projector identity inventory is missing")
+        if not settings.effective_projector_client_ids:
+            raise RuntimeError("audit production projector identity inventory is empty")

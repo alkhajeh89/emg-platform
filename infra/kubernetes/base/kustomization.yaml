@@ -8,8 +8,11 @@ resources:
   - identity-spool-pvc.yaml
   - audit.yaml
   - audit-projector.yaml
+  - database-bootstrap.yaml
+  - audit-migration.yaml
   - knowledge-graph.yaml
   - knowledge-graph-migration.yaml
   - studio-bff.yaml
   - keycloak-provision.yaml
+  - provisioning-validation.yaml
   - network-policies.yaml

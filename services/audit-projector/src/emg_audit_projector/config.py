@@ -7,6 +7,10 @@ from functools import cached_property
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
+from emg_common_types import (
+    parse_projector_identity_inventory,
+    validate_projector_credential_bindings,
+)
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +46,7 @@ class Settings(BaseSettings):
     keycloak_realm: str = "emg"
     token_audience: str = "emg-internal-services"
     audit_service_base_url: str = "http://localhost:8002"
+    identity_inventory_json: str = ""
     tenant_credentials_json: SecretStr = SecretStr("[]")
 
     worker_id: str = Field(default="audit-projector-1", min_length=1)
@@ -92,6 +97,11 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("Audit Projector requires at least one tenant credential")
     if settings.deployment_environment != "production":
         return
+    if not settings.identity_inventory_json:
+        raise RuntimeError("production projector identity inventory is missing")
+    identities = parse_projector_identity_inventory(settings.identity_inventory_json)
+    raw_credentials = json.loads(settings.tenant_credentials_json.get_secret_value())
+    validate_projector_credential_bindings(identities, raw_credentials)
     if urlsplit(settings.keycloak_base_url).scheme != "https":
         raise RuntimeError("production Keycloak transport must use HTTPS")
     if urlsplit(settings.audit_service_base_url).scheme != "https":

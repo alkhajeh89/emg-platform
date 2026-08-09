@@ -26,6 +26,15 @@ def settings(*, tenants: tuple[str, ...] = ("tenant-a",), **overrides: object) -
     ]
     values: dict[str, object] = {
         "deployment_environment": "test",
+        "identity_inventory_json": json.dumps(
+            {
+                "version": 1,
+                "projector_identities": [
+                    {"tenant_id": item["tenant_id"], "client_id": item["client_id"]}
+                    for item in credentials
+                ],
+            }
+        ),
         "tenant_credentials_json": json.dumps(credentials),
         "poll_interval_seconds": 0.01,
         "telemetry_interval_seconds": 0.01,

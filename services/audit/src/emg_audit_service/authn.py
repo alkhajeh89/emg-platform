@@ -72,7 +72,7 @@ _RECOGNIZED_CLIENTS: dict[str, tuple[str, tuple[str, ...]]] = {
 
 def _recognized_clients(settings: Settings) -> dict[str, tuple[str, tuple[str, ...]]]:
     clients = dict(_RECOGNIZED_CLIENTS)
-    for client_id in settings.projector_client_ids:
+    for client_id in settings.effective_projector_client_ids:
         clients[client_id] = (
             "audit-projector",
             ("service-account", "svc-audit-projector"),

@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: emg-database-bootstrap
+  annotations: {emg.platform/bootstrap-stage: "10-database-roles"}
+spec:
+  backoffLimit: 3
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-database-bootstrap, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: emg-audit-projector
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: database-bootstrap
+          image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          command: [python, -m, emg_persistence.provisioning, database-bootstrap]
+          env:
+            - {name: EMG_DATABASE_BOOTSTRAP_ADMIN_DSN, valueFrom: {secretKeyRef: {name: emg-database-bootstrap-secrets, key: admin-postgres-dsn}}}
+            - {name: EMG_AUDIT_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_AUDIT_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-secrets, key: postgres-dsn}}}
+            - {name: EMG_AUDIT_PROJECTOR_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: postgres-dsn}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 250m, memory: 128Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 16Mi}}]

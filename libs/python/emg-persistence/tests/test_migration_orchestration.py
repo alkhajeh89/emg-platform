@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from _migr_helpers import FakeMigrationExecutor
-from emg_persistence.migrate import default_migrations_dir, migration_status, run_migrations
+from emg_persistence.migrate import (
+    audit_migrations_dir,
+    default_migrations_dir,
+    migration_status,
+    run_migrations,
+)
 from emg_persistence.migrations import MigrationKind
 
 
@@ -19,6 +24,15 @@ def test_default_dirs_contain_baseline() -> None:
     assert (pg_dir / "V007__audit_projector_privileges.sql").is_file()
     assert (pg_dir / "V008__evidence_ledger_hardening.sql").is_file()
     assert (neo_dir / "M001__constraints.cypher").is_file()
+    assert (audit_migrations_dir() / "V001__audit_schema.sql").is_file()
+
+
+def test_audit_stream_is_independent_and_idempotent() -> None:
+    ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
+    applied = run_migrations(ex, audit_migrations_dir())
+
+    assert [(migration.version, migration.name) for migration in applied] == [(1, "audit_schema")]
+    assert run_migrations(ex, audit_migrations_dir()) == ()
 
 
 def test_run_migrations_applies_packaged_postgres_baseline() -> None:

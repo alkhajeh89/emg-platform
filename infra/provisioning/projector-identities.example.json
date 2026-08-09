@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "projector_identities": [
+    {
+      "tenant_id": "tenant-id-provided-by-environment",
+      "client_id": "projector-client-id-provided-by-environment"
+    }
+  ]
+}

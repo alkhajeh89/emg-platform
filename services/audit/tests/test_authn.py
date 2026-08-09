@@ -12,6 +12,7 @@ duplicated here.
 
 from __future__ import annotations
 
+import json
 import time
 
 import jwt
@@ -150,7 +151,16 @@ def test_validate_still_populates_roles_and_service_name(settings, rsa_keypair, 
 def test_explicit_projector_client_is_recognized(settings, rsa_keypair):
     private_key, public_key = rsa_keypair
     projector_id = "emg-svc-audit-projector-tenant-a"
-    configured = settings.model_copy(update={"projector_client_ids": (projector_id,)})
+    configured = settings.model_copy(
+        update={
+            "projector_identity_inventory_json": json.dumps(
+                {
+                    "version": 1,
+                    "projector_identities": [{"tenant_id": "tenant-a", "client_id": projector_id}],
+                }
+            )
+        }
+    )
     validator = ServiceTokenValidator(configured, signing_key_resolver=lambda token: public_key)
     token = _issue_service_token(
         configured,

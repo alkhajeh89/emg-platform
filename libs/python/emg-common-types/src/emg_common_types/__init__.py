@@ -16,6 +16,12 @@ from .classification import Classification
 from .classification_normalization import normalize_classification_clearance
 from .identifiers import CorrelationId, new_correlation_id
 from .language import LanguageCode, Locale, TextDirection
+from .projector_identity import (
+    ProjectorIdentity,
+    parse_projector_identity_inventory,
+    projector_client_allow_list,
+    validate_projector_credential_bindings,
+)
 
 __version__ = "0.1.0"
 
@@ -24,8 +30,12 @@ __all__ = [
     "CorrelationId",
     "LanguageCode",
     "Locale",
+    "ProjectorIdentity",
     "TextDirection",
     "new_correlation_id",
     "normalize_classification_clearance",
+    "parse_projector_identity_inventory",
+    "projector_client_allow_list",
+    "validate_projector_credential_bindings",
     "__version__",
 ]

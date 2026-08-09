@@ -1,6 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: emg-audit-projector}
+metadata:
+  name: emg-audit-projector
+  annotations: {emg.platform/bootstrap-stage: "70-audit-projector"}
 spec:
   replicas: 1
   strategy: {type: Recreate}
@@ -18,6 +20,7 @@ spec:
           envFrom: [{configMapRef: {name: emg-audit-projector-config}}]
           env:
             - {name: EMG_AUDIT_PROJECTOR_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: postgres-dsn}}}
+            - {name: EMG_AUDIT_PROJECTOR_IDENTITY_INVENTORY_JSON, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: identity-inventory-json}}}
             - {name: EMG_AUDIT_PROJECTOR_TENANT_CREDENTIALS_JSON, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: tenant-credentials-json}}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}

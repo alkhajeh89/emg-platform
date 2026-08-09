@@ -47,7 +47,7 @@ def test_keycloak_provisioner_is_registered_as_emg_built_deployment_tool() -> No
         "type": "deployment-tool",
         "path": "tools",
         "dockerfile": "tools/keycloak-provisioner.Dockerfile",
-        "dependencies": [],
+        "dependencies": ["emg-common-types"],
     }
     assert manifest_check.check_component("keycloak-provisioner", provisioner, ROOT)
     dockerfile = (ROOT / provisioner["dockerfile"]).read_text(encoding="utf-8")
