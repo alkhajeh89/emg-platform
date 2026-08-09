@@ -24,14 +24,15 @@ def test_runtime_privilege_migration_removes_runtime_ddl_and_ownership() -> None
     assert "DELETE ON graph_revisions" not in sql
 
 
-def test_runtime_column_privilege_migration_is_discovered_after_v005() -> None:
+def test_runtime_privilege_migrations_are_discovered_in_order() -> None:
     migrations = discover_migrations(
         default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
     )
 
-    assert [(migration.version, migration.name) for migration in migrations[-2:]] == [
+    assert [(migration.version, migration.name) for migration in migrations[-3:]] == [
         (5, "runtime_least_privilege"),
         (6, "runtime_column_privileges"),
+        (7, "audit_projector_privileges"),
     ]
 
 
@@ -79,3 +80,20 @@ def test_runtime_column_privileges_match_repository_updates() -> None:
     assert all("ON TABLE projection_checkpoints" not in statement for statement in update_grants)
     assert "ALTER TABLE" not in normalized
     assert "CREATE ROLE" not in normalized
+
+
+def test_audit_projector_privileges_are_column_scoped_and_schema_neutral() -> None:
+    sql = (
+        default_migrations_dir(MigrationKind.POSTGRES) / "V007__audit_projector_privileges.sql"
+    ).read_text(encoding="utf-8")
+    normalized = " ".join(sql.split())
+
+    assert "GRANT SELECT ON mutation_ledger, mutation_dispatch" in normalized
+    assert (
+        "GRANT UPDATE ( available_at, attempt_count, claim_owner, "
+        "claim_expires_at, delivered_at ) ON mutation_dispatch" in normalized
+    )
+    assert "emg_knowledge_graph_app" not in normalized
+    assert "ALTER TABLE" not in normalized
+    assert "CREATE ROLE" not in normalized
+    assert "UPDATE ON mutation_ledger" not in normalized

@@ -33,6 +33,7 @@ spec:
     - from:
         - podSelector: {matchLabels: {app.kubernetes.io/name: emg-identity}}
         - podSelector: {matchLabels: {app.kubernetes.io/name: emg-knowledge-graph}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-audit-projector}}
       ports: [{protocol: TCP, port: 8000}]
 ---
 apiVersion: networking.k8s.io/v1
@@ -52,7 +53,7 @@ metadata: {name: emg-internal-egress}
 spec:
   podSelector:
     matchExpressions:
-      - {key: app.kubernetes.io/name, operator: In, values: [emg-identity, emg-knowledge-graph, emg-studio-bff]}
+      - {key: app.kubernetes.io/name, operator: In, values: [emg-identity, emg-knowledge-graph, emg-studio-bff, emg-audit-projector]}
   policyTypes: [Egress]
   egress:
     - to:

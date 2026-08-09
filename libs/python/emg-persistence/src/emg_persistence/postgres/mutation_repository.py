@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from ..mutations import (
+    DispatchBacklog,
     DispatchWorkItem,
     IdempotencyClaim,
     IdempotencyState,
@@ -130,6 +131,29 @@ _COMPLETE_DISPATCH = (
     "WHERE tenant_id = %(tenant)s AND mutation_id = %(mutation_id)s "
     "AND channel = %(channel)s "
     "AND claim_owner = %(worker)s AND delivered_at IS NULL"
+)
+_RESCHEDULE_DISPATCH = (
+    "UPDATE mutation_dispatch SET available_at = clock_timestamp() + %(delay)s, "
+    "claim_owner = NULL, claim_expires_at = NULL "
+    "WHERE tenant_id = %(tenant)s AND mutation_id = %(mutation_id)s "
+    "AND channel = %(channel)s AND claim_owner = %(worker)s "
+    "AND delivered_at IS NULL"
+)
+_EXHAUST_DISPATCH = (
+    "UPDATE mutation_dispatch SET attempt_count = %(max_attempts)s, "
+    "claim_owner = NULL, claim_expires_at = NULL "
+    "WHERE tenant_id = %(tenant)s AND mutation_id = %(mutation_id)s "
+    "AND channel = %(channel)s AND claim_owner = %(worker)s "
+    "AND delivered_at IS NULL"
+)
+_DISPATCH_BACKLOG = (
+    "SELECT COUNT(*) FILTER (WHERE delivered_at IS NULL), "
+    "COUNT(*) FILTER (WHERE delivered_at IS NULL AND claim_owner IS NOT NULL "
+    "AND claim_expires_at > clock_timestamp()), "
+    "COUNT(*) FILTER (WHERE delivered_at IS NULL AND attempt_count >= %(max_attempts)s), "
+    "COALESCE(EXTRACT(EPOCH FROM (clock_timestamp() - MIN(available_at) "
+    "FILTER (WHERE delivered_at IS NULL))), 0) "
+    "FROM mutation_dispatch WHERE tenant_id = %(tenant)s AND channel = %(channel)s"
 )
 
 
@@ -461,3 +485,75 @@ class PostgresMutationRepository:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("mutation dispatch claim was lost")
+
+    def reschedule_dispatch(
+        self,
+        *,
+        tenant_id: str,
+        mutation_id: object,
+        channel: str,
+        worker: str,
+        delay: timedelta,
+    ) -> None:  # pragma: no cover - live DB
+        if delay < timedelta(0):
+            raise ValueError("dispatch retry delay must not be negative")
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                _RESCHEDULE_DISPATCH,
+                {
+                    "tenant": tenant_id,
+                    "mutation_id": mutation_id,
+                    "channel": channel,
+                    "worker": worker,
+                    "delay": delay,
+                },
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("mutation dispatch claim was lost")
+
+    def exhaust_dispatch(
+        self,
+        *,
+        tenant_id: str,
+        mutation_id: object,
+        channel: str,
+        worker: str,
+        max_attempts: int,
+    ) -> None:  # pragma: no cover - live DB
+        if max_attempts < 1:
+            raise ValueError("dispatch max_attempts must be positive")
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                _EXHAUST_DISPATCH,
+                {
+                    "tenant": tenant_id,
+                    "mutation_id": mutation_id,
+                    "channel": channel,
+                    "worker": worker,
+                    "max_attempts": max_attempts,
+                },
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("mutation dispatch claim was lost")
+
+    def dispatch_backlog(
+        self, *, tenant_id: str, channel: str, max_attempts: int
+    ) -> DispatchBacklog:  # pragma: no cover - live DB
+        if channel not in {"audit", "event"}:
+            raise ValueError(f"unsupported mutation dispatch channel: {channel!r}")
+        if max_attempts < 1:
+            raise ValueError("dispatch max_attempts must be positive")
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                _DISPATCH_BACKLOG,
+                {"tenant": tenant_id, "channel": channel, "max_attempts": max_attempts},
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError("mutation dispatch backlog query returned no row")
+        return DispatchBacklog(
+            pending_count=row[0],
+            in_flight_count=row[1],
+            exhausted_count=row[2],
+            oldest_pending_age_seconds=max(0.0, float(row[3])),
+        )

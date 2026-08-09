@@ -59,11 +59,16 @@ class Settings(BaseSettings):
     classification_clearance_claim: str = "classification_clearance"
     tenant_claim: str = "tenant_id"
     policy_config_path: Path = Path("services/audit/config/policy.example.yaml")
+    projector_client_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def validate_pool_bounds(self) -> Settings:
         if self.postgres_pool_min_size > self.postgres_pool_max_size:
             raise ValueError("postgres_pool_min_size must not exceed postgres_pool_max_size")
+        if len(set(self.projector_client_ids)) != len(self.projector_client_ids) or any(
+            not client_id.strip() for client_id in self.projector_client_ids
+        ):
+            raise ValueError("projector_client_ids must be unique non-blank client identifiers")
         return self
 
     @property

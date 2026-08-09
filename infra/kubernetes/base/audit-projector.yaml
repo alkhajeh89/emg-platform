@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: emg-audit-projector}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: emg-audit-projector}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-audit-projector, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      serviceAccountName: emg-audit-projector
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: audit-projector
+          image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          envFrom: [{configMapRef: {name: emg-audit-projector-config}}]
+          env:
+            - {name: EMG_AUDIT_PROJECTOR_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: postgres-dsn}}}
+            - {name: EMG_AUDIT_PROJECTOR_TENANT_CREDENTIALS_JSON, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: tenant-credentials-json}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+          startupProbe: {exec: {command: [/bin/sh, -c, "test -f /tmp/emg-audit-projector-ready"]}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
+          livenessProbe: {exec: {command: [/bin/sh, -c, "kill -0 1"]}, periodSeconds: 10, timeoutSeconds: 1, failureThreshold: 3}
+          readinessProbe: {exec: {command: [/bin/sh, -c, "test -f /tmp/emg-audit-projector-ready"]}, periodSeconds: 5, timeoutSeconds: 1, failureThreshold: 2}
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 32Mi}}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: emg-audit-projector-config}
+data:
+  EMG_AUDIT_PROJECTOR_DEPLOYMENT_ENVIRONMENT: production
+  EMG_AUDIT_PROJECTOR_KEYCLOAK_BASE_URL: https://keycloak.production.example.invalid
+  EMG_AUDIT_PROJECTOR_KEYCLOAK_REALM: emg
+  EMG_AUDIT_PROJECTOR_AUDIT_SERVICE_BASE_URL: https://audit.production.example.invalid
+  EMG_AUDIT_PROJECTOR_WORKER_ID: audit-projector-1
+  EMG_AUDIT_PROJECTOR_BATCH_SIZE: "1"
+  EMG_AUDIT_PROJECTOR_MAX_ATTEMPTS: "8"
+  EMG_AUDIT_PROJECTOR_LEASE_SECONDS: "30"
+  EMG_AUDIT_PROJECTOR_DRAIN_TIMEOUT_SECONDS: "20"
