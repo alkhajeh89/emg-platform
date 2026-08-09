@@ -439,6 +439,36 @@
       }
     }
   ],
+  "scopeMappings": [
+    {
+      "client": "emg-svc-identity",
+      "roles": [
+        "service-account",
+        "svc-identity"
+      ]
+    },
+    {
+      "client": "emg-svc-authorization",
+      "roles": [
+        "service-account",
+        "svc-authorization"
+      ]
+    },
+    {
+      "client": "emg-svc-audit",
+      "roles": [
+        "service-account",
+        "svc-audit"
+      ]
+    },
+    {
+      "client": "emg-svc-knowledge-graph-writer",
+      "roles": [
+        "service-account",
+        "svc-knowledge-graph-writer"
+      ]
+    }
+  ],
   "users": [
     {
       "username": "dev.investigator",

@@ -1,7 +1,7 @@
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = "Explicit local-development and test-only credential markers"
 stopwords = [
   "local_dev_only",
@@ -9,3 +9,38 @@ stopwords = [
   "emg-test-password",
   "test-secret",
 ]
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Reviewed architecture prose false positive in implementation gap analysis"
+condition = "AND"
+commits = ["2bfcbd97e6904434a56e14ddcb58c924554bfabb"]
+paths = ['''^docs/architecture/IMPLEMENTATION_GAP_ANALYSIS\.md$''']
+regexTarget = "match"
+regexes = ['''^APIs, AI/Decision/Knowledge $''']
+
+[[rules.allowlists]]
+description = "Reviewed architecture prose false positive in Phase 3 reference architecture"
+condition = "AND"
+commits = ["2bfcbd97e6904434a56e14ddcb58c924554bfabb"]
+paths = ['''^docs/architecture/PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE\.md$''']
+regexTarget = "match"
+regexes = ['''^APIs,\nAI/Decision/Knowledge $''']
+
+[[rules.allowlists]]
+description = "Reviewed synthetic classification value in transaction test"
+condition = "AND"
+commits = ["74dd667640285d2399f3626af927dcf9b173dc7e"]
+paths = ['''^libs/python/emg-knowledge-pipeline/tests/test_transactions\.py$''']
+regexTarget = "match"
+regexes = ['''^SECRET", effective_from=now$''']
+
+[[rules.allowlists]]
+description = "Reviewed synthetic login-failure fields in audit pipeline test"
+condition = "AND"
+commits = ["732591f560576c51275884f8311029cb67a314da"]
+paths = ['''^services/identity/tests/test_audit_pipeline\.py$''']
+regexTarget = "match"
+regexes = ['''^password", correlation_id="$''']
