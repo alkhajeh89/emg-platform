@@ -10,7 +10,8 @@ from psycopg import Connection, sql
 from psycopg.conninfo import conninfo_to_dict
 
 from ..migrate import audit_migrations_dir, run_migrations
-from ..migrations.model import AppliedMigration
+from ..migrations.discovery import discover_migrations
+from ..migrations.model import AppliedMigration, MigrationKind
 from ..postgres.migration_executor import PostgresMigrationExecutor
 
 AUDIT_HISTORY_TABLE = "audit_schema_migrations"
@@ -19,6 +20,97 @@ GOVERNED_DATABASE_ROLES = (
     "emg_audit_app",
     "emg_audit_projector",
 )
+_AUDIT_TABLES = ("audit_events", "evidence_custody_events")
+_AUDIT_COLUMNS = {
+    "audit_events": (
+        ("event_id", "text", True),
+        ("source_principal", "text", True),
+        ("sequence_number", "bigint", True),
+        ("timestamp", "timestamp with time zone", True),
+        ("ingest_time", "timestamp with time zone", True),
+        ("prev_hash", "text", True),
+        ("event_hash", "text", True),
+        ("actor", "text", True),
+        ("actor_type", "text", True),
+        ("module", "text", True),
+        ("action", "text", True),
+        ("outcome", "text", True),
+        ("correlation_id", "text", False),
+        ("resource_type", "text", False),
+        ("resource_id", "text", False),
+        ("classification", "text", True),
+        ("source_system", "text", True),
+        ("source_component", "text", False),
+        ("reason", "text", True),
+        ("metadata", "jsonb", True),
+        ("schema_version", "integer", True),
+        ("provenance", "jsonb", False),
+        ("tenant_id", "text", True),
+    ),
+    "evidence_custody_events": (
+        ("custody_event_id", "text", True),
+        ("source_principal", "text", True),
+        ("chain_sequence", "bigint", True),
+        ("custody_sequence", "bigint", True),
+        ("transfer_timestamp", "timestamp with time zone", True),
+        ("ingest_time", "timestamp with time zone", True),
+        ("prev_hash", "text", True),
+        ("event_hash", "text", True),
+        ("evidence_id", "text", True),
+        ("custody_action", "text", True),
+        ("custodian", "text", True),
+        ("prior_custodian", "text", False),
+        ("transfer_reason", "text", True),
+        ("classification", "text", True),
+        ("correlation_id", "text", False),
+        ("metadata", "jsonb", True),
+    ),
+}
+_AUDIT_CONSTRAINTS = {
+    "audit_events": {
+        (
+            "audit_events_actor_type_check",
+            "c",
+            "CHECK ((actor_type = ANY (ARRAY['human'::text, 'service'::text])))",
+        ),
+        (
+            "audit_events_outcome_check",
+            "c",
+            "CHECK ((outcome = ANY " "(ARRAY['success'::text, 'denied'::text, 'error'::text])))",
+        ),
+        ("audit_events_pkey", "p", "PRIMARY KEY (source_principal, event_id)"),
+        ("audit_events_sequence_number_key", "u", "UNIQUE (sequence_number)"),
+    },
+    "evidence_custody_events": {
+        (
+            "evidence_custody_events_custody_action_check",
+            "c",
+            "CHECK ((custody_action = ANY (ARRAY['acquire'::text, "
+            "'transfer'::text, 'hold'::text, 'release'::text])))",
+        ),
+        (
+            "evidence_custody_events_evidence_id_custody_sequence_key",
+            "u",
+            "UNIQUE (evidence_id, custody_sequence)",
+        ),
+        ("evidence_custody_events_chain_sequence_key", "u", "UNIQUE (chain_sequence)"),
+        ("evidence_custody_events_pkey", "p", "PRIMARY KEY (source_principal, custody_event_id)"),
+    },
+}
+_AUDIT_DEFAULTS = {
+    "audit_events": {
+        ("classification", "'INTERNAL'::text"),
+        ("reason", "''::text"),
+        ("metadata", "'{}'::jsonb"),
+        ("schema_version", "1"),
+        ("tenant_id", "'legacy-unscoped'::text"),
+    },
+    "evidence_custody_events": {
+        ("transfer_reason", "''::text"),
+        ("classification", "'INTERNAL'::text"),
+        ("metadata", "'{}'::jsonb"),
+    },
+}
 
 
 def _dsn_credential(dsn: str, expected_role: str) -> str:
@@ -88,6 +180,66 @@ def bootstrap_database_roles(
                 sql.Identifier(schema_name)
             )
         )
+        _adopt_existing_audit_schema(cursor, schema_name)
+
+
+def _audit_schema_signature(cursor: Any, schema_name: str, table: str) -> tuple[Any, Any, Any]:
+    cursor.execute(
+        "SELECT a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull "
+        "FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s AND c.relkind = 'r' "
+        "AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+        (schema_name, table),
+    )
+    columns = tuple((str(row[0]), str(row[1]), bool(row[2])) for row in cursor.fetchall())
+    cursor.execute(
+        "SELECT conname, contype, pg_get_constraintdef(oid, false) FROM pg_constraint "
+        "WHERE conrelid = %s::regclass ORDER BY conname",
+        (f"{schema_name}.{table}",),
+    )
+    constraints = {(str(row[0]), str(row[1]), str(row[2])) for row in cursor.fetchall()}
+    cursor.execute(
+        "SELECT column_name, column_default FROM information_schema.columns "
+        "WHERE table_schema = %s AND table_name = %s AND column_default IS NOT NULL",
+        (schema_name, table),
+    )
+    defaults = {(str(row[0]), str(row[1])) for row in cursor.fetchall()}
+    return columns, constraints, defaults
+
+
+def _validate_adoptable_audit_schema(cursor: Any, schema_name: str) -> None:
+    for table in _AUDIT_TABLES:
+        columns, constraints, defaults = _audit_schema_signature(cursor, schema_name, table)
+        if (
+            columns != _AUDIT_COLUMNS[table]
+            or constraints != _AUDIT_CONSTRAINTS[table]
+            or defaults != _AUDIT_DEFAULTS[table]
+        ):
+            raise RuntimeError(
+                f"existing {schema_name}.{table} does not match the governed "
+                "Audit adoption contract"
+            )
+
+
+def _adopt_existing_audit_schema(cursor: Any, schema_name: str) -> None:
+    cursor.execute(
+        "SELECT tablename FROM pg_tables WHERE schemaname = %s AND tablename = ANY(%s) "
+        "ORDER BY tablename",
+        (schema_name, list(_AUDIT_TABLES)),
+    )
+    existing = tuple(str(row[0]) for row in cursor.fetchall())
+    if not existing:
+        return
+    if set(existing) != set(_AUDIT_TABLES):
+        raise RuntimeError("existing Audit schema is incomplete; ownership adoption refused")
+    _validate_adoptable_audit_schema(cursor, schema_name)
+    for table in _AUDIT_TABLES:
+        cursor.execute(
+            sql.SQL("ALTER TABLE {}.{} OWNER TO emg_audit_migrator").format(
+                sql.Identifier(schema_name), sql.Identifier(table)
+            )
+        )
 
 
 def run_audit_migrations(
@@ -97,6 +249,62 @@ def run_audit_migrations(
     with psycopg.connect(migration_dsn) as connection:
         executor = PostgresMigrationExecutor(connection, history_table=AUDIT_HISTORY_TABLE)
         return run_migrations(executor, audit_migrations_dir())
+
+
+def retry_dirty_audit_v001(
+    migration_dsn: str,
+) -> AppliedMigration:  # pragma: no cover - live PostgreSQL
+    """Atomically reapply a transactionally rolled-back, exact Audit V001 failure."""
+    _dsn_credential(migration_dsn, "emg_audit_migrator")
+    migrations = discover_migrations(audit_migrations_dir(), MigrationKind.POSTGRES)
+    if len(migrations) != 1 or migrations[0].version != 1:
+        raise RuntimeError("Audit V001 recovery requires the canonical single V001 stream")
+    migration = migrations[0]
+    with (
+        psycopg.connect(migration_dsn) as connection,
+        connection.transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            sql.SQL(
+                "SELECT version, name, checksum, success, dirty FROM {} "
+                "WHERE kind = 'postgres' ORDER BY version FOR UPDATE"
+            ).format(sql.Identifier(AUDIT_HISTORY_TABLE))
+        )
+        rows = cursor.fetchall()
+        expected = [(1, migration.name, migration.checksum, False, True)]
+        if rows != expected:
+            raise RuntimeError(
+                "Audit V001 recovery refused: history is not the exact "
+                "canonical dirty V001 state"
+            )
+        cursor.execute("SELECT current_schema()")
+        schema_row = cursor.fetchone()
+        if schema_row is None or not isinstance(schema_row[0], str):
+            raise RuntimeError("Audit V001 recovery cannot determine the current schema")
+        schema_name = schema_row[0]
+        _validate_adoptable_audit_schema(cursor, str(schema_name))
+        cursor.execute(migration.statements)
+        cursor.execute(
+            sql.SQL(
+                "UPDATE {} SET success = true, dirty = false, applied_at = now() "
+                "WHERE kind = 'postgres' AND version = 1 AND checksum = %s "
+                "AND success = false AND dirty = true RETURNING applied_at"
+            ).format(sql.Identifier(AUDIT_HISTORY_TABLE)),
+            (migration.checksum,),
+        )
+        applied_at_row = cursor.fetchone()
+        if cursor.rowcount != 1 or applied_at_row is None:
+            raise RuntimeError("Audit V001 recovery lost its dirty-history lock")
+    return AppliedMigration(
+        version=1,
+        name=migration.name,
+        kind=MigrationKind.POSTGRES,
+        checksum=migration.checksum,
+        applied_at=applied_at_row[0],
+        success=True,
+        dirty=False,
+    )
 
 
 def _role_attributes(connection: Connection[Any], role: str) -> tuple[bool, ...]:
