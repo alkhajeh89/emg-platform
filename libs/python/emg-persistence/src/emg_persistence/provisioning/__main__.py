@@ -8,6 +8,7 @@ import os
 from .database import (
     bootstrap_database_roles,
     retry_dirty_audit_v001,
+    retry_dirty_knowledge_graph_v005,
     run_audit_migrations,
     validate_provisioned_databases,
 )
@@ -28,6 +29,7 @@ def main() -> None:
             "database-bootstrap",
             "audit-migrate",
             "audit-retry-v001",
+            "knowledge-graph-retry-v005",
             "validate-database",
         ),
     )
@@ -45,6 +47,8 @@ def main() -> None:
         run_audit_migrations(_required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"))
     elif args.command == "audit-retry-v001":
         retry_dirty_audit_v001(_required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"))
+    elif args.command == "knowledge-graph-retry-v005":
+        retry_dirty_knowledge_graph_v005(_required("EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN"))
     else:
         validate_provisioned_databases(
             _required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"),

@@ -39,9 +39,11 @@ GRANT emg_knowledge_graph_app TO emg_knowledge_graph_migrator;
 REVOKE CREATE ON SCHEMA public FROM emg_knowledge_graph_app;
 GRANT USAGE ON SCHEMA public TO emg_knowledge_graph_app;
 GRANT CREATE, USAGE ON SCHEMA public TO emg_knowledge_graph_migrator;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO emg_knowledge_graph_migrator;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO emg_knowledge_graph_migrator;
-GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO emg_knowledge_graph_migrator;
+
+-- Do not grant schema-wide privileges over pre-existing Audit or Identity
+-- objects. The KG migrator owns the objects its own stream creates; adoption
+-- of any explicitly governed legacy KG object is handled by the migration
+-- stream's bounded object inventory.
 
 ALTER DEFAULT PRIVILEGES FOR ROLE emg_knowledge_graph_migrator IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO emg_knowledge_graph_app;

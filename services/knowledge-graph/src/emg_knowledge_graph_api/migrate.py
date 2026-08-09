@@ -2,12 +2,12 @@
 Integration Closure, Group B4).
 
 Runs the existing, reusable `emg_persistence` PostgreSQL migration machinery
-(`emg_persistence.migrate.run_migrations` + `PostgresMigrationExecutor`)
+(`run_knowledge_graph_migrations` + `PostgresMigrationExecutor`)
 against this service's configured database before the ASGI app starts
 serving traffic, so `V001__baseline.sql` and `V002__projection_checkpoints.sql`
 are applied automatically instead of requiring an undocumented manual step.
-This module introduces no new migration logic -- it only wires the service to
-infrastructure that already exists and is already used elsewhere in the repo.
+The persistence entrypoint preserves released V005's checksum while applying
+its stream-scoped compatibility contract on fresh databases.
 
 Scope: PostgreSQL only. The Neo4j migration (`M001__constraints.cypher`) is
 explicitly out of scope here -- this service's Neo4j serving-projection
@@ -32,9 +32,9 @@ from __future__ import annotations
 import logging
 
 from emg_persistence.config import PersistenceSettings
-from emg_persistence.migrate import run_migrations
 from emg_persistence.postgres.migration_executor import PostgresMigrationExecutor
 from emg_persistence.postgres.pool import DirectConnectionProvider
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 
 from .config import get_settings, validate_migration_configuration
 
@@ -64,7 +64,7 @@ def run_startup_migrations() -> None:
     connections = DirectConnectionProvider(persistence_settings)
     with connections.acquire() as connection:
         executor = PostgresMigrationExecutor(connection)
-        applied = run_migrations(executor)
+        applied = run_knowledge_graph_migrations(executor)
 
     if applied:
         logger.info(

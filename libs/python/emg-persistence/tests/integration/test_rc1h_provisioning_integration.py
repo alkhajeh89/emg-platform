@@ -17,7 +17,9 @@ from emg_persistence.postgres import PostgresMigrationExecutor
 from emg_persistence.provisioning import (
     bootstrap_database_roles,
     retry_dirty_audit_v001,
+    retry_dirty_knowledge_graph_v005,
     run_audit_migrations,
+    run_knowledge_graph_migrations,
     validate_provisioned_databases,
 )
 from psycopg import sql
@@ -222,3 +224,177 @@ def test_audit_adoption_rejects_schema_mismatch(
         assert connection.execute(
             "SELECT tableowner FROM pg_tables WHERE tablename = 'audit_events'"
         ).fetchone() != ("emg_audit_migrator",)
+
+
+@requires_postgres
+def test_fresh_colocated_streams_use_scoped_v005_compatibility(
+    provisioned_database: tuple[str, str, str, str],
+) -> None:  # pragma: no cover
+    admin_dsn, audit_migrator_dsn, app_dsn, projector_dsn = provisioned_database
+    bootstrap_database_roles(
+        admin_dsn,
+        {
+            "emg_audit_migrator": audit_migrator_dsn,
+            "emg_audit_app": app_dsn,
+            "emg_audit_projector": projector_dsn,
+        },
+    )
+    run_audit_migrations(audit_migrator_dsn)
+    database = str(conninfo_to_dict(admin_dsn)["dbname"])
+    kg_migrator_dsn = _dsn(database, "emg_knowledge_graph_migrator", "rc5-kg-migrator-password")
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute(
+            "DO $$ BEGIN "
+            "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
+            "'emg_knowledge_graph_migrator') THEN "
+            "CREATE ROLE emg_knowledge_graph_migrator LOGIN; END IF; "
+            "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
+            "'emg_knowledge_graph_app') THEN "
+            "CREATE ROLE emg_knowledge_graph_app LOGIN; END IF; END $$"
+        )
+        connection.execute(
+            "ALTER ROLE emg_knowledge_graph_migrator LOGIN PASSWORD "
+            "'rc5-kg-migrator-password' NOSUPERUSER NOCREATEDB NOCREATEROLE "
+            "NOINHERIT NOREPLICATION NOBYPASSRLS"
+        )
+        connection.execute(
+            "ALTER ROLE emg_knowledge_graph_app LOGIN NOSUPERUSER NOCREATEDB "
+            "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
+        )
+        connection.execute("GRANT CREATE, USAGE ON SCHEMA public TO emg_knowledge_graph_migrator")
+        connection.execute("CREATE TABLE identity_refresh_tokens (id text)")
+
+    with psycopg.connect(kg_migrator_dsn) as connection:
+        applied = run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
+        assert [migration.version for migration in applied] == list(range(1, 10))
+        assert run_knowledge_graph_migrations(PostgresMigrationExecutor(connection)) == ()
+    with psycopg.connect(admin_dsn) as connection:
+        assert connection.execute(
+            "SELECT tableowner FROM pg_tables WHERE tablename = 'audit_schema_migrations'"
+        ).fetchone() == ("emg_audit_migrator",)
+        assert connection.execute(
+            "SELECT tableowner FROM pg_tables WHERE tablename = 'identity_refresh_tokens'"
+        ).fetchone() == (conninfo_to_dict(admin_dsn)["user"],)
+
+
+@requires_postgres
+def test_colocated_streams_recover_dirty_v005_without_cross_stream_mutation(
+    provisioned_database: tuple[str, str, str, str], tmp_path: Path
+) -> None:  # pragma: no cover
+    admin_dsn, audit_migrator_dsn, app_dsn, projector_dsn = provisioned_database
+    role_dsns = {
+        "emg_audit_migrator": audit_migrator_dsn,
+        "emg_audit_app": app_dsn,
+        "emg_audit_projector": projector_dsn,
+    }
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    run_audit_migrations(audit_migrator_dsn)
+
+    kg_migrator_dsn = _dsn(
+        str(conninfo_to_dict(admin_dsn)["dbname"]),
+        "emg_knowledge_graph_migrator",
+        "rc5-kg-migrator-password",
+    )
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute(
+            "DO $$ BEGIN "
+            "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
+            "'emg_knowledge_graph_migrator') THEN "
+            "CREATE ROLE emg_knowledge_graph_migrator LOGIN; END IF; "
+            "IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
+            "'emg_knowledge_graph_app') THEN "
+            "CREATE ROLE emg_knowledge_graph_app LOGIN; END IF; END $$"
+        )
+        connection.execute(
+            "ALTER ROLE emg_knowledge_graph_migrator LOGIN PASSWORD "
+            "'rc5-kg-migrator-password' NOSUPERUSER NOCREATEDB NOCREATEROLE "
+            "NOINHERIT NOREPLICATION NOBYPASSRLS"
+        )
+        connection.execute(
+            "ALTER ROLE emg_knowledge_graph_app LOGIN NOSUPERUSER NOCREATEDB "
+            "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
+        )
+        connection.execute("GRANT CREATE, USAGE ON SCHEMA public TO emg_knowledge_graph_migrator")
+        connection.execute("CREATE TABLE identity_refresh_token_families (id text)")
+        connection.execute("CREATE TABLE identity_refresh_tokens (id text)")
+        audit_before = connection.execute(
+            "SELECT tableowner FROM pg_tables WHERE tablename IN "
+            "('audit_events', 'audit_schema_migrations', 'evidence_custody_events') "
+            "ORDER BY tablename"
+        ).fetchall()
+        identity_before = connection.execute(
+            "SELECT tableowner FROM pg_tables WHERE tablename IN "
+            "('identity_refresh_token_families', 'identity_refresh_tokens') "
+            "ORDER BY tablename"
+        ).fetchall()
+        audit_privileges_before = connection.execute(
+            "SELECT has_table_privilege('emg_audit_app', 'audit_events', 'SELECT'), "
+            "has_table_privilege('emg_audit_app', 'audit_events', 'INSERT'), "
+            "has_table_privilege('emg_audit_app', 'audit_events', 'UPDATE')"
+        ).fetchone()
+
+    migrations = default_migrations_dir(MigrationKind.POSTGRES)
+    for pattern in ("V00[1-4]__*.sql", "V005__*.sql"):
+        for migration in migrations.glob(pattern):
+            shutil.copy2(migration, tmp_path / migration.name)
+    with psycopg.connect(kg_migrator_dsn) as connection:
+        with pytest.raises(FailedMigrationError, match="audit_schema_migrations"):
+            run_migrations(PostgresMigrationExecutor(connection), tmp_path)
+        history = connection.execute(
+            "SELECT version, name, checksum, success, dirty FROM schema_migrations "
+            "ORDER BY version"
+        ).fetchall()
+        assert [(row[0], row[1], row[3], row[4]) for row in history] == [
+            (1, "baseline", True, False),
+            (2, "projection_checkpoints", True, False),
+            (3, "mutation_idempotency", True, False),
+            (4, "mutation_ledger", True, False),
+            (5, "runtime_least_privilege", False, True),
+        ]
+        v005_checksum = history[4][2]
+        connection.execute(
+            "UPDATE schema_migrations SET checksum = %s WHERE version = 5", ("0" * 64,)
+        )
+    with pytest.raises(RuntimeError, match="exact canonical V001-V004 success"):
+        retry_dirty_knowledge_graph_v005(kg_migrator_dsn)
+    with psycopg.connect(kg_migrator_dsn) as connection:
+        connection.execute(
+            "UPDATE schema_migrations SET checksum = %s WHERE version = 5", (v005_checksum,)
+        )
+
+    retry_dirty_knowledge_graph_v005(kg_migrator_dsn)
+    with pytest.raises(RuntimeError, match="exact canonical V001-V004 success"):
+        retry_dirty_knowledge_graph_v005(kg_migrator_dsn)
+    with psycopg.connect(kg_migrator_dsn) as connection:
+        applied = run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
+        assert [migration.version for migration in applied] == [6, 7, 8, 9]
+
+    validate_provisioned_databases(audit_migrator_dsn, kg_migrator_dsn)
+    with psycopg.connect(admin_dsn) as connection:
+        assert (
+            connection.execute(
+                "SELECT tableowner FROM pg_tables WHERE tablename IN "
+                "('audit_events', 'audit_schema_migrations', 'evidence_custody_events') "
+                "ORDER BY tablename"
+            ).fetchall()
+            == audit_before
+        )
+        assert (
+            connection.execute(
+                "SELECT tableowner FROM pg_tables WHERE tablename IN "
+                "('identity_refresh_token_families', 'identity_refresh_tokens') "
+                "ORDER BY tablename"
+            ).fetchall()
+            == identity_before
+        )
+        assert (
+            connection.execute(
+                "SELECT has_table_privilege('emg_audit_app', 'audit_events', 'SELECT'), "
+                "has_table_privilege('emg_audit_app', 'audit_events', 'INSERT'), "
+                "has_table_privilege('emg_audit_app', 'audit_events', 'UPDATE')"
+            ).fetchone()
+            == audit_privileges_before
+        )
+        assert connection.execute(
+            "SELECT success, dirty, checksum FROM schema_migrations WHERE version = 5"
+        ).fetchone() == (True, False, v005_checksum)

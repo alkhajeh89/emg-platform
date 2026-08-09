@@ -9,7 +9,8 @@ from emg_persistence.migrate import (
     migration_status,
     run_migrations,
 )
-from emg_persistence.migrations import MigrationKind
+from emg_persistence.migrations import MigrationKind, discover_migrations
+from emg_persistence.provisioning import run_knowledge_graph_migrations
 
 
 def test_default_dirs_contain_baseline() -> None:
@@ -23,6 +24,7 @@ def test_default_dirs_contain_baseline() -> None:
     assert (pg_dir / "V006__runtime_column_privileges.sql").is_file()
     assert (pg_dir / "V007__audit_projector_privileges.sql").is_file()
     assert (pg_dir / "V008__evidence_ledger_hardening.sql").is_file()
+    assert (pg_dir / "V009__scoped_runtime_privileges.sql").is_file()
     assert (neo_dir / "M001__constraints.cypher").is_file()
     assert (audit_migrations_dir() / "V001__audit_schema.sql").is_file()
 
@@ -38,7 +40,7 @@ def test_audit_stream_is_independent_and_idempotent() -> None:
 def test_run_migrations_applies_packaged_postgres_baseline() -> None:
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     applied = run_migrations(ex)  # uses the packaged default dir
-    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"
@@ -47,6 +49,7 @@ def test_run_migrations_applies_packaged_postgres_baseline() -> None:
     assert applied[5].name == "runtime_column_privileges"
     assert applied[6].name == "audit_projector_privileges"
     assert applied[7].name == "evidence_ledger_hardening"
+    assert applied[8].name == "scoped_runtime_privileges"
     # idempotent second run
     assert run_migrations(ex) == ()
 
@@ -58,10 +61,22 @@ def test_run_migrations_applies_packaged_neo4j_baseline() -> None:
     assert applied[0].kind is MigrationKind.NEO4J
 
 
+def test_knowledge_graph_compatibility_records_immutable_v005_checksum() -> None:
+    ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
+    applied = run_knowledge_graph_migrations(ex)
+    discovered = discover_migrations(
+        default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
+    )
+
+    assert [migration.version for migration in applied] == list(range(1, 10))
+    assert applied[4].checksum == discovered[4].checksum
+    assert run_knowledge_graph_migrations(ex) == ()
+
+
 def test_migration_status_reports_pending_baseline() -> None:
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     status = migration_status(ex)
-    assert [m.version for m in status.pending] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert [m.version for m in status.pending] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
     assert status.is_up_to_date is False
 
 

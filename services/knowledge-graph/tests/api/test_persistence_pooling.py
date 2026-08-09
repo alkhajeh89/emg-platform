@@ -288,7 +288,7 @@ def test_startup_migrations_keep_direct_connection_provider(
     )
     monkeypatch.setattr(
         migrate,
-        "run_migrations",
+        "run_knowledge_graph_migrations",
         lambda received: [] if received is executor else pytest.fail(),
     )
 

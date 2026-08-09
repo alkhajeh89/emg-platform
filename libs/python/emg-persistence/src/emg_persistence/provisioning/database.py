@@ -9,9 +9,11 @@ import psycopg
 from psycopg import Connection, sql
 from psycopg.conninfo import conninfo_to_dict
 
-from ..migrate import audit_migrations_dir, run_migrations
+from ..migrate import audit_migrations_dir, default_migrations_dir, run_migrations
 from ..migrations.discovery import discover_migrations
-from ..migrations.model import AppliedMigration, MigrationKind
+from ..migrations.executor import MigrationExecutor
+from ..migrations.model import AppliedMigration, Migration, MigrationKind
+from ..migrations.runner import MigrationRunner
 from ..postgres.migration_executor import PostgresMigrationExecutor
 
 AUDIT_HISTORY_TABLE = "audit_schema_migrations"
@@ -249,6 +251,100 @@ def run_audit_migrations(
     with psycopg.connect(migration_dsn) as connection:
         executor = PostgresMigrationExecutor(connection, history_table=AUDIT_HISTORY_TABLE)
         return run_migrations(executor, audit_migrations_dir())
+
+
+def run_knowledge_graph_migrations(
+    executor: MigrationExecutor,
+) -> tuple[AppliedMigration, ...]:
+    """Run KG migrations with an immutable-V005, stream-safe compatibility path."""
+    migrations = discover_migrations(
+        default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
+    )
+    by_version = {migration.version: migration for migration in migrations}
+    if 5 not in by_version or 9 not in by_version:
+        raise RuntimeError("Knowledge Graph migration compatibility requires V005 and V009")
+    runner = MigrationRunner(executor)
+    status = runner.status(migrations)
+    applied_by_version = {migration.version: migration for migration in status.applied}
+    if 5 in applied_by_version:
+        return runner.run(migrations)
+    if any(version > 5 for version in applied_by_version):
+        raise RuntimeError("Knowledge Graph migration history has versions after missing V005")
+
+    newly = list(runner.run(tuple(m for m in migrations if m.version < 5)))
+    historical_v005 = by_version[5]
+    scoped_v009 = by_version[9]
+    compatibility_v005 = Migration(
+        version=historical_v005.version,
+        name=historical_v005.name,
+        kind=historical_v005.kind,
+        statements=scoped_v009.statements,
+        checksum=historical_v005.checksum,
+    )
+    newly.append(executor.apply(compatibility_v005))
+    newly.extend(runner.run(migrations))
+    return tuple(newly)
+
+
+def retry_dirty_knowledge_graph_v005(
+    migration_dsn: str,
+) -> AppliedMigration:  # pragma: no cover - live PostgreSQL
+    """Atomically replace only the exact rolled-back V005 with scoped V009 SQL."""
+    _dsn_credential(migration_dsn, "emg_knowledge_graph_migrator")
+    migrations = discover_migrations(
+        default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
+    )
+    by_version = {migration.version: migration for migration in migrations}
+    historical_v005 = by_version.get(5)
+    scoped_v009 = by_version.get(9)
+    if historical_v005 is None or scoped_v009 is None:
+        raise RuntimeError("Knowledge Graph V005 recovery requires canonical V005 and V009")
+
+    with (
+        psycopg.connect(migration_dsn) as connection,
+        connection.transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT version, name, checksum, success, dirty FROM schema_migrations "
+            "WHERE kind = 'postgres' ORDER BY version FOR UPDATE"
+        )
+        rows = cursor.fetchall()
+        expected = [
+            (
+                migration.version,
+                migration.name,
+                migration.checksum,
+                migration.version < 5,
+                migration.version == 5,
+            )
+            for migration in migrations
+            if migration.version <= 5
+        ]
+        if rows != expected:
+            raise RuntimeError(
+                "Knowledge Graph V005 recovery refused: history is not the exact "
+                "canonical V001-V004 success plus dirty V005 state"
+            )
+        cursor.execute(scoped_v009.statements)
+        cursor.execute(
+            "UPDATE schema_migrations SET success = true, dirty = false, applied_at = now() "
+            "WHERE kind = 'postgres' AND version = 5 AND checksum = %s "
+            "AND success = false AND dirty = true RETURNING applied_at",
+            (historical_v005.checksum,),
+        )
+        applied_at_row = cursor.fetchone()
+        if cursor.rowcount != 1 or applied_at_row is None:
+            raise RuntimeError("Knowledge Graph V005 recovery lost its dirty-history lock")
+    return AppliedMigration(
+        version=5,
+        name=historical_v005.name,
+        kind=MigrationKind.POSTGRES,
+        checksum=historical_v005.checksum,
+        applied_at=applied_at_row[0],
+        success=True,
+        dirty=False,
+    )
 
 
 def retry_dirty_audit_v001(

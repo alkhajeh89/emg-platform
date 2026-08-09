@@ -73,6 +73,13 @@ ownership defect, follow the explicit `audit-retry-v001` procedure in
 `infra/environments/production/README.md`. Do not clear or delete the dirty
 history row manually.
 
+Knowledge Graph V005 is a released immutable migration. Fresh migrations use
+the repository's checksum-preserving scoped compatibility path; existing
+successful V005 databases receive forward V009. An exact dirty V005 caused by
+the historical schema-wide operation must use the bounded
+`knowledge-graph-retry-v005` procedure in the production README before the
+ordinary migration Job is rerun.
+
 Run `tools/ci/validate_production_provisioning.py` against the production
 overlay before finalization. A successful render or readiness probe does not
 prove that identities, grants, secrets, migrations, or stage completion exist
