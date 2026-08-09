@@ -20,6 +20,15 @@
 
 ---
 
+> **RC-1F implementation note — 2026-08-09.** The repository contract was
+> implemented after this addendum's accepted baseline, and migration V008 now
+> implements EL-10 fail-closed preflight, `prev_hash NOT NULL`, positive
+> sequence, hash-shape and genesis constraints, plus an owner-binding
+> `BEFORE UPDATE OR DELETE` append-only trigger. These database controls enforce
+> structure and immutability; repository `verify_range()` still performs
+> cryptographic entry and chain-link verification. Baseline FACT statements
+> below remain historical evidence for the decision, not current status.
+
 ## A. Authority and scope
 
 **FACT.** P-02 is the absence of an implemented `EvidenceLedgerRepository`.

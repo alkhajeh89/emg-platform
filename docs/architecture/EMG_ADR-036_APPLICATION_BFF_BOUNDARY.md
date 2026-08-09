@@ -160,12 +160,12 @@ model is preserved intact. Authorization and classification remain enforced in
 one place. Tenant isolation extends to a new caller type without a new
 mechanism. Closes D-F-006 with real authority.
 
-**Negative — accepted.** A new deployable component the platform does not
-currently operate, with its own session store, availability, and scaling
-profile. One additional network hop on every request. Downstream delegation is
-governed separately by ADR-038. Phase 2B remains blocked until ADR-038's
-mandatory capability verification succeeds; acceptance of ADR-038 does not
-constitute implementation.
+**Negative — accepted and implemented.** The Studio BFF is a deployable
+component with its own process-local session store, availability, and scaling
+profile, and adds one network hop. Downstream delegation is governed by
+ADR-038. Phase 2B capability verification and conformant implementation are
+complete in the repository; production realm values, TLS, and deployment
+remain operational prerequisites.
 
 **Neutral.** No existing service changes. No existing API contract changes.
 

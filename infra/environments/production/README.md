@@ -9,9 +9,11 @@ kubectl kustomize infra/environments/production
 
 Before deployment, the platform operator must:
 
-1. Replace every `registry.invalid/...@sha256:...` fixture with an immutable,
-   published image digest. RC-1A does not publish, sign, promote, retain, or
-   construct rollback artifacts; those remain RC-1C / RC001-H08.
+1. Use ADR-040's generated `production-resolved.yaml`; never deploy this
+   overlay's `registry.invalid/...@sha256:...` source fixtures directly. The
+   runtime-image release workflow publishes verified GHCR digests, signs and
+   attests them, and retains complete rollback evidence. Protected release
+   configuration and the first live release remain environment-owned.
 2. Replace every `*.production.example.invalid` endpoint with the approved TLS
    endpoint for external PostgreSQL, Neo4j, Keycloak, and other dependencies.
 3. Install External Secrets Operator and provide a provider-specific

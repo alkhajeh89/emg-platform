@@ -3,7 +3,7 @@
 **Type:** Living engineering reference (L4). Kept current with `develop`.
 **Governing authority:** `docs/phases/phase-2/PHASE2_ARCHITECTURE.md` Revision 3;
 accepted addendum `EMG_P02_EVIDENCE_LEDGER_CONTRACT_ADDENDUM.md` (P-02).
-**Status baseline:** `develop` at `e578d31` (2026-08-03), after P-01 … P-05.
+**Status baseline:** `develop` at `69e2267` (2026-08-09), after RC-1C … RC-1H.
 **Companion:** `docs/engineering/persistence-architecture.md`.
 
 > **This document claims no production readiness.** It describes how the
@@ -31,18 +31,24 @@ Order of operations for a deployment:
 PostgreSQL migrations are transactional. Neo4j migrations are idempotent
 (`CREATE CONSTRAINT/INDEX IF NOT EXISTS`) and may be re-run safely.
 
-Current required PostgreSQL set: **V001 through V006**. V004 must be applied
+Current required Knowledge Graph PostgreSQL set: **V001 through V008**. V004 must be applied
 before any mutation traffic; V005 and V006 must be applied before granting the
-runtime role access.
+runtime role access; V007 requires `emg_audit_projector` to exist first; V008
+fail-closed preflight and evidence constraints must succeed before evidentiary
+reliance. The distinct Audit stream uses `audit_schema_migrations` and must be
+applied as `emg_audit_migrator` before Audit Service rollout.
 
 ## 2. Credentials — runtime versus migration
 
-Two distinct roles, never shared:
+Governed production roles, never shared:
 
 | Role | Purpose | Privileges |
 | :--- | :--- | :--- |
 | `emg_knowledge_graph_migrator` | Owns schema objects; runs migrations | DDL, ownership |
 | `emg_knowledge_graph_app` | Serving runtime | Narrow DML only |
+| `emg_audit_migrator` | Owns Audit objects and `audit_schema_migrations` | Audit DDL and ownership only |
+| `emg_audit_app` | Audit Service runtime | `SELECT, INSERT` on Audit and custody tables; no DDL/update/delete/truncate |
+| `emg_audit_projector` | Audit Projector runtime | V007 schema usage, ledger/dispatch reads, and five dispatch update columns only |
 
 `emg_knowledge_graph_app` after V005 + V006:
 
@@ -61,9 +67,11 @@ refuses to start when the runtime and migration DSNs are identical
 (`emg_knowledge_graph_api/dependencies.py:239-247`), and requires TLS on both
 DSNs and on Keycloak (`config.py:100-116`).
 
-`evidence_ledger` is `SELECT, INSERT` only. **Operational caveat:** unlike
-`mutation_ledger`, it has no database-enforced append-only trigger, so
-append-only holds for the runtime role but **not** for the owner role. See §11.
+`evidence_ledger` is `SELECT, INSERT` only for the runtime role. V008 additionally
+enforces append-only behavior against the owner with a `BEFORE UPDATE OR DELETE`
+trigger and validates sequence, hash shape, and genesis structure. These
+database controls do not cryptographically recompute entry hashes or chain links;
+repository verification remains mandatory.
 
 ## 3. PostgreSQL pool settings and lifecycle
 
@@ -141,9 +149,9 @@ explicit `limit`, and leases expire via `claim_expires_at`.
 Operationally, a row with `delivered_at IS NULL` and `attempt_count` at the
 bound is **exhausted** — it will not be retried and requires investigation.
 
-**Caveat:** no consumer of the `audit` channel exists today, so `audit` rows
-accumulate undelivered by design, not by fault. Do not alert on undelivered
-`audit` rows until a consumer is deployed. See §11.
+The Audit Projector consumes the `audit` channel. Undelivered rows now represent
+pending, claimed, retry-scheduled, or exhausted work. Monitor backlog state and
+attempt exhaustion; do not delete poison rows or fabricate replacement events.
 
 ## 7. Evidence-ledger integrity checks
 
@@ -181,8 +189,12 @@ accumulate undelivered by design, not by fault. Do not alert on undelivered
   item in the database.
 - **A restored ledger carries no integrity claim by itself.** Run `verify_range`
   over the restored ranges before relying on it.
-- Backup scheduling, retention, PITR configuration, and restore rehearsal are
-  **not implemented or specified** anywhere in this repository. See §11.
+- Provider-neutral full backup, WAL archiving/PITR, encrypted wrappers,
+  retention, manifests, restore verification, checksum validation, and
+  evidence-anchor verification are implemented under `infra/backup/` and
+  `tools/backup/` and governed by ADR-039. Target-environment scheduler, KMS,
+  cross-region storage, and witnessed production rehearsal remain operational
+  prerequisites.
 
 ## 9. Troubleshooting
 
@@ -197,7 +209,7 @@ accumulate undelivered by design, not by fault. Do not alert on undelivered
 | Migration halts on start | Checksum mismatch, or dirty/failed state | Never edit an applied migration. Investigate the recorded state and add a new forward migration |
 | Every request returns 403 after deploy | Policy file missing or mispathed → empty default-deny ruleset | Verify `EMG_KNOWLEDGE_GRAPH_API_POLICY_CONFIG_PATH` resolves inside the container |
 | Service refuses to start in production | Runtime and migration DSNs identical, memory backend selected, or TLS missing | Intentional fail-closed gates. Fix configuration |
-| `audit` dispatch rows never delivered | No consumer exists (expected today) | Not a fault. See §11 |
+| `audit` dispatch rows remain undelivered | Projector outage, retry schedule, expired lease, or exhausted attempts | Inspect structured backlog state and projector telemetry; preserve durable rows and replay safely |
 
 ## 10. Shutdown behaviour
 
@@ -211,31 +223,26 @@ accumulate undelivered by design, not by fault. Do not alert on undelivered
 - In-flight transactions are the caller's responsibility; the provider does not
   cancel them.
 
-## 11. Known deferred production-readiness items
+## 11. Remaining operational prerequisites and post-v1 work
 
-**None of the following is implemented. Do not treat any as complete.**
-
-1. **Continuous `ProjectionWorker` daemon and lifecycle** — TD-002, open and
+1. **Continuous Neo4j `ProjectionWorker` daemon and lifecycle — post-v1** — TD-002, open and
    accepted. `ProjectionWorker` is a library class with no deployment. Freshness
    relies on read-repair and explicit catch-up.
-2. **Evidence-ledger schema hardening (P-02 EL-10)** — required before the
-   ledger is relied upon as an evidentiary record: a database-enforced
-   append-only trigger matching V004's pattern, `prev_hash NOT NULL`,
-   `seq >= 1`, and hash-format checks. Until then append-only rests on role
-   grants, which do not bind the table owner.
-3. **Audit dispatch consumer** — no consumer of the `audit` channel exists.
-   ADR-028 governs it and is **Accepted (2026-08-09), implementation authorized
-   but not implemented**.
-4. **Metrics collection, dashboards, tracing, and alerting** — owned by
+2. **Metrics collection, dashboards, tracing, and alerting — operational** — owned by
    ADR-015 / FEAT-12-3. The persistence layer and ADR-027 emit; nothing
    collects.
-5. **Backup, restore, PITR, and disaster-recovery procedure** — not specified
-   or rehearsed anywhere in this repository.
-6. **Range-size bounds on evidence reads** — `list_range` / `verify_range`
+3. **Production recovery execution — operational** — configure scheduler,
+   encryption/KMS custody, cross-region storage, and conduct a witnessed
+   rehearsal using the implemented ADR-039 tooling.
+4. **Production provisioning execution — operational** — provide the canonical
+   tenant inventory and secrets, then enforce ADR-041 stage completion through
+   operator/CD before Audit and projector rollout.
+5. **Range-size bounds on evidence reads** — `list_range` / `verify_range`
    accept unbounded ranges; pagination shape is an open implementation detail
    under P-02 §K.4.
-7. **Neo4j deployment topology and HA** — no infrastructure-as-code, HA, or DR
-   configuration exists for either datastore.
+6. **Datastore HA and failover — operational** — production topology remains
+   environment-owned; repository Kustomize and recovery tooling do not select
+   an HA product or prove failover.
 
 ---
 

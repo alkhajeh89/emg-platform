@@ -17,6 +17,12 @@ air-gapped operation); ADR-034 (least-privilege service trust); `docker/dependen
 > image, create credentials, change a production manifest, deploy a release, or authorize an
 > application/runtime behavior change.
 
+> **Implementation status — 2026-08-09.** RC-1G subsequently implemented and
+> repository-validated this contract in `.github/workflows/runtime-image-release.yml`,
+> `tools/ci/runtime_image_release.py`, and the runtime supply-chain tests. The protected
+> release environment, retention settings, and first live GHCR/OIDC/Cosign release remain
+> operational prerequisites; implementation does not claim production publication.
+
 ---
 
 ## 1. Context

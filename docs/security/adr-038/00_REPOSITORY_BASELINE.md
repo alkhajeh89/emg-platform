@@ -3,6 +3,12 @@
 Recorded at the start of verification work. Read-only reconnaissance; nothing
 in this section was modified.
 
+> **Historical evidence only.** The table records `10bd419` before capability
+> verification and Phase 2B. Verification and implementation subsequently
+> completed; current status is recorded in `ARCHITECTURE_STATUS.md` and
+> `06_FINAL_VERIFICATION_REPORT.md`. Statements below that capability was absent
+> must not be read as current repository status.
+
 | Item | Value |
 | :--- | :--- |
 | Branch | `develop` |

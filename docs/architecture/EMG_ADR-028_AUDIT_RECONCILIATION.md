@@ -18,6 +18,13 @@ Decision Date:
 Current Revision:
 Revision 1
 
+> **Implementation status — 2026-08-09.** RC-1C implements this revision in
+> `services/audit-projector`; RC-1D integrates its release/deployment surface;
+> and RC-1E proves the complete authoritative PostgreSQL mutation-to-audit path.
+> Historical FACT and problem statements below describe the decision baseline,
+> not current repository capability. Target-environment execution remains an
+> operational prerequisite.
+
 > **Revision 1 — Accepted for implementation.** This document defines the
 > reconciliation and delivery contract that ADR-027 Revision 5 and ADR-030
 > Revision 4 both defer to this ADR. It amends no accepted ADR, creates no
@@ -74,7 +81,8 @@ cross-service audit-integrity guarantee beyond single-service append-only logs."
   compatibility statement, not an obligation, and unowned.
 - Repository search for consumers of `audit_intents` returns the ledger model,
   the mutation repository, `atomic_mutation.py`, `service.py`, and six test
-  modules. **No component projects them to `services/audit`.**
+  modules. **At the accepted decision baseline, no component projected them to
+  `services/audit`.** RC-1C subsequently implemented that component.
 
 **Fact.** No accepted cross-service audit reconciliation contract exists. No
 accepted ADR defines how mutation-sourced events are reconciled with read-path

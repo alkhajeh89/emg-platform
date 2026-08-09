@@ -48,6 +48,16 @@
 > by removal of the legacy module, which §5.2 expressly permits ("remains
 > temporarily so current pipeline behavior and tests continue to work").
 
+> **RC1 compatibility note — 2026-08-09.** ADR-028 now implements the
+> consumer-side operational gap described by this ADR. The dedicated Audit
+> Projector consumes `mutation_dispatch` audit work, replays at least once with
+> deterministic event identities, and delivers through authenticated
+> `POST /audit/events`; RC-1E proves the complete authoritative PostgreSQL path.
+> Historical references below to future audit reconciliation describe this
+> ADR's accepted baseline and original implementation guardrail. They do not
+> describe current repository capability and do not change ADR-022's revision,
+> transaction, or audit-contract decisions.
+
 **Supersedes:** none
 
 **Related:** ADR-020 (Knowledge Ingestion Layer), Module 7 (FEAT-05-2),
@@ -540,10 +550,9 @@ ratification note in the header. *(This section originally read "This ADR is
 corrected here solely to remove a factual contradiction with the ratified
 status; the approval conditions below are unchanged.)*
 
-**Production enablement is unchanged and still conditional.** It additionally
-requires the mutation-audit condition in sections 5, 10, 14, and 16 to be
-resolved or explicitly waived by the designated deciders. That condition is
-architecturally resolved by accepted ADR-028 (2026-08-09), but no consumer of
-the `mutation_dispatch` `audit` channel exists. Production enablement remains
-blocked until RC-1C implements and validates that consumer. Ratification of
-this ADR grants no production enablement.
+**Production enablement remains conditional.** The mutation-audit condition in
+sections 5, 10, 14, and 16 is architecturally resolved by ADR-028 and
+implemented by the Audit Projector; RC-1E validates the authoritative delivery
+path. Remaining production enablement conditions are environment-owned release,
+identity, secret, TLS, egress, provisioning, observability, and recovery gates.
+Ratification of this ADR alone grants no production enablement.
