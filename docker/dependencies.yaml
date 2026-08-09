@@ -36,6 +36,18 @@ services:
       - emg-policy-engine
 
 
+  audit-projector:
+    type: service
+    path: services/audit-projector
+    dockerfile: services/audit-projector/Dockerfile
+
+    dependencies:
+      - emg-audit-client
+      - emg-common-types
+      - emg-persistence
+      - emg-telemetry
+
+
   studio-bff:
     type: service
     path: apps/studio-bff

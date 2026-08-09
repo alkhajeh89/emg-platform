@@ -311,7 +311,7 @@ jobs:
       # under apps/, not services/ — the build step below resolves the
       # correct directory per matrix entry rather than assuming services/.
       matrix:
-        service: [identity, audit, knowledge-graph, studio-bff]
+        service: [identity, audit, audit-projector, knowledge-graph, studio-bff]
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
