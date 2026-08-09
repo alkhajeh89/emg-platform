@@ -11,20 +11,30 @@ def _workflow() -> dict:
     return yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
 
 
-def _production_services() -> set[str]:
+def _governed_images() -> set[str]:
     manifest = yaml.safe_load((ROOT / "docker/dependencies.yaml").read_text())
     return {
         name
         for name, component in manifest["services"].items()
-        if component.get("type") == "service"
+        if component.get("type") in {"service", "deployment-tool"}
     }
 
 
 def test_container_security_matrix_covers_every_production_service() -> None:
+    inventory = _workflow()["jobs"]["container-inventory"]
     job = _workflow()["jobs"]["container-security"]
 
-    assert set(job["strategy"]["matrix"]["service"]) == _production_services()
-    assert "audit-projector" in job["strategy"]["matrix"]["service"]
+    assert "runtime_image_release.py inventory --github-output" in inventory["steps"][-1]["run"]
+    assert job["needs"] == "container-inventory"
+    assert "fromJSON(needs.container-inventory.outputs.matrix)" in job["strategy"]["matrix"]
+    assert _governed_images() == {
+        "identity",
+        "audit",
+        "audit-projector",
+        "knowledge-graph",
+        "studio-bff",
+        "keycloak-provisioner",
+    }
 
 
 def test_container_security_matrix_uses_one_mandatory_trivy_policy() -> None:

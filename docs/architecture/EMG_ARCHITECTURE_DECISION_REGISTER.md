@@ -27,7 +27,7 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 ---
 
-## Architecture Decision Records (ADR-014 – ADR-039)
+## Architecture Decision Records (ADR-014 – ADR-040)
 
 Canonical index of every ADR number in the current range. Added 2026-08-03 to
 close register-completeness finding DOC-4. This section records *governance
@@ -67,6 +67,7 @@ a different accountable owner — those are recorded as stated.
 | **ADR-037** | Decision Domain Model | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-03 | `EMG_ADR-037_DECISION_DOMAIN_MODEL.md` | **Not implemented** — this branch contains no Decision ontology model, Decision Query Service, Decision HTTP API, Studio aggregate backend, or Studio frontend. The accepted contract introduces no new `NodeType`, `EdgeType`, or mutation route. |
 | **ADR-038** | Human Identity Delegation Architecture | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-07 | `EMG_ADR-038_Human_Identity_Delegation_Architecture.md` | **Not implemented** — selects OAuth 2.0 Token Exchange (RFC 8693) as the authoritative delegated-human-identity architecture. Preserves the Human Principal as authorization subject and the independently identifiable BFF Acting Service, with audience isolation, scope reduction, tenant and clearance integrity, bounded lifetime, independent validation, fail-closed behaviour, and complete audit attribution. Resolves ADR-036 §5. Acceptance does not imply implementation; Phase 2B remains blocked until mandatory non-production capability verification and ADR-038 conformance criteria succeed. |
 | **ADR-039** | Backup, PITR and Recovery Governance | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-09 | `EMG_ADR-039_BACKUP_PITR_AND_RECOVERY_GOVERNANCE.md` | **Implemented** — ratifies the already-implemented physical backup, WAL/PITR, retention, manifest, evidence-anchor, and encryption-wrapper mechanics at `infra/backup/` and `tools/backup/`. Introduces no new code or mechanism. Resolves **D-A-005** and the dangling ADR-031 citation in ADR-032 §Future Compatibility. Documents one permanent, intentional manifest-validation residual (schema cannot express cross-sibling tablespace-OID uniqueness without a format change; the canonical Python validator remains the sole enforcement point). |
+| **ADR-040** | Runtime Image Supply Chain | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-09 | `EMG_ADR-040_RUNTIME_IMAGE_SUPPLY_CHAIN.md` | **Implementation authorized; not implemented** — selects GHCR, build-once immutable digests, the existing Trivy gate, Sigstore Cosign keyless signing with GitHub Actions OIDC, GitHub runtime-image provenance, generated release/promotion artifacts, and retained complete rollback mappings. Production release remains blocked pending RC-1G implementation, protected release configuration, retention governance, and fail-closed resolution of the synthetic Keycloak provisioner image. |
 
 **Numbers outside this range.** ADR-001 through ADR-013 do not exist in this
 repository and must not be treated as approved or implied.
