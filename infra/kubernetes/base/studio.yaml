@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: emg-studio}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: emg-studio}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-studio, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      serviceAccountName: emg-studio
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: studio
+          image: registry.invalid/emg/studio@sha256:0000000000000000000000000000000000000000000000000000000000000006
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            - {name: NODE_ENV, value: production}
+            - {name: NEXT_TELEMETRY_DISABLED, value: "1"}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: "1", memory: 512Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 2, failureThreshold: 2}
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: emg-studio}
+spec:
+  selector: {app.kubernetes.io/name: emg-studio}
+  ports: [{name: http, port: 3000, targetPort: http}]

@@ -39,6 +39,7 @@ def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
         "emg-audit",
         "emg-audit-projector",
         "emg-knowledge-graph",
+        "emg-studio",
         "emg-studio-bff",
     }
     digest = re.compile(r"^[^:]+(?:/[^:]+)+@sha256:[0-9a-f]{64}$")
@@ -172,6 +173,25 @@ def test_network_policy_defaults_to_deny_and_allows_dns_explicitly() -> None:
 def test_environment_specific_external_egress_is_not_silently_enabled() -> None:
     production_kustomization = (OVERLAY / "kustomization.yaml").read_text(encoding="utf-8")
     assert "external-egress.example.yaml" not in production_kustomization
+
+
+def test_studio_is_the_only_public_ingress_and_proxies_only_to_the_bff() -> None:
+    objects = _objects()
+    ingress = next(obj for obj in objects if obj["kind"] == "Ingress")
+    backend = ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]
+    assert backend == {"name": "emg-studio", "port": {"name": "http"}}
+
+    policies = {obj["metadata"]["name"]: obj for obj in objects if obj["kind"] == "NetworkPolicy"}
+    studio_ingress = policies["emg-studio-ingress"]["spec"]["ingress"][0]
+    assert studio_ingress["ports"] == [{"protocol": "TCP", "port": 3000}]
+    bff_ingress = policies["emg-studio-bff-ingress"]["spec"]["ingress"][0]
+    assert bff_ingress["from"] == [
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-studio"}}}
+    ]
+    studio_egress = policies["emg-studio-to-bff-egress"]["spec"]["egress"][0]
+    assert studio_egress["to"] == [
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-studio-bff"}}}
+    ]
 
 
 def test_identity_spool_uses_persistent_storage() -> None:

@@ -3,7 +3,7 @@
 ## Scope and topology
 
 RC-1A supplies a Kustomize deployment artifact for one production replica of
-Identity, Audit, Knowledge Graph, and Studio BFF. Knowledge Graph migration and
+Identity, Audit, Knowledge Graph, Studio BFF, and Studio. Knowledge Graph migration and
 Keycloak realm provisioning are separate one-shot Jobs. PostgreSQL, Neo4j,
 Keycloak, the Kubernetes cluster, External Secrets Operator, ingress/TLS, and
 the secret backend are prerequisites rather than resources managed here.
@@ -22,6 +22,7 @@ addition, production startup fails under these conditions:
 | Audit | Keycloak is not HTTPS; PostgreSQL does not require TLS or has a blank/development password; the policy bundle is absent. |
 | Knowledge Graph | Keycloak or Audit is not HTTPS; runtime or migration PostgreSQL lacks TLS or a non-development password; Neo4j is not `neo4j+s` or has blank/development credentials; policy or schema catalog is absent. |
 | Studio BFF | Keycloak, Knowledge Graph, redirect, or frontend URL is not HTTPS; OIDC secret is blank/development; cookie names lack `__Host-`; session bounds are invalid. |
+| Studio | The governed image build cannot resolve its fixed internal Studio BFF service destination; no secret or browser-visible backend configuration is accepted. |
 
 Secret-backed environment variables use `secretKeyRef`; if External Secrets
 Operator has not materialized a required Secret/key, Kubernetes prevents the
@@ -39,6 +40,7 @@ are read-only:
 | Audit | Store health/read-only database query. |
 | Knowledge Graph | GraphStore health, public Keycloak JWKS, and Audit liveness. |
 | Studio BFF | Public Keycloak discovery and JWKS plus Knowledge Graph readiness. |
+| Studio | Process liveness and ability to serve the standalone Next.js application. BFF dependency readiness is gated separately before Studio rollout. |
 
 No readiness path logs in, exchanges a token, writes application state, emits an
 audit event, or runs a migration. Mandatory dependency failure produces HTTP

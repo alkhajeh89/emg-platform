@@ -119,6 +119,33 @@ jobs:
         run: make typecheck
 
 
+  studio:
+    name: Studio (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install hash-locked Studio dependencies
+        run: npm ci --workspace @emg/studio --include-workspace-root
+      - name: Test Studio
+        run: npm test --workspace @emg/studio
+      - name: Type-check Studio
+        run: npm run typecheck --workspace @emg/studio
+      - name: Lint Studio
+        run: npm run lint --workspace @emg/studio
+      - name: Build production Studio
+        env:
+          STUDIO_BFF_INTERNAL_URL: http://emg-studio-bff:8000
+        run: npm run build --workspace @emg/studio
+      - name: Audit Studio production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
   dependency-validation:
     name: Dependency Manifest Validation
     runs-on: ubuntu-latest

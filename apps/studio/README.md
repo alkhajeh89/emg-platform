@@ -43,6 +43,26 @@ npm run dev --workspace @emg/studio
 
 Open <http://localhost:3000>. Studio BFF and its dependencies must already be running.
 
+## Production runtime
+
+Studio is released as the governed `studio` image from `apps/studio/Dockerfile`. The multi-stage
+build uses the root npm lock, emits Next.js standalone output, and copies only the standalone server
+and static assets into the non-root production image. It contains no credential or direct Knowledge
+Graph address. `STUDIO_BFF_INTERNAL_URL` is the non-secret, build-time server destination used by
+the `/bff/*` rewrite; the governed production build uses `http://emg-studio-bff:8000`. It is never
+emitted as public browser configuration.
+
+Production traffic follows `browser -> ingress -> Studio -> Studio BFF`. The BFF OIDC callback is
+`/bff/auth/callback`, so it traverses the same Studio proxy. `/healthz` is process liveness and
+`/readyz` confirms the Studio server can serve requests; dependency readiness remains owned by the
+BFF `/readyz` probe. The hardened Deployment runs as UID/GID 10001 with a read-only root, dropped
+capabilities, no service-account token, bounded resources, and allow-listed Studio-to-BFF traffic.
+
+Canonical validation uses `npm ci --workspace @emg/studio --include-workspace-root`, followed by
+the Studio test, typecheck, lint, build and `npm audit --omit=dev --audit-level=high` gates.
+Tag releases include Studio in the common Trivy, CycloneDX, GHCR, Cosign, provenance and immutable
+digest workflow. Rollback selects a prior complete release set; images are never mixed or retagged.
+
 ## Governed search
 
 Studio submits `POST /bff/api/knowledge-graph/search` with the opaque session cookie, readable CSRF cookie echoed as `X-CSRF-Token`, and `credentials: "include"`. The browser calls no direct Knowledge Graph URL. Search supports only the backend's approved deterministic tiers: canonical ID exact, label exact, alias exact, canonical ID prefix, label prefix, and alias prefix. It exposes the localized safe match kind without relevance scores, aliases, snippets, totals, hidden counts, facets, or classification filtering controls.

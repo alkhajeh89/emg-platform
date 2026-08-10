@@ -1,6 +1,11 @@
 .git
 .github
 .venv
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+!**/.env.example
 .mypy_cache
 .pytest_cache
 .ruff_cache
