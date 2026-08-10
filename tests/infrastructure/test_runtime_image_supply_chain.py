@@ -14,6 +14,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/ci"))
 
+from release_qualification import (  # noqa: E402
+    QualificationError,
+    promotion_gate,
+    repository_qualification,
+    rollback_gate,
+)
 from runtime_image_release import (  # noqa: E402
     ReleaseValidationError,
     build_image_record,
@@ -54,14 +60,20 @@ def _all_steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
 def _records(tmp_path: Path) -> tuple[Path, list[dict[str, Any]]]:
     directory = tmp_path / "records"
     directory.mkdir(parents=True)
+    sbom_directory = directory / "sboms"
+    scan_directory = directory / "scans"
+    sbom_directory.mkdir()
+    scan_directory.mkdir()
     records: list[dict[str, Any]] = []
     for image in governed_images():
         service = image["service"]
-        sbom = directory / f"{service}.cdx.json"
+        sbom = sbom_directory / f"{service}.cdx.json"
         sbom.write_text(
             json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.5"}) + "\n",
             encoding="utf-8",
         )
+        scan = scan_directory / f"{service}.trivy.sarif"
+        scan.write_text(json.dumps({"version": "2.1.0", "runs": [{"results": []}]}))
         digest = "sha256:" + hashlib.sha256(service.encode()).hexdigest()
         record = build_image_record(
             service=service,
@@ -72,6 +84,7 @@ def _records(tmp_path: Path) -> tuple[Path, list[dict[str, Any]]]:
             workflow_identity=".github/workflows/runtime-image-release.yml@refs/tags/v1.0.0",
             workflow_run="https://github.com/emg/example/actions/runs/1",
             sbom_path=sbom,
+            vulnerability_report_path=scan,
             provenance_reference="https://github.com/emg/example/attestations",
         )
         (directory / f"{service}.image.json").write_text(json.dumps(record), encoding="utf-8")
@@ -215,6 +228,7 @@ def test_workflow_signs_verifies_attests_and_records_every_matrix_digest() -> No
     assert attest["with"]["push-to-registry"] is True
     record = steps["Record verified image evidence"]["run"]
     assert "--sbom" in record
+    assert "--vulnerability-report" in record
     assert "--provenance-reference" in record
     assert "--digest" in record
 
@@ -235,6 +249,21 @@ def test_workflow_actions_are_sha_pinned_and_release_evidence_uses_default_reten
     assert final_upload["with"]["path"] == "release-evidence/"
 
 
+def test_workflow_generates_staging_bundle_and_pending_qualification_evidence() -> None:
+    workflow = _workflow()
+    steps = {step["name"]: step for step in workflow["jobs"]["finalize-release"]["steps"]}
+    render = steps["Render production source template"]["run"]
+    assert "infra/environments/production" in render
+    assert "infra/environments/staging" in render
+    generate = steps["Generate complete manifest, deployment bundle and rollback evidence"]["run"]
+    assert "--staging-source-bundle" in generate
+    assert "--staging-bundle-output" in generate
+    qualify = steps["Validate repository-controlled staging qualification contract"]["run"]
+    assert "release_qualification.py repository-qualify" in qualify
+    assert "--environment staging" in qualify
+    assert "staging-qualification.json" in qualify
+
+
 def test_complete_manifest_binds_all_images_and_is_rollback_complete(tmp_path: Path) -> None:
     directory, expected_records = _records(tmp_path)
     records = load_complete_records(directory)
@@ -250,6 +279,11 @@ def test_complete_manifest_binds_all_images_and_is_rollback_complete(tmp_path: P
         assert image["sbom"]["format"] == "CycloneDX"
         assert image["signature"]["status"] == "verified"
         assert image["provenance"]["status"] == "attested"
+        assert image["vulnerability"]["status"] == "passed"
+    assert manifest["schemaVersion"] == 2
+    assert manifest["compatibility"]["migrationPolicy"] == "forward-only"
+    assert manifest["compatibility"]["schemaRollbackAuthorized"] is False
+    assert manifest["compatibility"]["migrationFiles"]
 
 
 def test_missing_or_duplicate_image_record_fails_finalization(tmp_path: Path) -> None:
@@ -267,12 +301,23 @@ def test_missing_or_duplicate_image_record_fails_finalization(tmp_path: Path) ->
 
 def test_missing_or_modified_retained_sbom_fails_finalization(tmp_path: Path) -> None:
     directory, _ = _records(tmp_path)
-    (directory / "identity.cdx.json").unlink()
+    (directory / "sboms/identity.cdx.json").unlink()
     with pytest.raises(ReleaseValidationError, match="retained SBOM"):
         load_complete_records(directory)
 
+
+def test_missing_vulnerability_evidence_fails_finalization(tmp_path: Path) -> None:
+    directory, _ = _records(tmp_path)
+    record_path = directory / "identity.image.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    del record["vulnerability"]
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ReleaseValidationError, match="vulnerability evidence"):
+        load_complete_records(directory)
+
     directory, _ = _records(tmp_path / "modified")
-    (directory / "identity.cdx.json").write_text(
+    (directory / "sboms/identity.cdx.json").write_text(
         '{"bomFormat":"CycloneDX","changed":true}\n', encoding="utf-8"
     )
     with pytest.raises(ReleaseValidationError, match="checksum differs"):
@@ -316,6 +361,126 @@ def test_actual_production_overlay_resolves_every_governed_image(tmp_path: Path)
     assert "registry.invalid" not in finalized
 
 
+def test_staging_overlay_resolves_and_repository_evidence_blocks_promotion(
+    tmp_path: Path,
+) -> None:
+    directory, records = _records(tmp_path)
+    manifest = release_manifest(
+        records, version="v1.0.0", commit=COMMIT, repository=SOURCE_REPOSITORY
+    )
+    rendered = subprocess.run(
+        ["kubectl", "kustomize", str(ROOT / "infra/environments/staging")],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    source = tmp_path / "staging-template.yaml"
+    source.write_text(rendered, encoding="utf-8")
+    finalized = resolved_bundle(source, manifest)
+    bundle = tmp_path / "staging-resolved.yaml"
+    bundle.write_text(finalized, encoding="utf-8")
+    manifest["configuration"] = {
+        "sourceBundleSha256": {"staging": hashlib.sha256(source.read_bytes()).hexdigest()},
+        "resolvedBundleSha256": {"staging": hashlib.sha256(bundle.read_bytes()).hexdigest()},
+    }
+    manifest_path = tmp_path / "release-images.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    evidence = repository_qualification(manifest_path, bundle, directory / "sboms", "staging")
+    assert evidence["result"] == "REPOSITORY_VALIDATED_LIVE_QUALIFICATION_PENDING"
+    assert evidence["stagingDeployment"] == "PENDING"
+    assert evidence["productionPromotion"] == "BLOCKED"
+    evidence_path = tmp_path / "qualification.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    with pytest.raises(QualificationError, match="not witnessed"):
+        promotion_gate(evidence_path, manifest_path)
+
+
+def test_qualification_rejects_bundle_or_sbom_drift(tmp_path: Path) -> None:
+    directory, records = _records(tmp_path)
+    manifest = release_manifest(
+        records, version="v1.0.0", commit=COMMIT, repository=SOURCE_REPOSITORY
+    )
+    source = tmp_path / "staging-template.yaml"
+    source.write_text(_source_bundle(), encoding="utf-8")
+    bundle = tmp_path / "staging-resolved.yaml"
+    bundle.write_text(resolved_bundle(source, manifest), encoding="utf-8")
+    manifest["configuration"] = {
+        "sourceBundleSha256": {"staging": hashlib.sha256(source.read_bytes()).hexdigest()},
+        "resolvedBundleSha256": {"staging": hashlib.sha256(bundle.read_bytes()).hexdigest()},
+    }
+    manifest_path = tmp_path / "release-images.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    (directory / "sboms/identity.cdx.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(QualificationError, match="SBOM"):
+        repository_qualification(manifest_path, bundle, directory / "sboms", "staging")
+
+
+def test_promotion_gate_accepts_only_witnessed_complete_exact_release(tmp_path: Path) -> None:
+    manifest = tmp_path / "release-images.json"
+    release = {
+        "version": "v1.0.0",
+        "sourceRepository": SOURCE_REPOSITORY,
+        "commit": COMMIT,
+    }
+    manifest.write_text(json.dumps({"release": release}), encoding="utf-8")
+    evidence = {
+        "release": release,
+        "releaseManifestSha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "environment": "staging",
+        "result": "WITNESSED_STAGING_QUALIFIED",
+        "checks": {"immutableRelease": "PASS"},
+        "stagingDeployment": "PASS",
+        "smokeTests": "PASS",
+        "rollbackRehearsal": "PASS",
+        "witness": {
+            "approvalBoundary": "github-actions-protected-environment",
+            "workflowIdentity": ".github/workflows/staging.yml@refs/tags/v1.0.0",
+            "workflowRun": "https://github.com/emg/example/actions/runs/1",
+        },
+    }
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    promotion_gate(evidence_path, manifest)
+
+    manifest.write_text('{"release":"changed"}\n', encoding="utf-8")
+    with pytest.raises(QualificationError, match="different release"):
+        promotion_gate(evidence_path, manifest)
+
+
+def test_rollback_gate_requires_complete_distinct_migration_compatible_set(
+    tmp_path: Path,
+) -> None:
+    current_directory, current_records = _records(tmp_path / "current")
+    previous_directory, previous_records = _records(tmp_path / "previous")
+    current = release_manifest(
+        current_records, version="v2.0.0", commit=COMMIT, repository=SOURCE_REPOSITORY
+    )
+    previous = release_manifest(
+        previous_records,
+        version="v1.0.0",
+        commit=COMMIT,
+        repository=SOURCE_REPOSITORY,
+    )
+    configuration = {
+        "sourceBundleSha256": {"production": "1" * 64},
+        "resolvedBundleSha256": {"production": "2" * 64},
+    }
+    current["configuration"] = configuration
+    previous["configuration"] = configuration
+    current_path = current_directory / "release-images.json"
+    previous_path = previous_directory / "release-images.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    previous_path.write_text(json.dumps(previous), encoding="utf-8")
+    rollback_gate(current_path, previous_path)
+
+    previous["images"] = previous["images"][:-1]
+    previous_path.write_text(json.dumps(previous), encoding="utf-8")
+    with pytest.raises(QualificationError, match="complete image set"):
+        rollback_gate(current_path, previous_path)
+
+
 @pytest.mark.parametrize(
     "image",
     [
@@ -338,6 +503,8 @@ def test_finalized_bundle_rejects_placeholders_mutable_tags_and_synthetic_digest
 def test_release_record_rejects_synthetic_digest(tmp_path: Path) -> None:
     sbom = tmp_path / "identity.cdx.json"
     sbom.write_text('{"bomFormat":"CycloneDX"}\n', encoding="utf-8")
+    scan = tmp_path / "identity.trivy.sarif"
+    scan.write_text('{"version":"2.1.0","runs":[{"results":[]}]}\n', encoding="utf-8")
     with pytest.raises(ReleaseValidationError, match="synthetic"):
         build_image_record(
             service="identity",
@@ -348,5 +515,6 @@ def test_release_record_rejects_synthetic_digest(tmp_path: Path) -> None:
             workflow_identity="workflow",
             workflow_run="run",
             sbom_path=sbom,
+            vulnerability_report_path=scan,
             provenance_reference="attestations",
         )
