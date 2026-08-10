@@ -1,4 +1,4 @@
-import type { EntityResponse, SessionResponse } from "./contracts";
+import type { EntityResponse, NeighborResponse, SessionResponse } from "./contracts";
 
 const BFF_PREFIX = "/bff";
 const CSRF_COOKIE_NAME =
@@ -45,6 +45,13 @@ export const bff = {
     request<EntityResponse>(
       `/api/knowledge-graph/v1/knowledge-graph/entities/${encodeURIComponent(entityId)}`,
     ),
+  neighbors: (entityId: string, cursor?: string) => {
+    const query = new URLSearchParams({ limit: "20" });
+    if (cursor) query.set("before_edge_id", cursor);
+    return request<NeighborResponse>(
+      `/api/knowledge-graph/v1/knowledge-graph/entities/${encodeURIComponent(entityId)}/neighbors?${query}`,
+    );
+  },
   logout: async () => {
     const csrfToken = readCookie(CSRF_COOKIE_NAME);
     if (!csrfToken) {
