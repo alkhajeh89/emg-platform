@@ -27,9 +27,9 @@ not constitute approved architecture unless explicitly marked Accepted.
 
 ---
 
-## Architecture Decision Records (ADR-014 – ADR-041)
+## Architecture Decision Records (ADR-014 – ADR-042)
 
-Twenty-seven ADRs are present in this range. ADR-031 is intentionally absent;
+Twenty-eight ADRs are present in this range. ADR-031 is intentionally absent;
 ADR-039 resolved the dangling recovery-governance reference that formerly used
 that number. Proposed ADRs remain Proposed regardless of implementation in
 adjacent packages.
@@ -74,6 +74,7 @@ a different accountable owner — those are recorded as stated.
 | **ADR-039** | Backup, PITR and Recovery Governance | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-09 | `EMG_ADR-039_BACKUP_PITR_AND_RECOVERY_GOVERNANCE.md` | **Implemented** — ratifies the already-implemented physical backup, WAL/PITR, retention, manifest, evidence-anchor, and encryption-wrapper mechanics at `infra/backup/` and `tools/backup/`. Introduces no new code or mechanism. Resolves **D-A-005** and the dangling ADR-031 citation in ADR-032 §Future Compatibility. Documents one permanent, intentional manifest-validation residual (schema cannot express cross-sibling tablespace-OID uniqueness without a format change; the canonical Python validator remains the sole enforcement point). |
 | **ADR-040** | Runtime Image Supply Chain | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-09 | `EMG_ADR-040_RUNTIME_IMAGE_SUPPLY_CHAIN.md` | **Implemented and repository-validated** — the tag-triggered release workflow builds each governed runtime image once, blocks publication on the Trivy gate, publishes immutable digests to GHCR, performs keyless Cosign signing and identity verification, creates GitHub runtime provenance, and generates complete deployment and rollback evidence. The protected `production-release` environment, live GHCR/OIDC/Cosign first-release proof, and retention policy are operational prerequisites |
 | **ADR-041** | Production Provisioning Ownership & Bootstrap Contract | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-09 | `EMG_ADR-041_PRODUCTION_PROVISIONING_OWNERSHIP_AND_BOOTSTRAP_CONTRACT.md` | **Implemented and repository-validated** — bounded database bootstrap creates the governed roles, `emg_audit_migrator` owns a distinct Audit migration stream, `emg_audit_projector` exists before V007, one validated projector inventory drives Keycloak/runtime/Audit allow-list configuration, and staged jobs plus consistency validation fail closed. Production values and operator/CD stage execution remain environment-owned |
+| **ADR-042** | Governed Enterprise Search | **Accepted** | EMG Founder | EMG Founder | Project Architect | 2026-08-10 | `EMG_ADR-042_GOVERNED_ENTERPRISE_SEARCH.md` | **Not started** — architecture accepted; no search endpoint, persistence representation, migration, cursor codec, BFF, or Studio implementation has started |
 
 **Numbers outside this range.** ADR-001 through ADR-013 do not exist in this
 repository and must not be treated as approved or implied.
