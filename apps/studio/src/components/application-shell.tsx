@@ -2,8 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 import { useI18n, type MessageKey } from "@/i18n/i18n";
 import { BffError, bff } from "@/lib/bff";
@@ -29,7 +29,6 @@ function LanguageSwitcher() {
 export function ApplicationShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const { t } = useI18n();
   const pathname = usePathname();
-  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [logoutError, setLogoutError] = useState(false);
   const session = useQuery({ queryKey: ["session"], queryFn: bff.session });
@@ -40,7 +39,6 @@ export function ApplicationShell({ children }: Readonly<{ children: React.ReactN
     setLogoutError(false);
     try { await bff.logout(); await session.refetch(); } catch { setLogoutError(true); }
   }
-  function search(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const query = String(data.get("q") ?? "").trim(); router.push(query ? `/search?q=${encodeURIComponent(query)}` : "/search"); }
 
   if (session.isPending) return <main className="center-stage"><div className="state-card" aria-live="polite"><span className="spinner" />{t("checkingSession")}</div></main>;
   if (unauthorized) return <LoginPanel />;
@@ -58,7 +56,7 @@ export function ApplicationShell({ children }: Readonly<{ children: React.ReactN
       <header className="application-bar">
         <button type="button" className="menu-button" onClick={() => setDrawerOpen(true)} aria-label={t("openNavigation")} aria-expanded={drawerOpen}>☰</button>
         <div className="section-indicator"><span>{t("currentSection")}</span><strong>{t(current)}</strong></div>
-        <form className="global-search" role="search" onSubmit={search}><label className="sr-only" htmlFor="global-search">{t("globalSearch")}</label><input id="global-search" name="q" dir="ltr" placeholder={t("searchPlaceholder")} /><button type="submit" aria-label={t("searchAction")}>⌕</button></form>
+        <Link className="global-search global-search-entry" href="/search" aria-label={t("globalSearch")}><span>{t("searchPlaceholder")}</span><span aria-hidden="true">⌕</span></Link>
         <div className="application-actions"><LanguageSwitcher /><div className="session-area"><span><StatusMark />{t("authenticated")}</span><button type="button" onClick={logout}>{t("logout")}</button></div></div>
       </header>
       <main id="main-content" className="page-content" tabIndex={-1}>{children}</main>

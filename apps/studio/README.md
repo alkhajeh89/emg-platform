@@ -1,6 +1,6 @@
 # EMG Studio
 
-EMG Studio is the browser application for governed EMG workspaces. Sprint 2 adds exact canonical entity-ID lookup, deep-linked entity exploration, approved provenance/history fields, and authorized relationship navigation to the enterprise shell.
+EMG Studio is the browser application for governed EMG workspaces. ADR-042 adds governed enterprise entity search alongside deep-linked entity exploration, approved provenance/history fields, and authorized relationship navigation.
 
 ## Application shell
 
@@ -16,7 +16,7 @@ The shell queries only `GET /bff/auth/session`. An unauthenticated response rend
 | `/dashboard` | Enterprise dashboard with honest data-source labels |
 | `/entities` | Canonical entity-ID entry workspace |
 | `/entities/{encoded-entity-id}` | Authorized entity detail, evidence, temporal history, and first relationship page |
-| `/search?q={encoded-entity-id}` | Exact canonical entity-ID lookup with URL-reflected query state |
+| `/search` | Governed entity search with query and cursor held only in active in-memory UI state |
 | `/knowledge-graph` | Planned workspace |
 | `/evidence` | Planned workspace |
 | `/timeline` | Planned workspace |
@@ -42,17 +42,22 @@ npm run dev --workspace @emg/studio
 
 Open <http://localhost:3000>. Studio BFF and its dependencies must already be running.
 
-## Supported search semantics
+## Governed search
 
-Search is an exact, case-sensitive canonical entity-ID lookup backed by `GET /bff/api/knowledge-graph/v1/knowledge-graph/entities/{encoded-id}`. The global shell lookup uses the same contract. A successful result links to the deep-linked entity workspace; no backend object is persisted in browser storage.
+Studio submits `POST /bff/api/knowledge-graph/search` with the opaque session cookie, readable CSRF cookie echoed as `X-CSRF-Token`, and `credentials: "include"`. The browser calls no direct Knowledge Graph URL. Search supports only the backend's approved deterministic tiers: canonical ID exact, label exact, alias exact, canonical ID prefix, label prefix, and alias prefix. It exposes the localized safe match kind without relevance scores, aliases, snippets, totals, hidden counts, facets, or classification filtering controls.
 
-The approved Knowledge Graph contract also supports structured entity listing filters and cursor pagination, but it does not define free-text, label, alias, relevance, or result-count semantics. Sprint 2 therefore does not present those features as search. Entity relationships use the approved neighbors read route; the workspace displays the first authorized page and reports honestly when more results exist.
+Raw search text never enters the URL, navigation history, cookies, `localStorage`, `sessionStorage`, or IndexedDB. The global shell entry navigates to `/search` without transferring typed text. Search requests preserve the user's string unchanged; Studio performs no normalization or locale-specific matching.
+
+Authorized continuation uses the opaque cursor exactly as returned. “Load more” appears only when `has_more` and `next_cursor` permit it, appends visible results, and defensively deduplicates by canonical entity ID. Cursors remain in memory for the active search only and are never decoded. An invalid continuation produces a safe restart state rather than silently changing revisions.
+
+All search copy and match-kind labels are centralized for English and Arabic. Layout direction follows the selected locale, while entity IDs, entity types, classifications, revisions, and API enum values remain canonical and LTR where displayed. Every result links to `/entities/{encoded-entity-id}` without including the search query.
 
 ## Sprint 2 limitations
 
 - Dashboard operational metrics and recent activity are intentionally unavailable because no approved dashboard API exists.
-- Free-text, fuzzy, label, alias, and relevance-ranked search are unavailable because no approved backend contract exists.
-- Structured list filtering and cursor pagination exist in Knowledge Graph but are not presented as free-text search. Relationship continuation controls are not yet exposed.
+- Fuzzy, semantic/vector, substring, tokenized, metadata, facet, total-count, and relevance-ranked search remain unavailable.
+- Search query and pagination state intentionally disappear on navigation or reload because confidentiality takes precedence over preserving browser state.
+- Relationship continuation controls are not yet exposed in the entity workspace.
 - Evidence and temporal histories are displayed only when they are present in the approved entity response. No separate evidence or revision-list API is inferred.
 - Knowledge Graph visualization, Evidence, Timeline, and Decisions remain planned route foundations. The Decision domain is accepted architecturally but has no implemented query service or API.
 - The workspace remains read-only. No mutation, authoring, task, decision, or persistence capability is introduced.

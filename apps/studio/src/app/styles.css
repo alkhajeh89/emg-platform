@@ -28,6 +28,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,[tabindex="-1"]:focus-v
 .global-search { flex:1; max-width:440px; display:flex; border:1px solid var(--line); border-radius:10px; background:#f7f9f7; }
 .global-search input { min-width:0; flex:1; border:0; padding:.65rem .8rem; background:transparent; }
 .global-search button { border:0; padding:0 .8rem; color:var(--green); background:transparent; cursor:pointer; }
+.global-search-entry { justify-content:space-between; align-items:center; padding:.65rem .8rem; color:var(--muted); text-decoration:none; font-size:.84rem; }
+.global-search-entry:hover { border-color:#aebdb4; color:var(--forest); background:#fff; }
 .application-actions,.session-area,.session-area>span,.language-switcher { display:flex; align-items:center; gap:.65rem; }
 .application-actions { margin-inline-start:auto; }
 .language-switcher { color:var(--muted); font-size:.75rem; }
@@ -77,9 +79,24 @@ button:focus-visible,a:focus-visible,input:focus-visible,[tabindex="-1"]:focus-v
 .spinner { width:24px; height:24px; border:3px solid #ccd5ce; border-top-color:var(--green); border-radius:50%; animation:spin .8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .entity-panel { overflow:hidden; border:1px solid var(--line); border-radius:18px; background:var(--surface); box-shadow:var(--shadow); }
-.search-result { display:grid; grid-template-columns:1fr auto; gap:1rem; align-items:start; padding:1.7rem; border:1px solid var(--line); border-radius:18px; background:var(--surface); box-shadow:var(--shadow); }
+.search-result-set { display:grid; gap:1rem; }
+.search-result-list { display:grid; gap:.85rem; margin:0; padding:0; list-style:none; }
+.search-revision { display:flex; justify-content:flex-end; align-items:center; gap:.5rem; color:var(--muted); font-size:.72rem; }
+.search-revision strong { color:var(--forest); }
+.search-result { display:grid; grid-template-columns:1fr auto; gap:1.25rem; align-items:center; padding:1.4rem 1.5rem; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:0 8px 28px rgba(20,45,35,.055); }
+.search-result__main { min-width:0; }
+.search-result__meta { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+.match-kind { width:max-content; padding:.35rem .55rem; border-radius:999px; color:var(--forest); background:var(--mint); font-size:.68rem; font-weight:800; }
 .search-result h2 { margin:.45rem 0 .2rem; }
-.search-result .button { grid-column:1/-1; width:max-content; }
+.search-result .entity-id { margin:.25rem 0; overflow-wrap:anywhere; }
+.entity-type { margin:.55rem 0 0; color:var(--muted); font-size:.76rem; }
+.search-result .button { width:max-content; white-space:nowrap; }
+.load-more-row { display:flex; justify-content:center; padding-top:.5rem; }
+.load-more-row button,.continuation-state button { border:1px solid var(--forest); border-radius:10px; padding:.76rem 1rem; color:var(--forest); background:var(--surface); font-weight:750; cursor:pointer; }
+.load-more-row button:disabled { opacity:.65; cursor:wait; }
+.continuation-state { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:1rem 1.2rem; border-inline-start:4px solid #a78a42; border-radius:10px; background:#faf7ed; }
+.continuation-state strong { display:block; }
+.continuation-state p { margin:.3rem 0 0; color:var(--muted); font-size:.76rem; }
 .entity-heading { display:flex; justify-content:space-between; gap:1rem; padding:1.7rem; }
 .entity-heading h2 { margin:.4rem 0 .2rem; }
 .entity-id { color:var(--muted); font: .78rem ui-monospace,monospace; }
@@ -137,6 +154,8 @@ html[dir="rtl"] .directional-arrow { transform:scaleX(-1); }
   .application-actions { gap:.25rem; }
   .language-switcher span { display:none; }
   .card-grid--two,.dashboard-columns,.metric-grid,.two-column,.lookup-row,.search-result { grid-template-columns:1fr; }
+  .search-result .button { width:100%; }
+  .continuation-state { align-items:stretch; flex-direction:column; }
   .relationship-list li,.history-list li { flex-direction:column; }
   .metric-grid>div { border-inline-end:0; border-bottom:1px solid var(--line); }
   .entity-heading { flex-direction:column; }

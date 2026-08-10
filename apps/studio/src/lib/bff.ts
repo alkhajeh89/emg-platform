@@ -1,4 +1,10 @@
-import type { EntityResponse, NeighborResponse, SessionResponse } from "./contracts";
+import type {
+  EntityResponse,
+  GovernedSearchRequest,
+  GovernedSearchResponse,
+  NeighborResponse,
+  SessionResponse,
+} from "./contracts";
 
 const BFF_PREFIX = "/bff";
 const CSRF_COOKIE_NAME =
@@ -8,6 +14,7 @@ export class BffError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly errorCode?: string,
   ) {
     super(message);
   }
@@ -21,7 +28,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new BffError(`Studio BFF request failed (${response.status})`, response.status);
+    let errorCode: string | undefined;
+    try {
+      const body = (await response.json()) as { error?: { error_code?: unknown } };
+      if (typeof body.error?.error_code === "string") errorCode = body.error.error_code;
+    } catch {
+      // Public status remains sufficient when the BFF returns no JSON envelope.
+    }
+    throw new BffError(`Studio BFF request failed (${response.status})`, response.status, errorCode);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -38,6 +52,14 @@ function readCookie(name: string): string | undefined {
     ?.slice(prefix.length);
 }
 
+function csrfHeaders(): Record<string, string> {
+  const csrfToken = readCookie(CSRF_COOKIE_NAME);
+  if (!csrfToken) {
+    throw new BffError("The CSRF cookie is missing; re-authentication is required", 401);
+  }
+  return { "X-CSRF-Token": decodeURIComponent(csrfToken) };
+}
+
 export const bff = {
   loginUrl: `${BFF_PREFIX}/auth/login`,
   session: () => request<SessionResponse>("/auth/session"),
@@ -52,14 +74,17 @@ export const bff = {
       `/api/knowledge-graph/v1/knowledge-graph/entities/${encodeURIComponent(entityId)}/neighbors?${query}`,
     );
   },
+  search: async (search: GovernedSearchRequest, signal?: AbortSignal) =>
+    await request<GovernedSearchResponse>("/api/knowledge-graph/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...csrfHeaders() },
+      body: JSON.stringify(search),
+      signal,
+    }),
   logout: async () => {
-    const csrfToken = readCookie(CSRF_COOKIE_NAME);
-    if (!csrfToken) {
-      throw new BffError("The CSRF cookie is missing; re-authentication is required", 401);
-    }
     await request<void>("/auth/logout", {
       method: "POST",
-      headers: { "X-CSRF-Token": decodeURIComponent(csrfToken) },
+      headers: csrfHeaders(),
     });
   },
 };
