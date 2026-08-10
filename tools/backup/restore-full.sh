@@ -8,6 +8,7 @@ require_command tar
 : "${EMG_BACKUP_DECRYPT_COMMAND:?must be an executable INPUT OUTPUT wrapper}"
 : "${EMG_MANIFEST_VERIFY_COMMAND:?must be an executable MANIFEST SIGNATURE wrapper}"
 [[ $# -eq 2 ]] || die "usage: restore-full.sh BACKUP_DIRECTORY TARGET_DATA_DIRECTORY"
+require_recovery_authorization
 backup_dir="$(cd "$1" && pwd)"
 target="$2"
 require_empty_directory "$target" TARGET_DATA_DIRECTORY

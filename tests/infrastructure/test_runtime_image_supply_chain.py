@@ -35,7 +35,7 @@ EXPECTED_APPLICATION_IMAGES = {
     "knowledge-graph",
     "studio-bff",
 }
-EXPECTED_RELEASE_IMAGES = EXPECTED_APPLICATION_IMAGES | {"keycloak-provisioner"}
+EXPECTED_RELEASE_IMAGES = EXPECTED_APPLICATION_IMAGES | {"keycloak-provisioner", "recovery-tool"}
 
 
 def _workflow() -> dict[str, Any]:
@@ -105,7 +105,7 @@ def _source_bundle() -> str:
     return yaml.safe_dump_all(documents, sort_keys=False)
 
 
-def test_canonical_inventory_governs_applications_and_keycloak_provisioner() -> None:
+def test_canonical_inventory_governs_applications_and_deployment_tools() -> None:
     inventory = {image["service"]: image for image in governed_images()}
 
     assert set(inventory) == EXPECTED_RELEASE_IMAGES
@@ -118,6 +118,12 @@ def test_canonical_inventory_governs_applications_and_keycloak_provisioner() -> 
     dockerfile = (ROOT / provisioner["dockerfile"]).read_text(encoding="utf-8")
     assert "tools/scripts/provision-keycloak-realm.py" in dockerfile
     assert "ENTRYPOINT" in dockerfile
+    recovery = inventory["recovery-tool"]
+    assert recovery["component_type"] == "deployment-tool"
+    assert recovery["dockerfile"] == "tools/recovery.Dockerfile"
+    recovery_dockerfile = (ROOT / recovery["dockerfile"]).read_text(encoding="utf-8")
+    assert "USER 10001:10001" in recovery_dockerfile
+    assert "scheduled-backup.sh" in recovery_dockerfile
 
 
 def test_studio_image_is_standalone_non_root_and_uses_only_internal_bff() -> None:

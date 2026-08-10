@@ -77,6 +77,13 @@ services:
     dependencies:
       - emg-common-types
 
+  recovery-tool:
+    type: deployment-tool
+    path: tools
+    dockerfile: tools/recovery.Dockerfile
+
+    dependencies: []
+
 
   persistence:
     type: library

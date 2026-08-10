@@ -3,8 +3,9 @@
 ## Scope and objectives
 
 PostgreSQL is authoritative for EMG relational state, including the audit and digital-evidence
-custody ledgers. This runbook supplies the RC-1B recovery foundation; it does not provide high
-availability, replication topology, or a cloud storage service.
+custody ledgers. This runbook supplies the provider-neutral recovery foundation and RC-E
+operational scheduling; it does not provide high availability, replication topology, or a cloud
+storage service.
 
 The production objectives are:
 
@@ -61,18 +62,27 @@ parent after rename; another storage interface must guarantee equivalent durabil
 ## Installation and scheduled operation
 
 1. Apply the PostgreSQL settings in `infra/backup/postgresql.conf.example`, adapting only paths.
-2. Mount the repository and set `EMG_BACKUP_REPOSITORY`, `EMG_BACKUP_DSN`, and the encryption
-   wrapper in the scheduler's secret-managed environment.
-3. Run `tools/backup/full-backup.sh` daily. Treat a missing final directory or nonzero exit as a
-   failed backup. Staging directories are never recovery candidates.
-4. Configure PostgreSQL's `archive_command` to call `tools/backup/archive-wal.sh "%p" "%f"`.
-5. Run `tools/backup/verify-backup.sh MANIFEST` after replication to each failure domain.
-6. Alert on backup age over 24 hours, WAL archive age over five minutes, checksum failure,
+2. Provision the environment-owned `emg-postgresql-backup-repository` PVC with the repository
+   properties above. Its absence intentionally leaves the CronJob unschedulable; the checked-in
+   deployment does not create colocated storage or choose a provider.
+3. Synchronize `emg-postgresql-backup-secrets`. It supplies the least-privilege backup DSN,
+   escrow reference, and executable encryption/sign/verify wrappers. Decryption authority is
+   deliberately absent from the scheduled pod.
+4. The `emg-postgresql-backup` CronJob runs daily at 01:00 UTC. It forbids concurrency, has a
+   two-hour deadline, one retry, bounded history, no service-account token, and explicit resource
+   limits. Treat a missing final directory, nonzero Job exit, or missing verified evidence event
+   as failure. Staging directories are never recovery candidates.
+5. Configure PostgreSQL's `archive_command` to call `tools/backup/archive-wal.sh "%p" "%f"`.
+6. Run `tools/backup/verify-backup.sh MANIFEST` after replication to each failure domain.
+7. Alert on backup age over 24 hours, WAL archive age over five minutes, checksum failure,
    repository capacity, or encryption-wrapper failure.
 
 The full-backup script requests a fast checkpoint, streams WAL into the backup, encrypts every
 artifact, generates a canonical JSON manifest with SHA-256 and byte sizes, verifies it, and only
-then atomically publishes the backup directory.
+then atomically publishes the backup directory. The scheduled wrapper then verifies the detached
+signature and artifact hashes and atomically writes `recovery-evidence/BACKUP_ID.json`. It emits
+the non-secret `emg.recovery.backup.verified` JSON event; failure emits
+`emg.recovery.backup.failed`, exits nonzero, and leaves no success evidence.
 
 For deterministic retention review, set an explicit clock, for example
 `EMG_RETENTION_NOW=2025-01-01T00:00:00Z tools/backup/retention.sh`. Review the JSON plan, confirm a
@@ -88,7 +98,9 @@ cannot remove segments required by the oldest retained valid chain.
 2. Select the newest manifest that predates corruption and run `verify-backup.sh` against the
    repository copy.
 3. Provision an empty absolute target directory with capacity for the restored cluster.
-4. Set the decryption wrapper and run
+4. Set `EMG_RECOVERY_MODE=isolated-restore`,
+   `EMG_RECOVERY_CONFIRMATION=RESTORE_INTO_EMPTY_TARGET`, and a recorded
+   `EMG_RECOVERY_TARGET_ID` that is not `production`. Set the decryption wrapper and run
    `tools/backup/restore-full.sh BACKUP_DIRECTORY TARGET_DATA_DIRECTORY`.
 5. Start an isolated PostgreSQL instance on the restored directory with application egress and
    credentials disabled.
@@ -140,9 +152,44 @@ A rehearsal passes only when RPO is at most five minutes, RTO is at most four ho
 are intact, and the evidence record is reviewed. A failed rehearsal opens a production-readiness
 blocker; it must not be represented as successful merely because PostgreSQL started.
 
+### Authoritative recovery order and consistency gates
+
+1. Quiesce or isolate writes and preserve incident evidence.
+2. Restore PostgreSQL and replay WAL to the authorized point. PostgreSQL contains authoritative
+   graph/revision state, Audit and custody ledgers, mutation/outbox and dispatch state, and the
+   ADR-042 governed-search representation. Pending work remains pending; do not edit dispatch
+   status to force startup.
+3. Run `verify-recovery.sh`, migration-history/checksum validation, incident-specific row
+   assertions, and outbox/dispatch counts. Missing WAL, incomplete recovery, or any integrity or
+   migration mismatch is an abort condition.
+4. Keep Neo4j isolated. It is a derived projection: discard stale state and run the existing
+   deterministic PostgreSQL-to-Neo4j reconciliation path before graph reads. Never use Neo4j to
+   fill a PostgreSQL gap.
+5. Governed search is PostgreSQL-backed and revision-aware. Its retained representations are in
+   the physical/PITR recovery set; validate retention/cardinality and representative authorized
+   queries. Do not silently fall forward to another revision.
+6. Follow production provisioning order, then run health, authorization, mutation,
+   pending-dispatch, evidence, projection, and governed-search smoke checks while isolated.
+7. The incident commander, database operator, security/evidence owner, and service owner review
+   measured RPO/RTO and evidence before traffic release. A failed gate keeps the target isolated
+   and requires a newly prepared empty target or an older authorized recovery point.
+
+### Qualification states
+
+- **IMPLEMENTED:** physical backup, continuous WAL scripts, encryption/signing wrapper contract,
+  atomic publication, signed verification, retention floor, hardened daily CronJob, restore
+  target guard, ledger verification, and real PostgreSQL full/PITR CI rehearsal.
+- **CONFIGURATION REQUIRED:** remote claim/failure domain, archive command, approved egress/TLS,
+  External Secrets store, custody and escrow, lifecycle/capacity controls, backup/WAL-age alerts,
+  restore host, and operator access.
+- **LIVE QUALIFICATION REQUIRED:** observe backup/WAL delivery, independently read the remote
+  copy, exercise escrowed decryption and rotation, execute isolated target-environment PITR,
+  rebuild Neo4j, validate dispatch and governed search, measure RPO/RTO, and review evidence. CI
+  evidence is not production certification.
+
 ## Known boundaries
 
-RC-1B establishes backup and recovery mechanics. It does not close provider deployment,
-cross-region replication, PostgreSQL HA/failover, key-manager selection, scheduler installation,
-monitoring backend selection, or completion of the first witnessed production rehearsal. Those
-remain deployment/operations readiness work and must be tracked separately.
+RC-E installs provider-neutral Kubernetes scheduling but does not close provider deployment,
+cross-region replication, PostgreSQL HA/failover, key-manager selection, target storage/custody
+configuration, monitoring backend selection, or completion of the first witnessed production
+rehearsal. Those remain deployment/operations readiness work and must be tracked separately.
