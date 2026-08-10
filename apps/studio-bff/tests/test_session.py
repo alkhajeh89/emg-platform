@@ -61,6 +61,7 @@ def test_missing_session_cookie_is_rejected(client):
 def test_logout_deletes_session_and_clears_cookie(client, session_store, monkeypatch):
     _seed_session(session_store, session_id="logout-sess")
     client.cookies.set("__Host-emg_studio_session", "logout-sess")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     async def fake_revoke(settings, refresh_token):
         assert refresh_token == "refresh-token-value"
@@ -83,6 +84,7 @@ def test_logout_revocation_failure_is_logged_but_still_returns_204(
     deletion behavior are unchanged (already ADR-035 D-9 compliant)."""
     _seed_session(session_store, session_id="revoke-fail-sess")
     client.cookies.set("__Host-emg_studio_session", "revoke-fail-sess")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     async def failing_revoke(settings, refresh_token):
         raise RuntimeError("simulated Keycloak revocation-endpoint outage")
@@ -102,6 +104,7 @@ def test_logout_revocation_failure_is_logged_but_still_returns_204(
 def test_session_after_logout_no_longer_authenticates(client, session_store, monkeypatch):
     _seed_session(session_store, session_id="logout-sess-2")
     client.cookies.set("__Host-emg_studio_session", "logout-sess-2")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     async def fake_revoke(settings, refresh_token):
         return None
@@ -119,6 +122,7 @@ def test_logout_without_csrf_header_is_rejected(client, session_store):
     all must be rejected before any session state changes."""
     _seed_session(session_store, session_id="csrf-sess-1")
     client.cookies.set("__Host-emg_studio_session", "csrf-sess-1")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     response = client.post("/auth/logout")
     assert response.status_code == 401
@@ -128,6 +132,7 @@ def test_logout_without_csrf_header_is_rejected(client, session_store):
 def test_logout_with_wrong_csrf_header_is_rejected(client, session_store):
     _seed_session(session_store, session_id="csrf-sess-2")
     client.cookies.set("__Host-emg_studio_session", "csrf-sess-2")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     response = client.post("/auth/logout", headers={"X-CSRF-Token": "attacker-guessed-value"})
     assert response.status_code == 401
@@ -137,6 +142,7 @@ def test_logout_with_wrong_csrf_header_is_rejected(client, session_store):
 def test_logout_with_correct_csrf_header_succeeds(client, session_store):
     _seed_session(session_store, session_id="csrf-sess-3", refresh_token=None)
     client.cookies.set("__Host-emg_studio_session", "csrf-sess-3")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     response = client.post("/auth/logout", headers={"X-CSRF-Token": CSRF_TOKEN})
     assert response.status_code == 204
@@ -146,6 +152,7 @@ def test_logout_with_correct_csrf_header_succeeds(client, session_store):
 def test_logout_invalidates_session_cookies_and_all_protected_access(client, session_store):
     _seed_session(session_store, session_id="logout-contract-sess", refresh_token=None)
     client.cookies.set("__Host-emg_studio_session", "logout-contract-sess")
+    client.cookies.set("__Host-emg_studio_csrf", CSRF_TOKEN)
 
     response = client.post("/auth/logout", headers={"X-CSRF-Token": CSRF_TOKEN})
 
