@@ -17,7 +17,8 @@ The shell queries only `GET /bff/auth/session`. An unauthenticated response rend
 | `/entities` | Canonical entity-ID entry workspace |
 | `/entities/{encoded-entity-id}` | Authorized entity detail, evidence, temporal history, and first relationship page |
 | `/search` | Governed entity search with query and cursor held only in active in-memory UI state |
-| `/knowledge-graph` | Planned workspace |
+| `/knowledge-graph` | Explorer root discovery through governed in-memory search |
+| `/knowledge-graph/{encoded-entity-id}` | Progressive authorized graph exploration rooted at a canonical entity |
 | `/evidence` | Planned workspace |
 | `/timeline` | Planned workspace |
 | `/decisions` | Planned workspace |
@@ -52,6 +53,16 @@ Authorized continuation uses the opaque cursor exactly as returned. “Load more
 
 All search copy and match-kind labels are centralized for English and Arabic. Layout direction follows the selected locale, while entity IDs, entity types, classifications, revisions, and API enum values remain canonical and LTR where displayed. Every result links to `/entities/{encoded-entity-id}` without including the search query.
 
+## Knowledge Graph Explorer
+
+The Explorer uses only the existing entity and neighbors APIs through same-origin `/bff/*` requests. Users may choose a root through governed search, open a search result in the graph, enter from an existing entity detail, or use a canonical entity deep link. Search text remains in memory and never enters the graph URL; only the already-authorized canonical root ID is routed.
+
+Loading a root retrieves that entity and one authorized neighbor page. Further expansion occurs only after an explicit user action on a visible entity. Nodes are deduplicated by canonical entity ID and relationships by the returned `via_edge_id`. Each entity keeps its own opaque continuation cursor and failure state. Cursors are forwarded unchanged and never decoded. All expansion requests remain pinned to the root revision.
+
+The deterministic native-SVG view and keyboard-accessible relationship list are two representations of the same in-memory authorized graph state. Both support entity selection, explicit expansion, local continuation, relationship selection, and encoded entity-detail links. On smaller screens the layout stacks the detail panel and emphasizes the representation switcher. No graph visualization dependency or browser persistence was added.
+
+The Explorer never claims completeness and does not display total nodes, total relationships, hidden/denied counts, or inferred classified existence. The frontend applies only an internal visible-node rendering safeguard; it is not presented as backend cardinality. Neighbor responses distinguish `directed` and `undirected` relationships but do not expose endpoint orientation, so the SVG deliberately does not invent arrow direction.
+
 ## Sprint 2 limitations
 
 - Dashboard operational metrics and recent activity are intentionally unavailable because no approved dashboard API exists.
@@ -59,5 +70,6 @@ All search copy and match-kind labels are centralized for English and Arabic. La
 - Search query and pagination state intentionally disappear on navigation or reload because confidentiality takes precedence over preserving browser state.
 - Relationship continuation controls are not yet exposed in the entity workspace.
 - Evidence and temporal histories are displayed only when they are present in the approved entity response. No separate evidence or revision-list API is inferred.
-- Knowledge Graph visualization, Evidence, Timeline, and Decisions remain planned route foundations. The Decision domain is accepted architecturally but has no implemented query service or API.
+- Evidence, Timeline, and Decisions remain planned route foundations. The Decision domain is accepted architecturally but has no implemented query service or API.
+- Explorer expansion is deliberate and bounded: there is no automatic multi-hop traversal, physics layout, completeness estimate, or cross-session graph persistence.
 - The workspace remains read-only. No mutation, authoring, task, decision, or persistence capability is introduced.

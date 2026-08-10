@@ -275,6 +275,12 @@ export function SearchWorkspace() {
                     >
                       {t("openEntity")}
                     </Link>
+                    <Link
+                      className="button"
+                      href={`/knowledge-graph/${encodeURIComponent(item.entity.node_id)}`}
+                    >
+                      {t("exploreInGraph")}
+                    </Link>
                   </article>
                 </li>
               ))}
