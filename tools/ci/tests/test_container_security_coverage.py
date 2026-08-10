@@ -32,6 +32,7 @@ def test_container_security_matrix_covers_every_production_service() -> None:
         "audit",
         "audit-projector",
         "knowledge-graph",
+        "studio",
         "studio-bff",
         "keycloak-provisioner",
     }

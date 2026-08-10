@@ -1,7 +1,7 @@
 # Production environment overlay (RC-1A)
 
 This Kustomize overlay is the production deployment artifact for the RC1
-single-replica topology. Render it with:
+single-replica topology, including the Studio frontend and Studio BFF. Render it with:
 
 ```sh
 kubectl kustomize infra/environments/production
@@ -101,6 +101,10 @@ Run the repository preflight before finalization:
 The `emg.platform/bootstrap-stage` annotations are machine-checkable ordering
 metadata, not a claim that `kubectl apply` enforces the sequence. A Kustomize
 render or readiness probe never substitutes for completed provisioning.
+
+After the governed backend stages, roll out Knowledge Graph and Studio BFF and wait for readiness,
+then roll out Studio. Public ingress targets Studio; Studio's `/bff/*` rewrite is the only browser
+path to Studio BFF.
 
 ## Network boundary
 

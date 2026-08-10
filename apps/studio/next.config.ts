@@ -1,8 +1,12 @@
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
 
 const bffOrigin = process.env.STUDIO_BFF_INTERNAL_URL ?? "http://localhost:8010";
+const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingRoot: repositoryRoot,
   async rewrites() {
     return [{ source: "/bff/:path*", destination: `${bffOrigin}/:path*` }];
   },

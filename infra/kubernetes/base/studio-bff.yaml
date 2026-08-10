@@ -34,7 +34,7 @@ data:
   EMG_STUDIO_BFF_KEYCLOAK_BASE_URL: https://keycloak.production.example.invalid
   EMG_STUDIO_BFF_KEYCLOAK_REALM: emg
   EMG_STUDIO_BFF_OIDC_CLIENT_ID: emg-studio-bff
-  EMG_STUDIO_BFF_OIDC_REDIRECT_URI: https://studio.production.example.invalid/auth/callback
+  EMG_STUDIO_BFF_OIDC_REDIRECT_URI: https://studio.production.example.invalid/bff/auth/callback
   EMG_STUDIO_BFF_STUDIO_FRONTEND_URL: https://studio.production.example.invalid
   EMG_STUDIO_BFF_KNOWLEDGE_GRAPH_AUDIENCE: emg-knowledge-graph-audience
   EMG_STUDIO_BFF_KNOWLEDGE_GRAPH_BASE_URL: https://knowledge-graph.production.example.invalid

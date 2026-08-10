@@ -5,6 +5,15 @@ version: 1
 
 services:
 
+  studio:
+    type: service
+    path: apps/studio
+    dockerfile: apps/studio/Dockerfile
+
+    # Node dependencies are governed by package-lock.json. Studio imports no
+    # internal Python distributions.
+    dependencies: []
+
   identity:
     type: service
     path: services/identity

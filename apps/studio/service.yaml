@@ -1,0 +1,5 @@
+name: studio
+type: web-application
+port: 3000
+health: /healthz
+readiness: /readyz

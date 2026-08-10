@@ -29,6 +29,15 @@ development examples, not production capacity sizing.
 Before promotion, verify the image digest, SBOM, provenance attestation,
 vulnerability report, migration result, and readiness response.
 
+### Studio and BFF topology
+
+Studio is a separate governed Next.js workload in front of Studio BFF. Public ingress routes `/`
+to `emg-studio:3000`; Studio proxies only same-origin `/bff/*` traffic to
+`emg-studio-bff:8000`. Configure the BFF OIDC redirect as
+`https://<studio-host>/bff/auth/callback`. Studio has no secret configuration and must never receive
+a Knowledge Graph URL, token, tenant, or clearance value. Its `/healthz` and `/readyz` endpoints are
+used for process probes; BFF dependency readiness remains independently enforced.
+
 ## Runtime image release contract
 
 ADR-040 is implemented by `.github/workflows/runtime-image-release.yml` and

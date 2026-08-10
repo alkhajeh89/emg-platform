@@ -28,6 +28,7 @@ WORKFLOW_PATH = ROOT / ".github/workflows/runtime-image-release.yml"
 COMMIT = "1a" * 20
 SOURCE_REPOSITORY = "emg/example"
 EXPECTED_APPLICATION_IMAGES = {
+    "studio",
     "identity",
     "audit",
     "audit-projector",
@@ -117,6 +118,19 @@ def test_canonical_inventory_governs_applications_and_keycloak_provisioner() -> 
     dockerfile = (ROOT / provisioner["dockerfile"]).read_text(encoding="utf-8")
     assert "tools/scripts/provision-keycloak-realm.py" in dockerfile
     assert "ENTRYPOINT" in dockerfile
+
+
+def test_studio_image_is_standalone_non_root_and_uses_only_internal_bff() -> None:
+    inventory = {image["service"]: image for image in governed_images()}
+    assert inventory["studio"]["dockerfile"] == "apps/studio/Dockerfile"
+    dockerfile = (ROOT / "apps/studio/Dockerfile").read_text(encoding="utf-8")
+    next_config = (ROOT / "apps/studio/next.config.ts").read_text(encoding="utf-8")
+    assert 'output: "standalone"' in next_config
+    assert "npm ci --workspace @emg/studio" in dockerfile
+    assert "STUDIO_BFF_INTERNAL_URL=http://emg-studio-bff:8000" in dockerfile
+    assert "USER 10001:10001" in dockerfile
+    assert "next dev" not in dockerfile
+    assert "KNOWLEDGE_GRAPH" not in dockerfile
 
 
 def test_release_workflow_has_only_the_trusted_tag_trigger_and_environment() -> None:

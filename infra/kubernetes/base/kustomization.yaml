@@ -13,6 +13,7 @@ resources:
   - knowledge-graph.yaml
   - knowledge-graph-migration.yaml
   - studio-bff.yaml
+  - studio.yaml
   - keycloak-provision.yaml
   - provisioning-validation.yaml
   - network-policies.yaml
