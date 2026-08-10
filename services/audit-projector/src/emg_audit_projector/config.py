@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     max_attempts: int = Field(default=8, ge=1, le=8)
     telemetry_interval_seconds: float = Field(default=30.0, gt=0, le=300)
+    metrics_port: int = Field(default=9464, ge=1, le=65535)
 
     @property
     def token_endpoint(self) -> str:

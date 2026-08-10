@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 
 import httpx
+from emg_telemetry.metrics import record_dependency_health, record_readiness
 from fastapi import APIRouter, Response, status
 from starlette.concurrency import run_in_threadpool
 
@@ -50,6 +51,8 @@ async def readyz(
         health = store_health_unavailable(settings.store_backend)
     if not health.available:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    record_readiness("knowledge-graph", ready=health.available)
+    record_dependency_health("knowledge-graph", health.backend, healthy=health.available)
     return ReadinessResponse(
         status="ready" if health.available else "degraded",
         store_backend=health.backend,

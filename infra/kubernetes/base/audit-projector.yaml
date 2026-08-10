@@ -17,6 +17,7 @@ spec:
       containers:
         - name: audit-projector
           image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          ports: [{name: metrics, containerPort: 9464}]
           envFrom: [{configMapRef: {name: emg-audit-projector-config}}]
           env:
             - {name: EMG_AUDIT_PROJECTOR_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: postgres-dsn}}}
@@ -29,6 +30,19 @@ spec:
           livenessProbe: {exec: {command: [/bin/sh, -c, "kill -0 1"]}, periodSeconds: 10, timeoutSeconds: 1, failureThreshold: 3}
           readinessProbe: {exec: {command: [/bin/sh, -c, "test -f /tmp/emg-audit-projector-ready"]}, periodSeconds: 5, timeoutSeconds: 1, failureThreshold: 2}
       volumes: [{name: tmp, emptyDir: {sizeLimit: 32Mi}}]
+---
+# RC-C (EMG v1 RC closure, P0 alerting): the Audit Projector is otherwise a
+# headless worker with no Service (readiness is an exec file-sentinel, not
+# HTTP) -- this Service exists only so a cluster-internal metrics scraper has
+# a stable DNS name/port for the `/metrics` endpoint
+# `emg_audit_projector.metrics_server.MetricsServer` now serves on container
+# port 9464. It carries no product traffic.
+apiVersion: v1
+kind: Service
+metadata: {name: emg-audit-projector-metrics}
+spec:
+  selector: {app.kubernetes.io/name: emg-audit-projector}
+  ports: [{name: metrics, port: 9464, targetPort: metrics}]
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -10,6 +10,7 @@ from typing import Any
 
 from emg_errors import EMGError, PermissionDeniedError
 from emg_telemetry import get_logger
+from emg_telemetry.metrics import get_registry
 from fastapi import HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
@@ -17,6 +18,29 @@ from fastapi.routing import APIRoute
 from .errors import error_status
 
 _log = get_logger("knowledge_graph.mutations")
+
+_requests_total = get_registry().counter(
+    "kg_mutation_requests_total",
+    "Knowledge Graph mutation requests, labeled by operation and outcome "
+    "(ADR-027 Revision 5's fixed five-operation vocabulary; never tenant, "
+    "entity, or principal identifiers).",
+    ("operation", "outcome"),
+)
+_latency_seconds = get_registry().histogram(
+    "kg_mutation_latency_seconds",
+    "Knowledge Graph mutation request duration in seconds, by operation and outcome.",
+    ("operation", "outcome"),
+)
+_idempotency_hits_total = get_registry().counter(
+    "kg_mutation_idempotency_hits_total",
+    "Knowledge Graph mutation requests served as an authorized idempotent replay.",
+    ("operation",),
+)
+_authorization_denials_total = get_registry().counter(
+    "kg_mutation_authorization_denials_total",
+    "Knowledge Graph mutation requests denied by the Policy Enforcement Point.",
+    ("operation",),
+)
 
 
 class MutationOperation(str, Enum):
@@ -109,6 +133,19 @@ def _emit_metric(
         action="mutation_metric",
         outcome=outcome,
     )
+    try:
+        if metric is MutationMetric.REQUESTS:
+            _requests_total.inc(labels=(operation.value, outcome.value))
+        elif metric is MutationMetric.LATENCY:
+            _latency_seconds.observe(float(value), labels=(operation.value, outcome.value))
+        elif metric is MutationMetric.IDEMPOTENCY_HITS:
+            _idempotency_hits_total.inc(labels=(operation.value,))
+        elif metric is MutationMetric.AUTHORIZATION_DENIALS:
+            _authorization_denials_total.inc(labels=(operation.value,))
+    except Exception:
+        # Same contract as _emit_event: observability must never affect the
+        # mutation's HTTP, authorization, or atomic-execution outcome.
+        return
 
 
 def _emit_request_completion(

@@ -2,9 +2,14 @@
 
 Scaffolded in Sprint 1 (FEAT-01-2 / Engineering Master Plan §2: "logging/
 telemetry client (ADR-015)"). Implements the shared Logs primitive from
-ADR-015 Section 1 only; Metrics/Traces emitters, per-layer extensions
-(Graph/Search/Decision Observability), dashboards, and alerting land with
-FEAT-12-3/12-4 (EPIC-12).
+ADR-015 Section 1. Metrics (ADR-015 Section 2) are implemented by the
+`metrics` submodule (RC-C, EMG v1 RC closure): a dependency-free
+Prometheus-text-exposition registry, deliberately not re-exported here so
+importing `emg_telemetry` never requires anything metrics-related. FastAPI
+HTTP-metrics glue lives in the separate `http_metrics` submodule for the
+same reason (see its module docstring). Traces, and per-layer extensions
+(Graph/Search/Decision Observability) beyond what RC-C instruments, remain
+unimplemented; see `docs/release/EMG_V1_RELEASE_CANDIDATE_CLOSURE_REVIEW.md`.
 """
 
 from .context import (

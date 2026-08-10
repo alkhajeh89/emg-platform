@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 
+from emg_telemetry.metrics import record_dependency_health, record_readiness
 from fastapi import APIRouter, Response, status
 from starlette.concurrency import run_in_threadpool
 
@@ -35,6 +36,8 @@ async def readyz(response: Response, store: StoreDep, settings: SettingsDep) -> 
         )
     except TimeoutError:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        record_readiness("audit", ready=False)
+        record_dependency_health("audit", "postgres", healthy=False)
         return ReadinessResponse(
             status="unavailable",
             store_backend=settings.store_backend,
@@ -43,6 +46,8 @@ async def readyz(response: Response, store: StoreDep, settings: SettingsDep) -> 
         )
     if not health.available:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    record_readiness("audit", ready=health.available)
+    record_dependency_health("audit", "postgres", healthy=health.available)
     return ReadinessResponse(
         status="ready" if health.available else "degraded",
         store_backend=health.backend,

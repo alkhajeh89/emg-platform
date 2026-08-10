@@ -1,0 +1,610 @@
+# EMG Platform — production alert rules (RC-C, EMG v1 RC closure package,
+# closing RC-P0-C "Production alerting absent").
+#
+# Format: standard Prometheus/Thanos-Ruler/Cortex/Mimir alerting-rule
+# `groups:` YAML (https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/).
+# This is the most portable, vendor-neutral representation of "alert logic
+# against these metric names" available: it loads directly into a
+# self-hosted Prometheus (`rule_files:`), into Thanos/Cortex/Mimir rulers,
+# and into most managed Prometheus-compatible services; wrap it in a
+# `PrometheusRule` CRD `spec:` block if the eventual operator chooses the
+# Prometheus Operator specifically. No such wrapping is applied here because
+# no monitoring backend has been selected -- see the ARCHITECTURAL STOP note
+# below and docs/release/EMG_V1_RELEASE_CANDIDATE_CLOSURE_REVIEW.md RC-P0-C.
+#
+# ==========================================================================
+# ARCHITECTURAL STOP — read before adding a Prometheus/Alertmanager/Grafana
+# deployment on the strength of this file alone
+# ==========================================================================
+# This repository does not select, deploy, or configure a metrics backend.
+# `docs/infrastructure/OBSERVABILITY_INFRASTRUCTURE.md` and
+# `docs/backend/implementation/OBSERVABILITY_ARCHITECTURE.md` both say so
+# explicitly ("TBD — requires engineering or architecture decision"), and no
+# ADR selects one. This file is written in Prometheus rule syntax because
+# every EMG service now exposes its metrics in Prometheus text-exposition
+# format (`emg_telemetry.metrics` / `emg_telemetry.http_metrics` — see that
+# module's docstring for why no `prometheus_client` dependency was added),
+# which is the same format virtually every Prometheus-compatible backend
+# (self-hosted Prometheus, Thanos, Cortex, Mimir, AWS/GCP managed
+# Prometheus, Grafana Cloud, Datadog's OpenMetrics scraper, ...) can
+# ingest — choosing this exposition format is not the same decision as
+# choosing which system evaluates these rules and pages someone. That
+# remains open. Three things are explicitly NOT decided by this file and
+# require separate action before any alert here can actually fire in
+# production:
+#
+#   A) WHERE this file is evaluated: a rule engine (Prometheus/Thanos
+#      Ruler/Cortex/Mimir/managed-service) must be deployed and pointed at
+#      it. Not present anywhere in this repository. OPERATIONAL DECISION
+#      (who runs it, HA, retention, cost) — some paths also require a new
+#      ADR if a specific vendor/architecture is adopted platform-wide.
+#   B) WHO scrapes each service's `/metrics`: the scraper's namespace must
+#      be labeled `networking.emg.io/observability-access: "true"` for
+#      `infra/kubernetes/base/network-policies.yaml`'s
+#      `emg-observability-scrape-http` / `-audit-projector` policies to
+#      admit it. Not applied anywhere in this repository. OPERATIONAL
+#      DECISION.
+#   C) WHERE alerts are ROUTED (Alertmanager receivers: PagerDuty/Slack/
+#      Opsgenie/email, on-call rotation, silence policy). Not present
+#      anywhere in this repository. `severity` labels below are the routing
+#      *input* ADR-015 §10's tiering describes, not a receiver
+#      configuration. OPERATIONAL DECISION, and ADR-016's ownership
+#      registry should drive it once it exists (ADR-015 §10 already says
+#      so) rather than this file hardcoding a receiver.
+#
+# Every alert below is implementable NOW against metrics this change
+# actually emits (bucket A) or is written against a standard, widely-used
+# exporter's metric names for cluster/database-level signal this repository
+# does not itself instrument (bucket B/C, marked per-group below). No alert
+# in this file encodes an invented business SLO/error-budget threshold —
+# see observability/README.md's SLI/SLO section for what would require
+# operational sign-off instead.
+#
+# Severity model (routing INPUT only — see (C) above):
+#   P0 — service is down, unavailable, or a mandatory safety/compliance
+#        signal (auth/audit/backup) has failed. Page on-call immediately.
+#   P1 — degraded but not down; backlog/latency/error-rate trending toward
+#        a P0; needs same-business-day attention.
+#   P2 — informational/quality-trend; governance review, not paging.
+
+groups:
+  # ------------------------------------------------------------------------
+  # Group: platform-availability (bucket A — emg_service_ready, emitted by
+  # every FastAPI service's existing /readyz handler via
+  # emg_telemetry.metrics.record_readiness; see routers/health.py in each
+  # of identity/audit/knowledge-graph/studio-bff)
+  # ------------------------------------------------------------------------
+  - name: emg-platform-availability
+    rules:
+      - alert: EMGServiceNotReady
+        expr: emg_service_ready == 0
+        for: 2m
+        labels:
+          severity: P0
+          category: availability
+        annotations:
+          summary: "{{ $labels.service }} has reported not-ready for 2+ minutes."
+          description: >-
+            {{ $labels.service }}'s /readyz has returned degraded/unavailable
+            continuously for at least 2 minutes (matches the Kubernetes
+            readinessProbe periodSeconds=5, failureThreshold=2 in
+            infra/kubernetes/base/*.yaml, so this alert fires only after the
+            pod would already have been pulled from Service endpoints).
+          runbook: docs/operations/alert-runbook.md#emgservicenotready
+
+      - alert: EMGServiceMetricsAbsent
+        expr: absent(emg_service_ready{service=~"identity|audit|knowledge-graph|studio-bff"})
+        for: 5m
+        labels:
+          severity: P0
+          category: availability
+        annotations:
+          summary: "No /readyz-derived readiness signal has been seen from one or more core services."
+          description: >-
+            `emg_service_ready` is a series-per-service gauge; if the metric
+            itself is entirely absent (not just 0), the service is either not
+            running, not being scraped (see ARCHITECTURAL STOP item B above),
+            or crashed before ever completing a readiness check. This rule
+            exists specifically to catch the "monitoring that fails silently"
+            case: a dead scrape target renders as *no data*, not as a 0,
+            and a naive `== 0` alert alone would miss it.
+          runbook: docs/operations/alert-runbook.md#emgservicemetricsabsent
+
+      - alert: EMGDependencyUnhealthy
+        expr: emg_dependency_healthy == 0
+        for: 3m
+        labels:
+          severity: P1
+          category: availability
+        annotations:
+          summary: "{{ $labels.service }} reports its {{ $labels.dependency }} dependency unhealthy."
+          description: >-
+            One of {{ $labels.service }}'s own readiness-check dependencies
+            (postgres/neo4j/keycloak/audit_service/knowledge_graph, per
+            record_dependency_health call sites in each service's
+            routers/health.py) has failed its check for 3+ minutes.
+          runbook: docs/operations/alert-runbook.md#emgdependencyunhealthy
+
+  # ------------------------------------------------------------------------
+  # Group: platform-http (bucket A — http_requests_total / http_errors_total
+  # / http_request_duration_seconds, emitted by
+  # emg_telemetry.http_metrics.install_http_metrics on every FastAPI
+  # service's existing request path and error handler)
+  # ------------------------------------------------------------------------
+  - name: emg-platform-http
+    rules:
+      - alert: EMGHighServerErrorRate
+        expr: |
+          sum by (service) (rate(http_requests_total{status_class="5xx"}[5m]))
+          /
+          sum by (service) (rate(http_requests_total[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: P1
+          category: http
+        annotations:
+          summary: "{{ $labels.service }} 5xx rate exceeds 5% over 5 minutes."
+          description: >-
+            More than 5% of {{ $labels.service }}'s requests over the last 5
+            minutes returned a server error. Threshold is a fixed safety
+            trip-wire (an application serving mostly 5xx is broken under any
+            workload), not a tuned SLO target — see observability/README.md
+            for the separate, not-yet-approved latency/availability SLOs.
+          runbook: docs/operations/alert-runbook.md#emghighservererrorrate
+
+      - alert: EMGHighAuthenticationFailureRate
+        expr: |
+          sum by (service) (rate(http_errors_total{error_code="AUTHORIZATION_ERROR"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: P1
+          category: security
+        annotations:
+          summary: "{{ $labels.service }} is sustaining over 1 authentication failure/sec."
+          description: >-
+            `AUTHORIZATION_ERROR` is EMG's shared 401 (authentication
+            failure / invalid-expired-missing-claim token) error code, raised
+            consistently across identity/audit/knowledge-graph/studio-bff
+            (see libs/python/emg-errors/src/emg_errors/catalog.py). A
+            sustained rate above 1/s is either a broken client/credential
+            rollout or a credential-stuffing/token-replay attempt; either way
+            it needs a human. Absolute rate, not a ratio, because a
+            near-100%-legitimate-traffic service could still hide a small
+            attack inside a percentage-based threshold.
+          runbook: docs/operations/alert-runbook.md#emghighauthenticationfailurerate
+
+      - alert: EMGElevatedRequestLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: P2
+          category: http
+        annotations:
+          summary: "{{ $labels.service }} p95 request latency exceeds 5s."
+          description: >-
+            Informational/quality-trend only (P2, governance review not
+            paging — ADR-015 §10 Tier 3): 5 seconds is a coarse "something is
+            clearly wrong" backstop, not an approved latency SLO. See
+            observability/README.md's SLO approval table before treating
+            this as a paging-grade threshold.
+          runbook: docs/operations/alert-runbook.md#emgelevatedrequestlatency
+
+  # ------------------------------------------------------------------------
+  # Group: emg-audit-pipeline (bucket A — audit_dispatch_* metrics, emitted
+  # by emg_audit_projector.telemetry.PrometheusProjectorObserver, wired into
+  # AuditProjectorWorker via ProjectorRuntime)
+  # ------------------------------------------------------------------------
+  - name: emg-audit-pipeline
+    rules:
+      - alert: EMGAuditDispatchBacklogGrowing
+        expr: audit_dispatch_pending_depth_max > 100
+        for: 10m
+        labels:
+          severity: P1
+          category: audit
+        annotations:
+          summary: "Audit Projector's largest single-tenant backlog exceeds 100 pending entries."
+          description: >-
+            `audit_dispatch_pending_depth_max` is the largest pending-dispatch
+            depth across all configured tenants (aggregated, never
+            tenant-labeled — see PrometheusProjectorObserver's docstring).
+            Sustained growth means audit delivery cannot keep up with
+            mutation volume; audit is the authoritative evidence trail
+            (Module 6) so this is a P1, not merely operational noise.
+          runbook: docs/operations/alert-runbook.md#emgauditdispatchbackloggrowing
+
+      - alert: EMGAuditDispatchOldestPendingTooOld
+        expr: audit_dispatch_oldest_pending_age_max_seconds > 900
+        for: 5m
+        labels:
+          severity: P0
+          category: audit
+        annotations:
+          summary: "An audit dispatch entry has been pending for over 15 minutes."
+          description: >-
+            The oldest not-yet-delivered audit dispatch entry (any
+            configured tenant) has been pending for more than 15 minutes.
+            This is the single most direct signal that governed actions are
+            happening without a durable audit record landing in a bounded
+            time — exactly the "Audit failures observable only through the
+            failed system itself" risk called out in the RC-C adversarial
+            review; this metric is emitted by the projector's own delivery
+            loop specifically so a stalled projector is externally visible.
+          runbook: docs/operations/alert-runbook.md#emgauditdispatcholdestpendingtooold
+
+      - alert: EMGAuditDispatchExhaustedEntries
+        expr: audit_dispatch_exhausted_sum > 0
+        for: 1m
+        labels:
+          severity: P0
+          category: audit
+        annotations:
+          summary: "One or more audit dispatch entries have exhausted all delivery attempts."
+          description: >-
+            `audit_dispatch_exhausted_sum` counts dispatch entries that hit
+            `max_attempts` (default 8, ADR-028 D-48 exponential backoff) and
+            will NOT be retried automatically. These require manual
+            investigation/replay; any value above 0 is actionable, so this
+            alert has effectively no tolerance window.
+          runbook: docs/operations/alert-runbook.md#emgauditdispatchexhaustedentries
+
+      - alert: EMGAuditDeliveryFailureRateElevated
+        expr: |
+          sum(rate(audit_dispatch_delivery_total{outcome!="success"}[10m]))
+          /
+          sum(rate(audit_dispatch_delivery_total[10m]))
+          > 0.1
+        for: 10m
+        labels:
+          severity: P1
+          category: audit
+        annotations:
+          summary: "Over 10% of audit dispatch delivery attempts are failing."
+          description: >-
+            `outcome` is the fixed vocabulary success/retry/exhausted/
+            lease_recovery (see AuditProjectorWorker._process); a sustained
+            non-success rate above 10% over 10 minutes usually means the
+            Audit service or Keycloak token exchange is degraded, not one-off
+            transient failures the retry/backoff already absorbs.
+          runbook: docs/operations/alert-runbook.md#emgauditdeliveryfailurerateelevated
+
+      - alert: EMGAuditProjectorMetricsAbsent
+        expr: absent(audit_dispatch_delivery_total)
+        for: 10m
+        labels:
+          severity: P1
+          category: audit
+        annotations:
+          summary: "No audit dispatch delivery metric observed from the Audit Projector."
+          description: >-
+            Either the projector has processed nothing at all in 10 minutes
+            (plausible only in a genuinely idle tenant) or its metrics
+            scrape target is unreachable. This rule intentionally does not
+            reference Prometheus's own `up` metric or any scrape-job name:
+            doing so would couple this alert to a specific scrape-config
+            naming convention (deployment configuration, bucket B — not
+            decided by this repository) without changing what it detects.
+            Cross-check whatever target-health view the eventual monitoring
+            backend provides before treating this as a real backlog signal;
+            kept as a separate, lower-confidence P1 rather than folded into
+            the P0 oldest-pending alert specifically so a scrape outage
+            cannot masquerade as "everything is fine, no old entries" (a
+            monitoring-fails-silently trap named in the RC-C adversarial
+            review).
+          runbook: docs/operations/alert-runbook.md#emgauditprojectormetricsabsent
+
+  # ------------------------------------------------------------------------
+  # Group: emg-mutation-pipeline (bucket A — kg_mutation_* metrics, emitted
+  # by emg_knowledge_graph_api.mutation_observability, wired into
+  # MutationObservedRoute's already-existing structured-event emission)
+  # ------------------------------------------------------------------------
+  - name: emg-mutation-pipeline
+    rules:
+      - alert: EMGMutationFailureRateElevated
+        expr: |
+          sum by (operation) (rate(kg_mutation_requests_total{outcome="failure"}[5m]))
+          /
+          sum by (operation) (rate(kg_mutation_requests_total[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: P1
+          category: mutation
+        annotations:
+          summary: "Over 5% of {{ $labels.operation }} mutations are failing (5xx, not merely rejected)."
+          description: >-
+            `outcome=failure` is ADR-027 Revision 5's server-error bucket
+            (5xx), distinct from `rejected` (4xx — validation/authorization,
+            expected traffic) — see MutationOutcome. A sustained failure
+            rate here indicates a persistence/projection problem, not client
+            misuse.
+          runbook: docs/operations/alert-runbook.md#emgmutationfailurerateelevated
+
+      - alert: EMGMutationAuthorizationDenialsSpike
+        expr: sum(rate(kg_mutation_authorization_denials_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: P1
+          category: security
+        annotations:
+          summary: "Knowledge Graph mutation authorization denials exceed 1/sec."
+          description: >-
+            A sustained rate of PolicyEngine deny outcomes on mutation routes
+            (see MutationObservedRoute's PermissionDeniedError branch) can
+            indicate a misconfigured client/policy rollout or a probing
+            attempt against write endpoints specifically (higher-value
+            target than read denials).
+          runbook: docs/operations/alert-runbook.md#emgmutationauthorizationdenialsspike
+
+      - alert: EMGMutationLatencyElevated
+        expr: |
+          histogram_quantile(0.95,
+            sum by (operation, le) (rate(kg_mutation_latency_seconds_bucket[5m]))
+          ) > 10
+        for: 10m
+        labels:
+          severity: P2
+          category: mutation
+        annotations:
+          summary: "{{ $labels.operation }} p95 mutation latency exceeds 10s."
+          description: >-
+            Informational/quality-trend (P2): mutations touch PostgreSQL
+            (authoritative) and, via read-repair, Neo4j; sustained latency
+            growth is an early signal of datastore contention worth a
+            governance look, not itself proof of a P0 outage.
+          runbook: docs/operations/alert-runbook.md#emgmutationlatencyelevated
+
+  # ------------------------------------------------------------------------
+  # Group: emg-search (bucket A — kg_search_* gauges, emitted by
+  # emg_knowledge_graph_api.search_metrics, wired into GraphStore's existing
+  # search_representation_metrics() method)
+  # ------------------------------------------------------------------------
+  - name: emg-search
+    rules:
+      - alert: EMGSearchRetentionMetricsAbsent
+        expr: absent(kg_search_representations_total)
+        for: 30m
+        labels:
+          severity: P2
+          category: search
+        annotations:
+          summary: "No governed-search retention/storage metric observed for 30+ minutes."
+          description: >-
+            `kg_search_representations_total` is refreshed at most once per
+            60s at scrape time and only when `store_backend=postgres` (see
+            search_metrics.py's throttle). Prolonged absence while the
+            knowledge-graph service is otherwise up (cross-check
+            `emg_service_ready{service="knowledge-graph"}`) suggests the
+            collector itself is failing, not that search is idle.
+          runbook: docs/operations/alert-runbook.md#emgsearchretentionmetricsabsent
+
+      # NOTE: no alert threshold is defined here for "too many retained
+      # search representations" or "too much search storage" in absolute
+      # terms. `search_representation_retention_seconds` (default 3600s) and
+      # `search_cleanup_interval_seconds` (default 900s) are governed
+      # *configuration*, not a *capacity ceiling*; a numeric byte/row-count
+      # threshold above which search storage growth is abnormal is workload-
+      # dependent and NOT in this repository today. See
+      # observability/README.md's SLO approval table (bucket B) rather than
+      # inventing one here.
+
+  # ------------------------------------------------------------------------
+  # Group: emg-cluster (bucket B/C — standard kube-state-metrics / cAdvisor
+  # metric names. NOT emitted by EMG code; requires kube-state-metrics and
+  # metrics-server/cAdvisor to be deployed in-cluster, which is an
+  # infrastructure decision this repository does not make (deploying a new,
+  # community-maintained image also touches ADR-040's governed image
+  # inventory — see the ARCHITECTURAL STOP note in
+  # docs/release/EMG_V1_RELEASE_CANDIDATE_CLOSURE_REVIEW.md). Included so
+  # the rule logic exists and is reviewed now rather than invented under
+  # incident pressure later; every expression below is inert (matches no
+  # series) until that infrastructure exists.
+  # ------------------------------------------------------------------------
+  - name: emg-cluster-workload
+    rules:
+      - alert: EMGPodCrashLooping
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="emg-production"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: P0
+          category: availability
+        annotations:
+          summary: "{{ $labels.pod }} has restarted more than 3 times in 15 minutes."
+          description: >-
+            Requires kube-state-metrics (bucket B/C — see group docstring).
+            Every EMG workload runs at a single replica today (see
+            infra/kubernetes/base/*.yaml `replicas: 1` and RC review P1 item
+            3), so a crash-loop is a full outage of that capability, not a
+            partial-capacity event.
+          runbook: docs/operations/alert-runbook.md#emgpodcrashlooping
+
+      - alert: EMGDeploymentReplicasUnavailable
+        expr: |
+          kube_deployment_status_replicas_unavailable{namespace="emg-production"} > 0
+        for: 5m
+        labels:
+          severity: P0
+          category: availability
+        annotations:
+          summary: "{{ $labels.deployment }} has unavailable replicas."
+          description: "Requires kube-state-metrics (bucket B/C — see group docstring)."
+          runbook: docs/operations/alert-runbook.md#emgdeploymentreplicasunavailable
+
+      - alert: EMGContainerMemoryNearLimit
+        expr: |
+          container_memory_working_set_bytes{namespace="emg-production", container!=""}
+          / on (namespace, pod, container)
+          kube_pod_container_resource_limits{namespace="emg-production", resource="memory"}
+          > 0.9
+        for: 10m
+        labels:
+          severity: P1
+          category: saturation
+        annotations:
+          summary: "{{ $labels.container }} in {{ $labels.pod }} is above 90% of its memory limit."
+          description: >-
+            Requires cAdvisor (via metrics-server/kubelet, bucket B/C) and
+            kube-state-metrics for the limit series. 90% is a fixed
+            proximity-to-OOMKill trip-wire against the limits already
+            declared in infra/kubernetes/base/*.yaml, not a tuned capacity
+            SLO.
+          runbook: docs/operations/alert-runbook.md#emgcontainermemorynearlimit
+
+      - alert: EMGContainerCPUThrottlingHigh
+        expr: |
+          rate(container_cpu_cfs_throttled_periods_total{namespace="emg-production"}[5m])
+          /
+          rate(container_cpu_cfs_periods_total{namespace="emg-production"}[5m])
+          > 0.25
+        for: 15m
+        labels:
+          severity: P2
+          category: saturation
+        annotations:
+          summary: "{{ $labels.container }} in {{ $labels.pod }} is CPU-throttled over 25% of the time."
+          description: "Requires cAdvisor (bucket B/C — see group docstring)."
+          runbook: docs/operations/alert-runbook.md#emgcontainercputhrottlinghigh
+
+  # ------------------------------------------------------------------------
+  # Group: emg-datastore (bucket B/C — standard postgres_exporter /
+  # neo4j-exporter metric names. Neither EMG code nor this repository's
+  # infra/kubernetes manifests deploy PostgreSQL/Neo4j themselves (see
+  # ADR-041, production-provisioning-ownership): they are environment-owned,
+  # externally provisioned dependencies reached via a Secret-supplied DSN.
+  # Deploying a community exporter against them is the same ADR-040
+  # image-governance + infra decision noted in the emg-cluster-workload
+  # group above.
+  # ------------------------------------------------------------------------
+  - name: emg-datastore
+    rules:
+      - alert: EMGPostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: P0
+          category: datastore
+        annotations:
+          summary: "PostgreSQL target {{ $labels.instance }} is down."
+          description: >-
+            Requires postgres_exporter (bucket B/C — see group docstring).
+            Until then, PostgreSQL reachability from each application is
+            still observable at the application layer via
+            `emg_dependency_healthy{dependency="postgres"}` (bucket A,
+            already implemented — see the platform-availability group); this
+            rule adds datastore-internal detail (replication, connection
+            saturation) that application-side readiness checks cannot see.
+          runbook: docs/operations/alert-runbook.md#emgpostgresdown
+
+      - alert: EMGPostgresReplicationLagHigh
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: P1
+          category: datastore
+        annotations:
+          summary: "PostgreSQL replication lag on {{ $labels.instance }} exceeds 30s."
+          description: "Requires postgres_exporter (bucket B/C — see group docstring)."
+          runbook: docs/operations/alert-runbook.md#emgpostgresreplicationlaghigh
+
+      - alert: EMGPostgresConnectionPoolNearSaturation
+        expr: |
+          sum by (instance) (pg_stat_activity_count)
+          /
+          pg_settings_max_connections
+          > 0.9
+        for: 10m
+        labels:
+          severity: P1
+          category: datastore
+        annotations:
+          summary: "PostgreSQL {{ $labels.instance }} is above 90% of max_connections."
+          description: >-
+            Requires postgres_exporter (bucket B/C — see group docstring).
+            Every EMG service pools connections with a configured
+            `postgres_pool_max_size`; exhausting the server's own
+            `max_connections` is a shared-fate risk across every service
+            sharing that PostgreSQL instance.
+          runbook: docs/operations/alert-runbook.md#emgpostgresconnectionpoolnearsaturation
+
+  # ------------------------------------------------------------------------
+  # Group: emg-backup-recovery (bucket A/B — the *metric contract* and
+  # threshold values are grounded directly in
+  # docs/operations/postgresql-backup-recovery.md's already-governed RPO/RTO
+  # (5 minutes / 4 hours) and its own stated alerting requirement ("Alert on
+  # backup age over 24 hours, WAL archive age over five minutes, checksum
+  # failure"). Emission is bucket A only where a concrete emitter now
+  # exists (tools/backup/emit_metrics.py, added alongside this change);
+  # actually invoking that script from the production backup/WAL-archive
+  # cron path, and wiring its textfile output to a scraper, is bucket B —
+  # no CronJob/scheduler for tools/backup/*.sh exists anywhere in this
+  # repository (RC-P0-D, a sibling P0 to this one, covers scheduling).
+  # ------------------------------------------------------------------------
+  - name: emg-backup-recovery
+    rules:
+      - alert: EMGBackupAgeExceeded
+        expr: (time() - emg_backup_last_success_timestamp_seconds) > 86400
+        for: 5m
+        labels:
+          severity: P0
+          category: recovery
+        annotations:
+          summary: "No successful PostgreSQL backup recorded in over 24 hours."
+          description: >-
+            Threshold is docs/operations/postgresql-backup-recovery.md's own
+            documented alerting requirement ("Alert on backup age over 24
+            hours"), not invented here.
+          runbook: docs/operations/alert-runbook.md#emgbackupageexceeded
+
+      - alert: EMGWalArchiveLagExceeded
+        expr: (time() - emg_wal_archive_last_success_timestamp_seconds) > 300
+        for: 5m
+        labels:
+          severity: P0
+          category: recovery
+        annotations:
+          summary: "WAL archive age exceeds five minutes (the documented RPO)."
+          description: >-
+            Threshold is docs/operations/postgresql-backup-recovery.md's
+            documented RPO ("RPO: 5 minutes ... Operators must alert if the
+            archive age exceeds five minutes"), not invented here.
+          runbook: docs/operations/alert-runbook.md#emgwalarchivelagexceeded
+
+      - alert: EMGBackupChecksumFailure
+        expr: emg_backup_last_verify_status == 0
+        for: 1m
+        labels:
+          severity: P0
+          category: recovery
+        annotations:
+          summary: "The most recent PostgreSQL backup failed checksum/manifest verification."
+          description: >-
+            Emitted by tools/backup/verify-backup.sh via
+            tools/backup/emit_metrics.py after backup_manifest.py's
+            `validate --verify-files` check. A backup that fails checksum
+            verification is not a usable recovery point.
+          runbook: docs/operations/alert-runbook.md#emgbackupchecksumfailure
+
+      - alert: EMGBackupMetricsAbsent
+        expr: absent(emg_backup_last_success_timestamp_seconds)
+        for: 60m
+        labels:
+          severity: P1
+          category: recovery
+        annotations:
+          summary: "No backup-freshness metric observed at all."
+          description: >-
+            Distinguishes "backups are stale" (EMGBackupAgeExceeded, which
+            requires the metric to exist and be old) from "nothing is
+            emitting the metric at all" (this rule) — the same
+            monitoring-fails-silently distinction made for
+            EMGServiceMetricsAbsent above. Until RC-P0-D's production backup
+            scheduler exists, this will always fire; kept as P1 rather than
+            P0 for exactly that reason (a known, tracked gap, not a fresh
+            incident) — see RC-P0-D in
+            docs/release/EMG_V1_RELEASE_CANDIDATE_CLOSURE_REVIEW.md.
+          runbook: docs/operations/alert-runbook.md#emgbackupmetricsabsent
