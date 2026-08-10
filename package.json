@@ -10,7 +10,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "lint": "echo 'No TS workspaces implemented yet (frontend lands EPIC-10, Sprint 21+)'",
-    "test": "echo 'No TS workspaces implemented yet (frontend lands EPIC-10, Sprint 21+)'"
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

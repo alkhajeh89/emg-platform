@@ -54,7 +54,7 @@ def set_session_cookie(
         value=session_id,
         max_age=max_age,
         httponly=True,
-        secure=True,
+        secure=settings.secure_cookies,
         samesite="lax",
         path="/",
     )

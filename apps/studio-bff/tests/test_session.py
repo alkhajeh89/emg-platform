@@ -143,6 +143,29 @@ def test_logout_with_correct_csrf_header_succeeds(client, session_store):
     assert session_store.get_session("csrf-sess-3") is None
 
 
+def test_logout_invalidates_session_cookies_and_all_protected_access(client, session_store):
+    _seed_session(session_store, session_id="logout-contract-sess", refresh_token=None)
+    client.cookies.set("__Host-emg_studio_session", "logout-contract-sess")
+
+    response = client.post("/auth/logout", headers={"X-CSRF-Token": CSRF_TOKEN})
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert session_store.get_session("logout-contract-sess") is None
+    cookie_headers = response.headers.get_list("set-cookie")
+    assert any(
+        "__Host-emg_studio_session=" in value and "Max-Age=0" in value for value in cookie_headers
+    )
+    assert any(
+        "__Host-emg_studio_csrf=" in value and "Max-Age=0" in value for value in cookie_headers
+    )
+    assert client.get("/auth/session").status_code == 401
+    assert (
+        client.get("/api/knowledge-graph/v1/knowledge-graph/entities/pilot-entity-001").status_code
+        == 401
+    )
+
+
 def test_session_rejected_once_absolute_lifetime_reached(client, session_store):
     """Correction-sprint Finding 4: the absolute cap rejects a session even
     though its access token has not itself expired — a distinct bound from

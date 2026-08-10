@@ -47,15 +47,27 @@ def _set_csrf_cookie(response: Response, settings: Settings, csrf_token: str, ma
         value=csrf_token,
         max_age=max_age,
         httponly=False,
-        secure=True,
+        secure=settings.secure_cookies,
         samesite="lax",
         path="/",
     )
 
 
 def _clear_session_cookie(response: Response, settings: Settings) -> None:
-    response.delete_cookie(key=settings.session_cookie_name, path="/")
-    response.delete_cookie(key=settings.csrf_cookie_name, path="/")
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        secure=settings.secure_cookies,
+        httponly=True,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        key=settings.csrf_cookie_name,
+        path="/",
+        secure=settings.secure_cookies,
+        httponly=False,
+        samesite="lax",
+    )
 
 
 @router.get("/login")
