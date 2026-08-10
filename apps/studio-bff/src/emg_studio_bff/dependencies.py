@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import time
 from functools import lru_cache
 from typing import Annotated
@@ -179,3 +180,23 @@ async def current_session_dependency(
 
 
 CurrentSessionDep = Annotated[HumanSession, Depends(current_session_dependency)]
+
+
+def validate_csrf(request: Request, settings: Settings, session: HumanSession) -> None:
+    """Enforce the existing readable-cookie/header double-submit contract.
+
+    Both browser-presented values must also match the server-side session's
+    token, so neither a forged cookie nor a stale token pair can authorize a
+    cookie-authenticated POST.
+    """
+    cookie_token = request.cookies.get(settings.csrf_cookie_name)
+    header_token = request.headers.get("x-csrf-token")
+    if cookie_token is None or header_token is None:
+        raise AuthorizationError("Missing or invalid CSRF token")
+    cookie_bytes = cookie_token.encode("utf-8")
+    header_bytes = header_token.encode("utf-8")
+    session_bytes = session.csrf_token.encode("utf-8")
+    if not secrets.compare_digest(cookie_bytes, header_bytes) or not secrets.compare_digest(
+        header_bytes, session_bytes
+    ):
+        raise AuthorizationError("Missing or invalid CSRF token")

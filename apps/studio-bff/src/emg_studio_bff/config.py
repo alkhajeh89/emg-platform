@@ -28,7 +28,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from emg_api_contracts import reject_unknown_environment
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     knowledge_graph_audience: str = "emg-knowledge-graph-audience"
     knowledge_graph_base_url: str = "http://localhost:8003"
     readiness_timeout_seconds: float = 2.0
+    search_upstream_timeout_seconds: float = Field(default=10.0, gt=0, le=30.0)
+    search_max_request_bytes: int = Field(default=8_192, gt=0, le=8_192)
+    # 100 results × the canonical worst-case UTF-8 EntitySummary strings,
+    # plus JSON framing, page metadata, and the opaque cursor.
+    search_max_response_bytes: int = Field(default=4 * 1_024 * 1_024, gt=0, le=4 * 1_024 * 1_024)
 
     tenant_claim: str = "tenant_id"
     classification_clearance_claim: str = "classification_clearance"

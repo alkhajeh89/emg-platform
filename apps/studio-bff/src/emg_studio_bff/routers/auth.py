@@ -29,7 +29,13 @@ from fastapi.responses import RedirectResponse
 
 from .. import oidc
 from ..config import Settings
-from ..dependencies import CurrentSessionDep, SessionStoreDep, SettingsDep, set_session_cookie
+from ..dependencies import (
+    CurrentSessionDep,
+    SessionStoreDep,
+    SettingsDep,
+    set_session_cookie,
+    validate_csrf,
+)
 from ..session_store import HumanSession, PendingAuthorization, new_session_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -158,9 +164,7 @@ async def logout(
             # SameSite=Lax alone is explicitly insufficient per ADR-035
             # D-10 — a mismatched or missing header is rejected before any
             # state changes (session deletion, revocation) happen.
-            presented = request.headers.get("x-csrf-token")
-            if presented is None or not secrets.compare_digest(presented, session.csrf_token):
-                raise AuthorizationError("Missing or invalid CSRF token")
+            validate_csrf(request, settings, session)
         session_store.delete_session(session_id)
         if session is not None and session.refresh_token:
             # Best-effort — the server-side session above is already gone
