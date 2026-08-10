@@ -16,4 +16,5 @@ resources:
   - studio.yaml
   - keycloak-provision.yaml
   - provisioning-validation.yaml
+  - postgresql-backup.yaml
   - network-policies.yaml

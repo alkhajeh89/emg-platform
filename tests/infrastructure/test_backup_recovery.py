@@ -284,3 +284,48 @@ def test_wal_archive_duplicate_corruption_and_history(tmp_path: Path) -> None:
 def test_all_shell_scripts_parse() -> None:
     for script in sorted((ROOT / "tools/backup").glob("*.sh")):
         subprocess.run(["bash", "-n", script], check=True)
+
+
+def test_restore_requires_explicit_isolated_target_authorization(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    script = ROOT / "tools/backup/restore-full.sh"
+    env = {
+        **os.environ,
+        "EMG_BACKUP_DECRYPT_COMMAND": "/bin/cp",
+        "EMG_MANIFEST_VERIFY_COMMAND": "/bin/true",
+    }
+    result = subprocess.run([script, tmp_path, target], env=env, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "EMG_RECOVERY_MODE" in result.stderr
+    env.update(
+        EMG_RECOVERY_MODE="isolated-restore",
+        EMG_RECOVERY_CONFIRMATION="RESTORE_INTO_EMPTY_TARGET",
+        EMG_RECOVERY_TARGET_ID="production",
+    )
+    result = subprocess.run([script, tmp_path, target], env=env, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "active production" in result.stderr
+
+
+def test_scheduled_backup_failure_is_machine_readable_and_fail_closed(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    env = {
+        **os.environ,
+        "EMG_BACKUP_REPOSITORY": str(repository),
+        "EMG_MANIFEST_VERIFY_COMMAND": "/bin/false",
+        "EMG_BACKUP_DSN": "postgresql://unreachable.invalid/emg",
+        "EMG_BACKUP_ENCRYPT_COMMAND": "/bin/false",
+        "EMG_MANIFEST_SIGN_COMMAND": "/bin/false",
+        "EMG_BACKUP_KEY_REFERENCE": "test-key",
+        "EMG_BACKUP_ID": "failure-test",
+    }
+    result = subprocess.run(
+        [ROOT / "tools/backup/scheduled-backup.sh"], env=env, capture_output=True, text=True
+    )
+    assert result.returncode != 0
+    event = json.loads(result.stderr.strip().splitlines()[-1])
+    assert event["event"] == "emg.recovery.backup.failed"
+    assert event["backupId"] == "failure-test"
+    assert not (repository / "recovery-evidence/failure-test.json").exists()

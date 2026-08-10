@@ -121,11 +121,14 @@ def test_real_backup_full_restore_startup_and_pitr(tmp_path: Path) -> None:
             "EMG_BACKUP_DSN": dsn,
             "EMG_BACKUP_ENCRYPT_COMMAND": "/bin/cp",
             "EMG_MANIFEST_SIGN_COMMAND": "/bin/cp",
+            "EMG_MANIFEST_VERIFY_COMMAND": "/usr/bin/cmp",
             "EMG_BACKUP_KEY_REFERENCE": "integration-test-key",
             "EMG_BACKUP_PYTHON": str(ROOT / ".venv/bin/python"),
             "EMG_BACKUP_ID": "integration-base",
         }
-        backup_dir = Path(run(BACKUP / "full-backup.sh", env=env, capture=True).splitlines()[-1])
+        run(BACKUP / "scheduled-backup.sh", env=env)
+        backup_dir = repository / "full/integration-base"
+        assert (repository / "recovery-evidence/integration-base.json").is_file()
         run("psql", dsn, "-c", "INSERT INTO recovery_markers VALUES (1)")
         time.sleep(1)
         target = run(
@@ -151,6 +154,9 @@ def test_real_backup_full_restore_startup_and_pitr(tmp_path: Path) -> None:
         "EMG_BACKUP_DECRYPT_COMMAND": "/bin/cp",
         "EMG_MANIFEST_VERIFY_COMMAND": "/usr/bin/cmp",
         "EMG_BACKUP_PYTHON": str(ROOT / ".venv/bin/python"),
+        "EMG_RECOVERY_MODE": "isolated-restore",
+        "EMG_RECOVERY_CONFIRMATION": "RESTORE_INTO_EMPTY_TARGET",
+        "EMG_RECOVERY_TARGET_ID": "integration-test",
     }
     full = tmp_path / "full"
     full.mkdir()

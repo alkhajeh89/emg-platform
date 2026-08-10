@@ -24,6 +24,42 @@ Before deployment, the platform operator must:
 5. Provide a StorageClass suitable for the Identity audit-spool PVC.
 6. Add environment-specific egress NetworkPolicies or CNI policy for each
    approved external dependency.
+7. Provision the `emg-postgresql-backup-repository` claim outside this overlay.
+   It must expose a POSIX filesystem in an administratively separate failure
+   domain, use encrypted transport, deny public access, preserve atomic rename
+   and `fsync`, and be readable from the isolated restore environment. The
+   overlay intentionally does not select a StorageClass or storage provider.
+8. Populate `emg/production/recovery/*` in the approved External Secrets store.
+   The DSN must have only physical-backup privileges. The executable encryption,
+   signing, and verification wrappers must reach environment-owned custody
+   services without logging key material. Keep decryption material and its
+   wrapper separately available to authorized restore operators; the scheduled
+   backup pod does not receive either.
+
+## RC-E recovery scheduling contract
+
+`emg-postgresql-backup` runs at 01:00 UTC each day. Kubernetes forbids overlap,
+allows one retry, and terminates an invocation after two hours. It uses a
+dedicated tokenless ServiceAccount, a read-only root filesystem, explicit
+resources, the externally provisioned repository claim, and External Secrets
+material. Default-deny egress means the job remains nonfunctional until the
+environment approves the PostgreSQL and custody endpoints.
+
+The job validates the signed manifest after publication and writes
+`recovery-evidence/BACKUP_ID.json` only on success. Its JSON stdout event is
+`emg.recovery.backup.verified`; failure emits `emg.recovery.backup.failed` to
+stderr and exits nonzero. Monitoring must consume CronJob failure and successful
+backup age. Seven days of Job history aid diagnosis but are not durable evidence.
+
+The approved 35-day/two-valid-backup floor remains explicit. Full-backup
+deletion remains a reviewed two-step operation; WAL is never removed by the
+repository tooling. Environment lifecycle rules may retain more, never less,
+and must preserve WAL required by every retained base backup.
+
+This configuration proves scheduling and fail-closed wiring only. Production
+certification still requires validation of storage isolation, custody/escrow,
+WAL delivery, alerting, capacity and lifecycle controls, plus a witnessed
+isolated PITR rehearsal with reviewed evidence.
 
 ## ADR-041 ordered provisioning contract
 

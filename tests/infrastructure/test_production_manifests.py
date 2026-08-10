@@ -29,7 +29,7 @@ def test_production_manifests_render_without_literal_secrets() -> None:
     objects = _objects()
     assert objects
     assert not [obj for obj in objects if obj["kind"] == "Secret"]
-    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 7
+    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 8
 
 
 def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
@@ -90,6 +90,44 @@ def test_one_shot_jobs_are_hardened_and_digest_pinned() -> None:
             assert security["allowPrivilegeEscalation"] is False
             assert security["readOnlyRootFilesystem"] is True
             assert security["capabilities"]["drop"] == ["ALL"]
+
+
+def test_recovery_schedule_is_bounded_hardened_and_externally_configured() -> None:
+    objects = _objects()
+    cronjobs = [obj for obj in objects if obj["kind"] == "CronJob"]
+    assert len(cronjobs) == 1
+    cron = cronjobs[0]
+    assert cron["metadata"]["name"] == "emg-postgresql-backup"
+    spec = cron["spec"]
+    assert spec["schedule"] == "0 1 * * *"
+    assert spec["timeZone"] == "Etc/UTC"
+    assert spec["concurrencyPolicy"] == "Forbid"
+    assert spec["startingDeadlineSeconds"] == 3600
+    job = spec["jobTemplate"]["spec"]
+    assert job["activeDeadlineSeconds"] == 7200
+    assert job["backoffLimit"] == 1
+    pod = job["template"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    assert pod["serviceAccountName"] == "emg-postgresql-backup"
+    assert pod["securityContext"]["runAsNonRoot"] is True
+    container = pod["containers"][0]
+    assert container["resources"]["requests"] and container["resources"]["limits"]
+    assert container["securityContext"]["readOnlyRootFilesystem"] is True
+    assert container["securityContext"]["capabilities"]["drop"] == ["ALL"]
+    env = {entry["name"]: entry for entry in container["env"]}
+    assert "value" not in env["EMG_BACKUP_DSN"]
+    assert env["EMG_BACKUP_DSN"]["valueFrom"]["secretKeyRef"]
+    assert env["EMG_BACKUP_KEY_REFERENCE"]["valueFrom"]["secretKeyRef"]
+    assert env["EMG_RETENTION_MINIMUM_DAYS"]["value"] == "35"
+    assert env["EMG_RETENTION_MINIMUM_COUNT"]["value"] == "2"
+    repository = next(volume for volume in pod["volumes"] if volume["name"] == "repository")
+    assert repository["persistentVolumeClaim"]["claimName"] == ("emg-postgresql-backup-repository")
+    assert not [
+        obj
+        for obj in objects
+        if obj["kind"] == "PersistentVolumeClaim"
+        and obj["metadata"]["name"] == "emg-postgresql-backup-repository"
+    ]
 
 
 def test_privileged_credentials_are_confined_to_jobs() -> None:
