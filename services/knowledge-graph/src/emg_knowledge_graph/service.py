@@ -18,6 +18,7 @@ from emg_memory_graph import (
     attribute_at,
     diff_graphs,
     node_exists_at,
+    normalize_search_text,
 )
 from emg_memory_graph import NodeNotFoundError as _DomainNodeNotFoundError
 from emg_platform_core import RevisionNotFoundError as _PlatformRevisionNotFoundError
@@ -49,6 +50,7 @@ from .commands import (
     ReplaceEntityCommand,
     ReplaceRelationshipCommand,
     RestoreRevisionCommand,
+    SearchEntitiesQuery,
     ShortestPathQuery,
 )
 from .errors import (
@@ -88,6 +90,9 @@ from .results import (
     RevisionDetails,
     RevisionDiff,
     RevisionSummary,
+    SearchCandidate,
+    SearchCandidateResult,
+    SearchMatchKind,
 )
 
 _T = TypeVar("_T")
@@ -704,6 +709,86 @@ class KnowledgeGraphApplication:
     # QueryRevisionContext. No new GraphQueryReader port, repository
     # interface, or adapter is introduced; GraphStore/GraphRevisionReader/
     # MemoryGraph/MemoryQueryEngine internals are used, never modified.
+
+    def search_entities(self, query: SearchEntitiesQuery) -> SearchCandidateResult:
+        """Deterministic ADR-042 matching; PostgreSQL adapters use their index."""
+        if not isinstance(query, SearchEntitiesQuery):
+            raise InvalidQueryError("query must be a SearchEntitiesQuery")
+        query.validate()
+        normalized = normalize_search_text(query.query)
+        indexed = getattr(self._graph_store, "search_candidates", None)
+        items: list[SearchCandidate] = []
+        if indexed is not None:
+            revision_number, committed_at, is_current, representation_expiry, rows = indexed(
+                query.scope.tenant,
+                query.scope.revision_number,
+                normalized,
+                after_tier=query.after_tier,
+                after_node_id=query.after_node_id,
+                candidate_ceiling=query.candidate_limit,
+            )
+            candidate_has_more = len(rows) > query.candidate_limit
+            rows = rows[: query.candidate_limit]
+            revision_context = QueryRevisionContext(
+                revision_number=revision_number,
+                committed_at=committed_at,
+                is_current_head=is_current,
+            )
+            kinds = tuple(SearchMatchKind)
+            items = [
+                SearchCandidate(
+                    entity=EntitySummary(
+                        node_id=row[0],
+                        node_type=row[1],
+                        label=row[2],
+                        confidence=row[3],
+                        classification=Classification(row[4]),
+                        created_at=row[5],
+                        updated_at=row[6],
+                    ),
+                    match_kind=kinds[row[7] - 1],
+                )
+                for row in rows
+            ]
+        else:
+            graph, revision_context = self._resolve_scope(query.scope)
+            kinds = (
+                SearchMatchKind.ID_EXACT,
+                SearchMatchKind.LABEL_EXACT,
+                SearchMatchKind.ALIAS_EXACT,
+                SearchMatchKind.ID_PREFIX,
+                SearchMatchKind.LABEL_PREFIX,
+                SearchMatchKind.ALIAS_PREFIX,
+            )
+            for node in graph.nodes:
+                node_id = normalize_search_text(node.node_id)
+                label = normalize_search_text(node.label)
+                aliases = tuple(normalize_search_text(value) for value in node.aliases)
+                checks = (
+                    node_id == normalized,
+                    label == normalized,
+                    normalized in aliases,
+                    node_id.startswith(normalized),
+                    label.startswith(normalized),
+                    any(value.startswith(normalized) for value in aliases),
+                )
+                if any(checks):
+                    items.append(SearchCandidate(_entity_summary(node), kinds[checks.index(True)]))
+            items.sort(key=lambda item: (kinds.index(item.match_kind), item.entity.node_id))
+            items = [
+                item
+                for item in items
+                if (kinds.index(item.match_kind) + 1, item.entity.node_id)
+                > (query.after_tier, query.after_node_id)
+            ]
+            candidate_has_more = len(items) > query.candidate_limit
+            items = items[: query.candidate_limit]
+        return SearchCandidateResult(
+            tuple(items),
+            revision_context,
+            representation_expiry if indexed else None,
+            candidate_has_more,
+        )
 
     def get_entity(self, query: GetEntityQuery) -> EntityQueryResult:
         """Entity lookup by canonical node id (ADR-024 §10.A)."""

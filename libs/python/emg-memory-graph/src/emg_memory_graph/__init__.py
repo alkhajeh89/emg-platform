@@ -70,6 +70,12 @@ from .resolution import (
     Resolver,
     normalize_label,
 )
+from .search import (
+    MAX_SEARCH_QUERY_BYTES,
+    MAX_SEARCH_QUERY_SCALARS,
+    SEARCH_NORMALIZER_VERSION,
+    normalize_search_text,
+)
 from .temporal import TemporalFact, TemporalHistory, TemporalValidity
 from .temporal_query import (
     active_edges_at,
@@ -120,6 +126,10 @@ __all__ = [
     # core models
     "EvidenceRef",
     "TemporalValidity",
+    "MAX_SEARCH_QUERY_BYTES",
+    "MAX_SEARCH_QUERY_SCALARS",
+    "SEARCH_NORMALIZER_VERSION",
+    "normalize_search_text",
     "TemporalFact",
     "TemporalHistory",
     "MemoryNode",

@@ -114,7 +114,7 @@ def neo4j_executor() -> Iterator[object]:  # pragma: no cover - runs only with a
 @requires_postgres
 def test_postgres_baseline_applies_and_is_idempotent(pg_executor) -> None:  # type: ignore[no-untyped-def]  # pragma: no cover
     applied = run_migrations(pg_executor)
-    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"

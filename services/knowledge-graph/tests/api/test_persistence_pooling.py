@@ -260,7 +260,13 @@ def test_startup_migrations_keep_direct_connection_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configured: list[PersistenceSettings] = []
-    acquired_connection = cast(Connection[Any], object())
+
+    class FakeConnection:
+        @contextmanager
+        def transaction(self):
+            yield
+
+    acquired_connection = cast(Connection[Any], FakeConnection())
     executor = object()
 
     class FakeDirectConnectionProvider:
@@ -290,6 +296,15 @@ def test_startup_migrations_keep_direct_connection_provider(
         migrate,
         "run_knowledge_graph_migrations",
         lambda received: [] if received is executor else pytest.fail(),
+    )
+    monkeypatch.setattr(
+        migrate,
+        "PostgresSearchRepository",
+        lambda connection: type(
+            "SearchBackfill",
+            (),
+            {"backfill_current_heads": lambda self: 0},
+        )(),
     )
 
     migrate.run_startup_migrations()

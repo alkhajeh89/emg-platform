@@ -265,6 +265,11 @@ def test_production_composition_exposes_safe_readiness_metrics_and_logs(
         "EMG_KNOWLEDGE_GRAPH_API_MIGRATION_POSTGRES_DSN",
         "postgresql://migration:migration-production-secret@postgres.example.gov/emg?sslmode=verify-full",
     )
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_SEARCH_CURSOR_ACTIVE_KEY_ID", "active")
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_SEARCH_CURSOR_KEYS_JSON",
+        '{"active":"YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="}',
+    )
     monkeypatch.delenv(
         "EMG_KNOWLEDGE_GRAPH_API_ALLOW_UNCONFIGURED_SCHEMA_NEGOTIATION",
         raising=False,

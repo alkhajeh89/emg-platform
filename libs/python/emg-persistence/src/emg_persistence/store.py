@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from threading import Lock
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from emg_memory_graph import EMPTY_GRAPH, MemoryGraph, diff_graphs
@@ -34,8 +36,11 @@ from .neo4j.projection import Neo4jGraphProjection
 from .outbox import OutboxEvent, OutboxRepository
 from .postgres.outbox_repository import PostgresOutboxRepository
 from .postgres.revision_repository import PostgresRevisionRepository
+from .postgres.search_repository import PostgresSearchRepository
 from .postgres.transactions import TransactionProvider
 from .revisions import Revision, RevisionHead, RevisionRepository
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from psycopg import Connection
@@ -132,12 +137,21 @@ class PostgresNeo4jGraphStore:
         outbox_repository_factory: OutboxRepositoryFactory = PostgresOutboxRepository,
         projection: ProjectionSource = None,
         clock: Clock = _utcnow,
+        search_representation_retention: timedelta = timedelta(minutes=60),
+        search_cleanup_interval: timedelta = timedelta(minutes=15),
+        search_cleanup_batch_size: int = 500,
     ) -> None:
         self._transactions = transactions
         self._repository_factory = repository_factory
         self._outbox_repository_factory = outbox_repository_factory
         self._projection = projection
         self._clock = clock
+        self._search_representation_retention = search_representation_retention
+        self._search_cleanup_interval = search_cleanup_interval
+        self._search_cleanup_batch_size = search_cleanup_batch_size
+        self._next_search_cleanup_at: datetime | None = None
+        self._search_cleanup_lock = Lock()
+        self._search_persistence_available: bool | None = None
 
     def read(self, tenant: TenantId) -> MemoryGraph:
         """Prefer Neo4j serving projection with read-repair; fall back to PostgreSQL."""
@@ -160,7 +174,14 @@ class PostgresNeo4jGraphStore:
             with self._transactions.transaction() as connection:
                 repository = self._repository_factory(connection)
                 outbox = self._outbox_repository_factory(connection)
-                outcome = self._persist(repository, outbox, tenant, graph, principal)
+                outcome = self._persist(
+                    repository,
+                    outbox,
+                    tenant,
+                    graph,
+                    principal,
+                    self._search_repository(connection),
+                )
         except PersistenceConflictError:
             raise
         except PersistenceError:
@@ -169,6 +190,8 @@ class PostgresNeo4jGraphStore:
             raise PersistenceError(
                 f"failed to write authoritative graph for tenant {tenant.value!r}"
             ) from exc
+        if outcome.revision_created and outcome.revision_number > 1:
+            self._schedule_previous_search_retirement(tenant, outcome.revision_number)
         return _receipt_for(tenant, graph, principal, outcome)
 
     def tenants(self) -> tuple[TenantId, ...]:
@@ -196,7 +219,12 @@ class PostgresNeo4jGraphStore:
                 try:
                     yield transaction
                     outcome = self._persist(
-                        repository, outbox, tenant, transaction.read(), principal
+                        repository,
+                        outbox,
+                        tenant,
+                        transaction.read(),
+                        principal,
+                        self._search_repository(connection),
                     )
                 except BaseException:
                     transaction.abort()
@@ -222,6 +250,8 @@ class PostgresNeo4jGraphStore:
         else:
             assert transaction is not None
             assert outcome is not None
+            if outcome.revision_created and outcome.revision_number > 1:
+                self._schedule_previous_search_retirement(tenant, outcome.revision_number)
             receipt = _receipt_for(tenant, transaction.read(), principal, outcome)
             transaction.commit(receipt)
 
@@ -232,6 +262,7 @@ class PostgresNeo4jGraphStore:
         tenant: TenantId,
         graph: MemoryGraph,
         principal: PrincipalRef,
+        search_repository: PostgresSearchRepository | None,
     ) -> _CommitOutcome:
         """Apply direct-write orchestration using an already-owned transaction.
 
@@ -244,6 +275,10 @@ class PostgresNeo4jGraphStore:
         if head is None:
             revision = self._revision_for(tenant, graph, principal, head)
             repository.create_first_revision(revision)
+            if search_repository is not None:
+                search_repository.index_revision(
+                    tenant, revision.revision_number, revision.content_hash, graph
+                )
             outbox.append(self._outbox_event_for(revision))
             return _CommitOutcome(
                 revision_number=revision.revision_number,
@@ -259,12 +294,11 @@ class PostgresNeo4jGraphStore:
         if staged_hash == head.content_hash:
             if not graph_diff.is_empty:
                 raise PersistenceError(
-                    "equal graph hashes produced a non-empty diff for " f"tenant {tenant.value!r}"
+                    f"equal graph hashes produced a non-empty diff for tenant {tenant.value!r}"
                 )
             if not repository.revalidate_head(tenant, head):
                 raise PersistenceConflictError(
-                    f"authoritative head changed while confirming no-op "
-                    f"for tenant {tenant.value!r}"
+                    f"authoritative head changed while confirming no-op for tenant {tenant.value!r}"
                 )
             return _CommitOutcome(
                 revision_number=head.revision_number,
@@ -274,16 +308,120 @@ class PostgresNeo4jGraphStore:
 
         if graph_diff.is_empty:
             raise PersistenceError(
-                "different graph hashes produced an empty diff for " f"tenant {tenant.value!r}"
+                f"different graph hashes produced an empty diff for tenant {tenant.value!r}"
             )
         revision = self._revision_for(tenant, graph, principal, head)
         repository.append_revision(revision)
+        if search_repository is not None:
+            search_repository.index_revision(
+                tenant, revision.revision_number, revision.content_hash, graph
+            )
         outbox.append(self._outbox_event_for(revision))
         return _CommitOutcome(
             revision_number=revision.revision_number,
             committed_at=revision.created_at,
             revision_created=True,
         )
+
+    def search_candidates(
+        self,
+        tenant: TenantId,
+        revision_number: int | None,
+        normalized_query: str,
+        *,
+        after_tier: int,
+        after_node_id: str,
+        candidate_ceiling: int,
+    ) -> tuple[
+        int,
+        datetime,
+        bool,
+        datetime | None,
+        tuple[tuple[Any, ...], ...],
+    ]:
+        """Resolve authority and return indexed candidates without graph loading."""
+        self._maybe_cleanup_search_representations()
+        with self._transactions.transaction() as connection:
+            repository = PostgresSearchRepository(connection)
+            resolved = repository.resolve_revision(tenant, revision_number)
+            if resolved is None:
+                raise PersistenceError("retained governed-search representation is unavailable")
+            resolved_revision, committed_at, is_current, representation_expiry = resolved
+            rows = repository.search(
+                tenant,
+                resolved_revision,
+                normalized_query,
+                after_tier=after_tier,
+                after_node_id=after_node_id,
+                limit=candidate_ceiling + 1,
+            )
+            return (
+                resolved_revision,
+                committed_at,
+                is_current,
+                representation_expiry,
+                rows,
+            )
+
+    def cleanup_search_representations(self, now: datetime) -> int:
+        with self._transactions.transaction() as connection:
+            repository = PostgresSearchRepository(connection)
+            repository.expire_unscheduled_previous(
+                now + self._search_representation_retention,
+                limit=self._search_cleanup_batch_size,
+            )
+            return repository.delete_expired(now, limit=self._search_cleanup_batch_size)
+
+    def search_representation_metrics(self) -> tuple[tuple[Any, ...], ...]:
+        """Return operator-facing row and storage cardinality observations."""
+        with self._transactions.transaction() as connection:
+            return PostgresSearchRepository(connection).representation_metrics()
+
+    def _schedule_previous_search_retirement(self, tenant: TenantId, revision_number: int) -> None:
+        """Start retention after the new head transaction has committed."""
+        if self._search_persistence_available is False:
+            return
+        try:
+            with self._transactions.transaction() as connection:
+                PostgresSearchRepository(connection).expire_previous(
+                    tenant,
+                    revision_number,
+                    self._clock() + self._search_representation_retention,
+                )
+        except Exception:
+            logger.warning("governed-search retirement scheduling delayed", exc_info=True)
+
+    def _maybe_cleanup_search_representations(self) -> None:
+        """Run best-effort cleanup; failures retain excess state and do not fail search."""
+        now = self._clock()
+        if self._next_search_cleanup_at is not None and now < self._next_search_cleanup_at:
+            return
+        if not self._search_cleanup_lock.acquire(blocking=False):
+            return
+        try:
+            if self._next_search_cleanup_at is not None and now < self._next_search_cleanup_at:
+                return
+            try:
+                self.cleanup_search_representations(now)
+            except Exception:
+                logger.warning("governed-search representation cleanup delayed", exc_info=True)
+            finally:
+                self._next_search_cleanup_at = now + self._search_cleanup_interval
+        finally:
+            self._search_cleanup_lock.release()
+
+    def _search_repository(self, connection: object) -> PostgresSearchRepository | None:
+        """Build the adapter for real DB connections.
+
+        Several port-level store tests intentionally use an opaque transaction token;
+        those tests exercise orchestration without pretending to be a SQL connection.
+        PostgreSQL integration tests use a connection exposing ``cursor``.
+        """
+        if not callable(getattr(connection, "cursor", None)):
+            self._search_persistence_available = False
+            return None
+        self._search_persistence_available = True
+        return PostgresSearchRepository(cast("Connection[Any]", connection))
 
     def _revision_for(
         self,

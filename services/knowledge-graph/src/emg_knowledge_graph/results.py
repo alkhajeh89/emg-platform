@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from emg_common_types import Classification
@@ -281,6 +282,29 @@ class EntitySummary:
     classification: Classification
     created_at: datetime
     updated_at: datetime
+
+
+class SearchMatchKind(str, Enum):
+    ID_EXACT = "ID_EXACT"
+    LABEL_EXACT = "LABEL_EXACT"
+    ALIAS_EXACT = "ALIAS_EXACT"
+    ID_PREFIX = "ID_PREFIX"
+    LABEL_PREFIX = "LABEL_PREFIX"
+    ALIAS_PREFIX = "ALIAS_PREFIX"
+
+
+@dataclass(frozen=True, slots=True)
+class SearchCandidate:
+    entity: EntitySummary
+    match_kind: SearchMatchKind
+
+
+@dataclass(frozen=True, slots=True)
+class SearchCandidateResult:
+    items: tuple[SearchCandidate, ...]
+    revision_context: QueryRevisionContext
+    representation_expires_at: datetime | None = None
+    candidate_has_more: bool = False
 
 
 @dataclass(frozen=True, slots=True)

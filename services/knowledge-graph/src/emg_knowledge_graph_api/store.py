@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import lru_cache
 from threading import Lock
 from typing import Annotated, Protocol, TypeAlias, runtime_checkable
@@ -41,6 +42,9 @@ RuntimeKey: TypeAlias = tuple[
     str | None,
     str | None,
     SecretStr | None,
+    int,
+    int,
+    int,
     int,
 ]
 
@@ -128,7 +132,15 @@ def _build_runtime(settings: Settings) -> StoreRuntime:
         )
         transactions = ContextBoundTransactionProvider(connections)
         return StoreRuntime(
-            store=PostgresNeo4jGraphStore(transactions, projection=projection),
+            store=PostgresNeo4jGraphStore(
+                transactions,
+                projection=projection,
+                search_representation_retention=timedelta(
+                    seconds=settings.search_representation_retention_seconds
+                ),
+                search_cleanup_interval=timedelta(seconds=settings.search_cleanup_interval_seconds),
+                search_cleanup_batch_size=settings.search_cleanup_batch_size,
+            ),
             atomic_mutations=PostgresAtomicMutationExecution(transactions),
             close_resources=(
                 (() if projection is None else (projection.close,)) + (connections.close,)
@@ -151,6 +163,9 @@ def _runtime_singleton_for(
     neo4j_user: str | None,
     neo4j_password: SecretStr | None,
     neo4j_max_pool_size: int,
+    search_representation_retention_seconds: int = 3600,
+    search_cleanup_interval_seconds: int = 900,
+    search_cleanup_batch_size: int = 500,
 ) -> StoreRuntime:
     # Cache keyed by the config that determines the store, so the app reuses
     # one store/connection-provider per configuration.
@@ -164,6 +179,9 @@ def _runtime_singleton_for(
         neo4j_user,
         neo4j_password,
         neo4j_max_pool_size,
+        search_representation_retention_seconds,
+        search_cleanup_interval_seconds,
+        search_cleanup_batch_size,
     )
     with _runtime_registry_lock:
         runtime = _active_runtimes.get(key)
@@ -181,6 +199,11 @@ def _runtime_singleton_for(
                     neo4j_user=neo4j_user,
                     neo4j_password=neo4j_password,
                     neo4j_max_pool_size=neo4j_max_pool_size,
+                    search_representation_retention_seconds=(
+                        search_representation_retention_seconds
+                    ),
+                    search_cleanup_interval_seconds=search_cleanup_interval_seconds,
+                    search_cleanup_batch_size=search_cleanup_batch_size,
                 )
             )
             _active_runtimes[key] = runtime
@@ -197,6 +220,9 @@ def _store_singleton_for(
     neo4j_user: str | None,
     neo4j_password: SecretStr | None,
     neo4j_max_pool_size: int,
+    search_representation_retention_seconds: int = 3600,
+    search_cleanup_interval_seconds: int = 900,
+    search_cleanup_batch_size: int = 500,
 ) -> GraphStoreAndRevisionReader:
     return _runtime_singleton_for(
         backend,
@@ -208,6 +234,9 @@ def _store_singleton_for(
         neo4j_user,
         neo4j_password,
         neo4j_max_pool_size,
+        search_representation_retention_seconds,
+        search_cleanup_interval_seconds,
+        search_cleanup_batch_size,
     ).store
 
 
@@ -222,6 +251,9 @@ def graph_store_dependency(settings: SettingsDep) -> GraphStoreAndRevisionReader
         settings.neo4j_user,
         settings.neo4j_password,
         settings.neo4j_max_pool_size,
+        settings.search_representation_retention_seconds,
+        settings.search_cleanup_interval_seconds,
+        settings.search_cleanup_batch_size,
     )
 
 
@@ -239,6 +271,9 @@ def atomic_mutation_execution_dependency(settings: SettingsDep) -> AtomicMutatio
         settings.neo4j_user,
         settings.neo4j_password,
         settings.neo4j_max_pool_size,
+        settings.search_representation_retention_seconds,
+        settings.search_cleanup_interval_seconds,
+        settings.search_cleanup_batch_size,
     ).atomic_mutations
 
 

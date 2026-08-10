@@ -34,6 +34,7 @@ import logging
 from emg_persistence.config import PersistenceSettings
 from emg_persistence.postgres.migration_executor import PostgresMigrationExecutor
 from emg_persistence.postgres.pool import DirectConnectionProvider
+from emg_persistence.postgres.search_repository import PostgresSearchRepository
 from emg_persistence.provisioning import run_knowledge_graph_migrations
 
 from .config import get_settings, validate_migration_configuration
@@ -65,6 +66,8 @@ def run_startup_migrations() -> None:
     with connections.acquire() as connection:
         executor = PostgresMigrationExecutor(connection)
         applied = run_knowledge_graph_migrations(executor)
+        with connection.transaction():
+            backfilled = PostgresSearchRepository(connection).backfill_current_heads()
 
     if applied:
         logger.info(
@@ -74,6 +77,11 @@ def run_startup_migrations() -> None:
         )
     else:
         logger.info("knowledge-graph: no pending migrations; database already up to date")
+    if backfilled:
+        logger.info(
+            "knowledge-graph: backfilled %d governed-search head representation(s)",
+            backfilled,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover - process entrypoint, exercised via Dockerfile CMD

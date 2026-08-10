@@ -64,9 +64,10 @@ otherwise).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, TypeVar
 
 from emg_common_types import Classification
@@ -84,6 +85,8 @@ from emg_knowledge_graph import (
     GetEntityQuery,
     GraphQueryScope,
     InvalidQueryError,
+    InvalidSearchContinuationError,
+    InvalidSearchRequestError,
     ListEdgesQuery,
     ListEntitiesQuery,
     ListNeighborsQuery,
@@ -97,16 +100,25 @@ from emg_knowledge_graph import (
     PathQueryResult,
     QueryLimitExceededError,
     QueryRevisionContext,
+    SearchCandidate,
+    SearchCandidateResult,
+    SearchEntitiesQuery,
+    SearchMatchKind,
+    SearchUnavailableError,
+    SearchWorkLimitError,
     ShortestPathQuery,
 )
 from emg_memory_graph import EdgeDirection
+from emg_persistence import PersistenceError
 from emg_telemetry import get_correlation_id
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from pydantic import ValidationError
 
 from .. import audit_producer, mapping
 from .. import classification as classification_gate
 from ..authn import AuthenticatedCallerDep, SettingsDep
 from ..authorization import require_permission_delegated_aware
+from ..config import Settings, search_cursor_keys
 from ..dependencies import KnowledgeGraphApplicationDep, PolicyEnforcementPointDep
 from ..schemas import (
     EdgeQueryResultResponse,
@@ -115,8 +127,13 @@ from ..schemas import (
     PagedEdgeResultResponse,
     PagedEntityResultResponse,
     PagedNeighborResultResponse,
+    PageInfoResponse,
     PathQueryResultResponse,
+    SearchItemResponse,
+    SearchRequest,
+    SearchResultResponse,
 )
+from ..search_cursor import InvalidSearchCursor, SearchCursorCodec
 
 _Item = TypeVar("_Item")
 _Q = TypeVar("_Q")
@@ -321,6 +338,191 @@ async def list_entities(
         )
         response = mapping.paged_entity_result(result)
     return response
+
+
+def _search_codec(settings: Settings) -> SearchCursorCodec:
+    return SearchCursorCodec(
+        settings.search_cursor_active_key_id,
+        search_cursor_keys(settings),
+        timedelta(seconds=settings.search_cursor_default_ttl_seconds),
+    )
+
+
+@router.post(
+    "/search",
+    response_model=SearchResultResponse,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["q"],
+                        "properties": {
+                            "q": {"type": "string"},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                            "cursor": {"type": ["string", "null"], "maxLength": 4096},
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+async def search_entities(
+    http_request: Request,
+    caller: AuthenticatedCallerDep,
+    app: KnowledgeGraphApplicationDep,
+    pep: PolicyEnforcementPointDep,
+    settings: SettingsDep,
+    _authorization: Annotated[None, Depends(require_permission_delegated_aware(RESOURCE_ENTITY))],
+) -> SearchResultResponse:
+    """ADR-042 read-only POST; request text is never logged or audited."""
+    from emg_memory_graph import normalize_search_text
+
+    safe_audit_metadata = {
+        "requested_page_size": "invalid",
+        "continuation": "unknown",
+        "normalizer_version": "1",
+        "query_length_bucket": "invalid",
+    }
+    async with audit_producer.delegated_audit(
+        settings,
+        caller,
+        resource_type=RESOURCE_ENTITY,
+        resource_id=None,
+        action="search",
+        correlation_id=get_correlation_id(),
+        safe_metadata=safe_audit_metadata,
+    ):
+        try:
+            if (
+                not http_request.headers.get("content-type", "")
+                .lower()
+                .startswith("application/json")
+            ):
+                raise ValueError
+            content_length = int(http_request.headers.get("content-length", "0"))
+            if content_length > 8192:
+                raise ValueError
+            body = await http_request.body()
+            if len(body) > 8192:
+                raise ValueError
+            request = SearchRequest.model_validate(json.loads(body))
+        except (ValueError, ValidationError) as exc:
+            raise InvalidSearchRequestError("invalid governed search request") from exc
+        safe_audit_metadata.update(
+            {
+                "requested_page_size": str(request.limit),
+                "continuation": str(request.cursor is not None).lower(),
+                "query_length_bucket": _search_query_length_bucket(request.q),
+            }
+        )
+        try:
+            normalized = normalize_search_text(request.q)
+        except ValueError as exc:
+            raise InvalidSearchRequestError("invalid governed search query") from exc
+        codec = _search_codec(settings)
+        state = None
+        if request.cursor:
+            try:
+                state = codec.decode(request.cursor, caller.tenant.value, normalized)
+            except InvalidSearchCursor as exc:
+                raise InvalidSearchContinuationError("invalid search continuation") from exc
+            if request.limit > state.maximum_limit:
+                raise InvalidSearchContinuationError("invalid search continuation")
+        scope = GraphQueryScope(
+            tenant=caller.tenant,
+            revision_number=None if state is None else state.revision,
+        )
+        after_tier = 0 if state is None else state.tier
+        after_node_id = "" if state is None else state.node_id
+        decision_cache: dict[Classification, bool] = {}
+        authorized: list[SearchCandidate] = []
+        scanned = 0
+        result: SearchCandidateResult | None = None
+        while len(authorized) <= request.limit:
+            remaining_work = settings.search_candidate_work_ceiling - scanned
+            if remaining_work <= 0:
+                raise SearchWorkLimitError("governed search candidate-work ceiling reached")
+            try:
+                result = app.search_entities(
+                    SearchEntitiesQuery(
+                        scope=scope,
+                        query=normalized,
+                        candidate_limit=min(settings.search_candidate_batch_size, remaining_work),
+                        after_tier=after_tier,
+                        after_node_id=after_node_id,
+                    )
+                )
+            except PersistenceError as exc:
+                if state is not None:
+                    raise InvalidSearchContinuationError("invalid search continuation") from exc
+                raise SearchUnavailableError("governed search is unavailable") from exc
+            scanned += len(result.items)
+            for item in result.items:
+                if classification_gate.filter_entities(
+                    pep,
+                    caller.principal,
+                    RESOURCE_ENTITY,
+                    (item.entity,),
+                    decision_cache=decision_cache,
+                ):
+                    authorized.append(item)
+            if len(authorized) > request.limit or not result.candidate_has_more:
+                break
+            if scanned >= settings.search_candidate_work_ceiling:
+                raise SearchWorkLimitError("governed search candidate-work ceiling reached")
+            last_candidate = result.items[-1]
+            kinds = tuple(SearchMatchKind)
+            after_tier = kinds.index(last_candidate.match_kind) + 1
+            after_node_id = last_candidate.entity.node_id
+            scope = GraphQueryScope(
+                tenant=caller.tenant,
+                revision_number=result.revision_context.revision_number,
+            )
+        assert result is not None
+        kinds = tuple(SearchMatchKind)
+        page = authorized[: request.limit]
+        has_more = len(authorized) > request.limit
+        next_cursor = None
+        if has_more and page:
+            last = page[-1]
+            next_cursor = codec.encode(
+                caller.tenant.value,
+                normalized,
+                result.revision_context.revision_number,
+                kinds.index(last.match_kind) + 1,
+                last.entity.node_id,
+                request.limit if state is None else state.maximum_limit,
+                representation_expires_at=result.representation_expires_at,
+            )
+        return SearchResultResponse(
+            items=[
+                SearchItemResponse(
+                    entity=mapping.entity_summary(item.entity), match_kind=item.match_kind.value
+                )
+                for item in page
+            ],
+            page_info=PageInfoResponse(
+                limit=request.limit,
+                returned_count=len(page),
+                next_cursor=next_cursor,
+                has_more=has_more,
+            ),
+            revision_context=mapping.revision_context(result.revision_context),
+        )
+
+
+def _search_query_length_bucket(query: str) -> str:
+    length = len(query)
+    if length <= 16:
+        return "1-16"
+    if length <= 64:
+        return "17-64"
+    return "65-128"
 
 
 @router.get("/edges/{edge_id}", response_model=EdgeQueryResultResponse)

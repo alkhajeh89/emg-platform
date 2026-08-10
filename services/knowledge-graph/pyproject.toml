@@ -43,6 +43,7 @@ dependencies = [
   "emg-auth-client",
   "emg-policy-engine",
   "rfc8785>=0.1.4,<1",
+  "cryptography>=43,<51",
 ]
 
 [project.optional-dependencies]

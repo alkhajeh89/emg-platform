@@ -87,6 +87,7 @@ async def emit_delegated_audit_event(
     action: str = "read",
     outcome: str = "success",
     correlation_id: str | None,
+    safe_metadata: dict[str, str] | None = None,
 ) -> None:
     """Raises `UpstreamServiceError` on any failure — see module docstring.
     No-op guard: callers are expected to check `caller.acting_service is not
@@ -132,6 +133,7 @@ async def emit_delegated_audit_event(
         "metadata": {
             "acting_service": caller.acting_service,
             "tenant_id": caller.tenant.value,
+            **(safe_metadata or {}),
         },
     }
 
@@ -179,6 +181,7 @@ async def delegated_audit(
     resource_id: str | None,
     action: str = "read",
     correlation_id: str | None,
+    safe_metadata: dict[str, str] | None = None,
 ) -> AsyncIterator[_DelegatedAuditOutcome | None]:
     """Final correction-sprint Finding 4 — complete ADR-038 §8.7 audit
     attribution for every delegated outcome, not only success.
@@ -236,4 +239,5 @@ async def delegated_audit(
             action=action,
             outcome=tracker.outcome,
             correlation_id=correlation_id,
+            safe_metadata=safe_metadata,
         )

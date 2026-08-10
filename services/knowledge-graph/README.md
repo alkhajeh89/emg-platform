@@ -148,3 +148,52 @@ shipped in `config/policy.example.yaml`, and the `tenant_id` and
 `classification_clearance` token claims. Full requirements, fail-closed
 behaviour, and production prerequisites are documented in
 `docs/specifications/ADR-027/ADR-027_STAGE5_DEPLOYMENT_AND_ROLLOUT.md`.
+
+## Governed search operations (ADR-042)
+
+The initial governed-search profile uses a 15-minute cursor TTL, a 30-minute
+maximum permitted TTL, a 60-minute guaranteed representation-retention window,
+and a 15-minute best-effort cleanup cadence. These are explicit settings:
+
+- `SEARCH_CURSOR_DEFAULT_TTL_SECONDS=900`
+- `SEARCH_CURSOR_MAX_TTL_SECONDS=1800`
+- `SEARCH_REPRESENTATION_RETENTION_SECONDS=3600`
+- `SEARCH_CLEANUP_INTERVAL_SECONDS=900`
+- `SEARCH_CLEANUP_BATCH_SIZE=500`
+- `SEARCH_CANDIDATE_BATCH_SIZE=200`
+- `SEARCH_CANDIDATE_WORK_CEILING=10000`
+- `SEARCH_CURSOR_ACTIVE_KEY_ID` and `SEARCH_CURSOR_KEYS_JSON`
+
+Environment variable names use the service's
+`EMG_KNOWLEDGE_GRAPH_API_` prefix. Startup rejects non-positive values,
+`default TTL > maximum TTL`, `maximum TTL > retention`, malformed key rings,
+missing active keys, non-256-bit AES keys, and the committed development key
+identifier in production. Issuance uses the active key. There is no fixed prior
+key count: every prior entry carries `status`, `retired_at`, and `accept_until`;
+startup rejects an acceptance window shorter than the 60-minute retention
+contract, a disabled key whose window is still open, or missing material for an
+unexpired key. Once `accept_until` has passed, material may be removed and the
+key fails closed. Production key material belongs in the approved
+secret-injection path, never source control.
+
+Candidate batch size and candidate-work ceiling are tunable internal safeguards,
+not request parameters, response fields, ranking inputs, or public search
+semantics. Their hard maxima are 1,000 and 10,000 respectively. Reaching the
+ceiling fails the entire request generically without returning partial items,
+counts, a cursor, or the number of candidates scanned or denied.
+
+Every new revision transaction writes a hash- and node-count-verifiable search
+manifest, entity documents, and normalized terms. The prior manifest becomes
+eligible for retirement 60 minutes after it ceases to be current. Cleanup only
+deletes expired manifests (cascading their derived rows). Each invocation repairs
+at most `SEARCH_CLEANUP_BATCH_SIZE` unscheduled rows and deletes at most that many
+expired rows using `SKIP LOCKED`; delayed or failed cleanup keeps excess data and
+does not fail search. There is no fixed retained revision count. A missing or
+unverifiable pinned representation fails a continuation without moving it to the
+current head.
+
+Operations should instrument manifest, document, and term rows by tenant and
+revision, retained revision count, retirement lag, cleanup failures, and table
+or index bytes where available. Alert when retained search storage within the
+window exceeds twice the expected current-head footprint. This is an alerting
+threshold only and must never trigger deletion needed by a valid cursor.

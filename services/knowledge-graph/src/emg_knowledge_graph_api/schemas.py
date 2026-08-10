@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EvidenceRefResponse(BaseModel):
@@ -126,6 +126,24 @@ class PageInfoResponse(BaseModel):
 
 class EntityQueryResultResponse(BaseModel):
     item: EntityDetailsResponse
+    revision_context: QueryRevisionContextResponse
+
+
+class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    q: str
+    limit: int = Field(default=20, ge=1, le=100)
+    cursor: str | None = Field(default=None, max_length=4096)
+
+
+class SearchItemResponse(BaseModel):
+    entity: EntitySummaryResponse
+    match_kind: str
+
+
+class SearchResultResponse(BaseModel):
+    items: list[SearchItemResponse]
+    page_info: PageInfoResponse
     revision_context: QueryRevisionContextResponse
 
 
