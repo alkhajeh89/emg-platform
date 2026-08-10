@@ -55,12 +55,13 @@ describe("enterprise application shell", () => {
     expect(open).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("routes the global exact-ID lookup with safely encoded URL state", async () => {
+  it("opens governed search without transferring raw query URL state", async () => {
     vi.mocked(fetch).mockResolvedValue(response({ authenticated: true }));
     renderShell();
-    fireEvent.change(await screen.findByLabelText("Entity lookup"), { target: { value: "pilot/entity" } });
-    fireEvent.submit(await screen.findByRole("search"));
-    expect(navigation.push).toHaveBeenCalledWith("/search?q=pilot%2Fentity");
+    expect(
+      await screen.findByRole("link", { name: "Open governed enterprise search" }),
+    ).toHaveAttribute("href", "/search");
+    expect(document.body.innerHTML).not.toContain("/search?q=");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 

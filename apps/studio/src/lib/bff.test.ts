@@ -53,6 +53,37 @@ describe("Studio BFF client", () => {
     );
   });
 
+  it("posts governed search through the same-origin BFF with CSRF and credentials", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ items: [], page_info: { has_more: false } }), {
+        status: 200,
+      }),
+    );
+    const query = "confidential acquisition";
+    await bff.search({ q: query, limit: 20, cursor: "opaque-cursor" });
+    expect(fetch).toHaveBeenCalledWith(
+      "/bff/api/knowledge-graph/search",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "X-CSRF-Token": "csrf-value",
+        }),
+        body: JSON.stringify({ q: query, limit: 20, cursor: "opaque-cursor" }),
+      }),
+    );
+    const serialized = JSON.stringify(vi.mocked(fetch).mock.calls);
+    expect(serialized).not.toContain(`?q=${query}`);
+    expect(serialized).not.toContain("localhost:8003");
+  });
+
+  it("fails search closed without a readable CSRF cookie", async () => {
+    Object.defineProperty(document, "cookie", { configurable: true, value: "" });
+    await expect(bff.search({ q: "private" })).rejects.toMatchObject({ status: 401 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("fails closed without a readable CSRF cookie", async () => {
     Object.defineProperty(document, "cookie", { configurable: true, value: "" });
     await expect(bff.logout()).rejects.toMatchObject({ status: 401 });

@@ -58,3 +58,31 @@ export interface EntityResponse {
     is_current_head: boolean;
   };
 }
+
+export type SearchMatchKind =
+  | "ID_EXACT"
+  | "LABEL_EXACT"
+  | "ALIAS_EXACT"
+  | "ID_PREFIX"
+  | "LABEL_PREFIX"
+  | "ALIAS_PREFIX";
+
+export interface GovernedSearchRequest {
+  q: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface GovernedSearchResponse {
+  items: Array<{
+    entity: EntitySummary;
+    match_kind: SearchMatchKind;
+  }>;
+  page_info: {
+    limit: number;
+    returned_count: number;
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+  revision_context: EntityResponse["revision_context"];
+}
