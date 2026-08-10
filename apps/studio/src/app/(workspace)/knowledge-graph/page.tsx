@@ -1,2 +1,5 @@
-import { PlannedWorkspace } from "@/components/planned-workspace";
-export default function KnowledgeGraphPage() { return <PlannedWorkspace title="knowledgeGraph" />; }
+import { KnowledgeGraphExplorer } from "@/components/knowledge-graph-explorer";
+
+export default function KnowledgeGraphPage() {
+  return <KnowledgeGraphExplorer />;
+}

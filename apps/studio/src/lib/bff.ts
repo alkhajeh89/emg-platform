@@ -63,13 +63,14 @@ function csrfHeaders(): Record<string, string> {
 export const bff = {
   loginUrl: `${BFF_PREFIX}/auth/login`,
   session: () => request<SessionResponse>("/auth/session"),
-  entity: (entityId: string) =>
+  entity: (entityId: string, revisionNumber?: number) =>
     request<EntityResponse>(
-      `/api/knowledge-graph/v1/knowledge-graph/entities/${encodeURIComponent(entityId)}`,
+      `/api/knowledge-graph/v1/knowledge-graph/entities/${encodeURIComponent(entityId)}${revisionNumber ? `?revision_number=${revisionNumber}` : ""}`,
     ),
-  neighbors: (entityId: string, cursor?: string) => {
+  neighbors: (entityId: string, cursor?: string, revisionNumber?: number) => {
     const query = new URLSearchParams({ limit: "20" });
     if (cursor) query.set("before_edge_id", cursor);
+    if (revisionNumber) query.set("revision_number", String(revisionNumber));
     return request<NeighborResponse>(
       `/api/knowledge-graph/v1/knowledge-graph/entities/${encodeURIComponent(entityId)}/neighbors?${query}`,
     );
