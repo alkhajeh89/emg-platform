@@ -20,6 +20,7 @@ IMMUTABLE_IMAGE_PATTERN = re.compile(
     r"^ghcr\.io/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/emg-platform/"
     r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?@sha256:[0-9a-f]{64}$"
 )
+MIGRATION_ROOT = ROOT / "libs/python/emg-persistence/src/emg_persistence/migrations"
 
 
 class ReleaseValidationError(ValueError):
@@ -93,6 +94,7 @@ def build_image_record(
     workflow_identity: str,
     workflow_run: str,
     sbom_path: Path,
+    vulnerability_report_path: Path,
     provenance_reference: str,
 ) -> dict[str, Any]:
     inventory = {image["service"]: image for image in governed_images()}
@@ -106,6 +108,11 @@ def build_image_record(
     if not isinstance(sbom_payload, dict) or sbom_payload.get("bomFormat") != "CycloneDX":
         raise ReleaseValidationError(f"{service}: SBOM is not CycloneDX")
     sbom_sha256 = hashlib.sha256(sbom_path.read_bytes()).hexdigest()
+    vulnerability_payload = json.loads(vulnerability_report_path.read_text(encoding="utf-8"))
+    runs = vulnerability_payload.get("runs") if isinstance(vulnerability_payload, dict) else None
+    if not isinstance(runs, list) or any(run.get("results") for run in runs):
+        raise ReleaseValidationError(f"{service}: blocking vulnerability report did not pass")
+    vulnerability_sha256 = hashlib.sha256(vulnerability_report_path.read_bytes()).hexdigest()
     image_reference = f"{repository}@{digest}"
     return {
         "service": service,
@@ -124,6 +131,14 @@ def build_image_record(
             "format": "CycloneDX",
             "path": f"sboms/{service}.cdx.json",
             "sha256": sbom_sha256,
+        },
+        "vulnerability": {
+            "scanner": "trivy",
+            "status": "passed",
+            "blockingSeverity": "CRITICAL",
+            "ignoreUnfixed": True,
+            "path": f"scans/{service}.trivy.sarif",
+            "sha256": vulnerability_sha256,
         },
         "signature": {
             "type": "cosign-keyless",
@@ -182,6 +197,21 @@ def _validate_record(record: dict[str, Any], expected: dict[str, dict[str, str]]
         raise ReleaseValidationError(f"{service}: CycloneDX SBOM evidence is missing")
     if not re.fullmatch(r"[0-9a-f]{64}", str(sbom.get("sha256", ""))):
         raise ReleaseValidationError(f"{service}: SBOM checksum is invalid")
+    vulnerability = record.get("vulnerability")
+    if not isinstance(vulnerability, dict) or any(
+        vulnerability.get(key) != value
+        for key, value in {
+            "scanner": "trivy",
+            "status": "passed",
+            "blockingSeverity": "CRITICAL",
+            "ignoreUnfixed": True,
+        }.items()
+    ):
+        raise ReleaseValidationError(f"{service}: blocking vulnerability evidence is missing")
+    if vulnerability.get("path") != f"scans/{service}.trivy.sarif" or not re.fullmatch(
+        r"[0-9a-f]{64}", str(vulnerability.get("sha256", ""))
+    ):
+        raise ReleaseValidationError(f"{service}: vulnerability report identity is invalid")
     signature = record.get("signature")
     if not isinstance(signature, dict) or (
         signature.get("type"),
@@ -219,6 +249,15 @@ def load_complete_records(records_directory: Path) -> list[dict[str, Any]]:
         retained_checksum = hashlib.sha256(sbom_path.read_bytes()).hexdigest()
         if retained_checksum != record["sbom"]["sha256"]:
             raise ReleaseValidationError(f"{service}: retained SBOM checksum differs")
+        scan_matches = sorted(records_directory.rglob(f"{service}.trivy.sarif"))
+        if len(scan_matches) != 1:
+            raise ReleaseValidationError(f"{service}: exactly one Trivy report is required")
+        scan_path = scan_matches[0]
+        if hashlib.sha256(scan_path.read_bytes()).hexdigest() != record["vulnerability"]["sha256"]:
+            raise ReleaseValidationError(f"{service}: retained Trivy report checksum differs")
+        scan_payload = json.loads(scan_path.read_text(encoding="utf-8"))
+        if any(run.get("results") for run in scan_payload.get("runs", [])):
+            raise ReleaseValidationError(f"{service}: retained Trivy report contains findings")
         records.append(record)
     actual_names = [str(record["service"]) for record in records]
     if len(actual_names) != len(set(actual_names)):
@@ -252,10 +291,25 @@ def release_manifest(
     if len(names) != len(set(names)) or set(names) != set(expected):
         raise ReleaseValidationError("release manifest does not contain the complete image set")
     mapping = {str(record["service"]): str(record["imageReference"]) for record in records}
+    migration_files = sorted(
+        path
+        for path in MIGRATION_ROOT.rglob("*")
+        if path.is_file() and path.suffix in {".sql", ".cypher"}
+    )
+    migration_body = b"".join(
+        path.relative_to(ROOT).as_posix().encode() + b"\0" + path.read_bytes() + b"\0"
+        for path in migration_files
+    )
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "release": {"version": version, "sourceRepository": repository, "commit": commit},
         "images": sorted(records, key=lambda record: str(record["service"])),
+        "compatibility": {
+            "migrationPolicy": "forward-only",
+            "schemaRollbackAuthorized": False,
+            "migrationSetSha256": hashlib.sha256(migration_body).hexdigest(),
+            "migrationFiles": [path.relative_to(ROOT).as_posix() for path in migration_files],
+        },
         "rollback": {"completeImageSet": dict(sorted(mapping.items()))},
     }
 
@@ -346,6 +400,7 @@ def _record_command(args: argparse.Namespace) -> int:
         workflow_identity=args.workflow_identity,
         workflow_run=args.workflow_run,
         sbom_path=args.sbom,
+        vulnerability_report_path=args.vulnerability_report,
         provenance_reference=args.provenance_reference,
     )
     _write_json(args.output, record)
@@ -357,10 +412,38 @@ def _finalize_command(args: argparse.Namespace) -> int:
     manifest = release_manifest(
         records, version=args.version, commit=args.commit, repository=args.repository
     )
-    _write_json(args.manifest_output, manifest)
     bundle = resolved_bundle(args.source_bundle, manifest)
+    staging_bundle = (
+        resolved_bundle(args.staging_source_bundle, manifest)
+        if args.staging_source_bundle is not None
+        else None
+    )
+    manifest["configuration"] = {
+        "sourceBundleSha256": {
+            "production": hashlib.sha256(args.source_bundle.read_bytes()).hexdigest(),
+            **(
+                {"staging": hashlib.sha256(args.staging_source_bundle.read_bytes()).hexdigest()}
+                if args.staging_source_bundle is not None
+                else {}
+            ),
+        },
+        "resolvedBundleSha256": {
+            "production": hashlib.sha256(bundle.encode()).hexdigest(),
+            **(
+                {"staging": hashlib.sha256(staging_bundle.encode()).hexdigest()}
+                if staging_bundle is not None
+                else {}
+            ),
+        },
+    }
+    _write_json(args.manifest_output, manifest)
     args.bundle_output.parent.mkdir(parents=True, exist_ok=True)
     args.bundle_output.write_text(bundle, encoding="utf-8")
+    if staging_bundle is not None:
+        if args.staging_bundle_output is None:
+            raise ReleaseValidationError("staging bundle output is required")
+        args.staging_bundle_output.parent.mkdir(parents=True, exist_ok=True)
+        args.staging_bundle_output.write_text(staging_bundle, encoding="utf-8")
     return 0
 
 
@@ -380,6 +463,7 @@ def _parser() -> argparse.ArgumentParser:
     record.add_argument("--workflow-identity", required=True)
     record.add_argument("--workflow-run", required=True)
     record.add_argument("--sbom", type=Path, required=True)
+    record.add_argument("--vulnerability-report", type=Path, required=True)
     record.add_argument("--provenance-reference", required=True)
     record.add_argument("--output", type=Path, required=True)
     record.set_defaults(handler=_record_command)
@@ -390,8 +474,10 @@ def _parser() -> argparse.ArgumentParser:
     finalize.add_argument("--commit", required=True)
     finalize.add_argument("--repository", required=True)
     finalize.add_argument("--source-bundle", type=Path, required=True)
+    finalize.add_argument("--staging-source-bundle", type=Path)
     finalize.add_argument("--manifest-output", type=Path, required=True)
     finalize.add_argument("--bundle-output", type=Path, required=True)
+    finalize.add_argument("--staging-bundle-output", type=Path)
     finalize.set_defaults(handler=_finalize_command)
     return parser
 

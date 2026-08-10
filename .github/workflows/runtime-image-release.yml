@@ -189,6 +189,7 @@ jobs:
         run: |
           mkdir -p "release-record/${SERVICE}"
           cp "release-build/${SERVICE}/${SERVICE}.cdx.json" "release-record/${SERVICE}/"
+          cp "release-build/${SERVICE}/${SERVICE}.trivy.sarif" "release-record/${SERVICE}/"
           python tools/ci/runtime_image_release.py record \
             --service "$SERVICE" \
             --owner "$REPOSITORY_OWNER" \
@@ -198,6 +199,7 @@ jobs:
             --workflow-identity ".github/workflows/runtime-image-release.yml@${GITHUB_REF}" \
             --workflow-run "$WORKFLOW_RUN" \
             --sbom "release-record/${SERVICE}/${SERVICE}.cdx.json" \
+            --vulnerability-report "release-record/${SERVICE}/${SERVICE}.trivy.sarif" \
             --provenance-reference "$PROVENANCE_REFERENCE" \
             --output "release-record/${SERVICE}/${SERVICE}.image.json"
 
@@ -234,24 +236,38 @@ jobs:
           merge-multiple: true
 
       - name: Render production source template
-        run: kubectl kustomize infra/environments/production > production-template.yaml
+        run: |
+          kubectl kustomize infra/environments/production > production-template.yaml
+          kubectl kustomize infra/environments/staging > staging-template.yaml
 
       - name: Generate complete manifest, deployment bundle and rollback evidence
         env:
           SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
-          mkdir -p release-evidence/sboms release-evidence/rollback
+          mkdir -p release-evidence/sboms release-evidence/scans release-evidence/rollback
           find release-records -name '*.cdx.json' -exec cp {} release-evidence/sboms/ \;
+          find release-records -name '*.trivy.sarif' -exec cp {} release-evidence/scans/ \;
           python tools/ci/runtime_image_release.py finalize \
             --records release-records \
             --version "$GITHUB_REF_NAME" \
             --commit "$GITHUB_SHA" \
             --repository "$SOURCE_REPOSITORY" \
             --source-bundle production-template.yaml \
+            --staging-source-bundle staging-template.yaml \
             --manifest-output release-evidence/release-images.json \
-            --bundle-output release-evidence/production-resolved.yaml
+            --bundle-output release-evidence/production-resolved.yaml \
+            --staging-bundle-output release-evidence/staging-resolved.yaml
           cp release-evidence/release-images.json \
             release-evidence/rollback/release-images.json
+
+      - name: Validate repository-controlled staging qualification contract
+        run: |
+          python tools/ci/release_qualification.py repository-qualify \
+            --manifest release-evidence/release-images.json \
+            --bundle release-evidence/staging-resolved.yaml \
+            --sbom-directory release-evidence/sboms \
+            --environment staging \
+            --output release-evidence/staging-qualification.json
 
       - name: Upload retained runtime release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
