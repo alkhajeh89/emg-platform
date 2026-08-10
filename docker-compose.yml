@@ -73,7 +73,7 @@ services:
   # a clean checkout now produces a working delegated identity path with no
   # manual step. Idempotent; see tools/scripts/provision-keycloak-realm.py.
   keycloak-provision:
-    image: python:3.11-slim@sha256:139020233cc412efe4c8135b0efe1c7569dc8b28ddd88bddb109b764f5a2d689
+    image: python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
     container_name: emg-keycloak-provision
     restart: "no"
     read_only: true
@@ -272,6 +272,11 @@ services:
       EMG_STUDIO_BFF_OIDC_CLIENT_SECRET: emg_studio_bff_local_dev_secret_do_not_use_in_prod
       EMG_STUDIO_BFF_OIDC_REDIRECT_URI: http://localhost:8010/auth/callback
       EMG_STUDIO_BFF_STUDIO_FRONTEND_URL: http://localhost:3000
+      # Localhost uses plain HTTP. Insecure __Host- cookies are rejected by
+      # browsers, so local development opts into both policy and names.
+      EMG_STUDIO_BFF_SECURE_COOKIES: "false"
+      EMG_STUDIO_BFF_SESSION_COOKIE_NAME: emg_studio_session
+      EMG_STUDIO_BFF_CSRF_COOKIE_NAME: emg_studio_csrf
       EMG_STUDIO_BFF_KNOWLEDGE_GRAPH_AUDIENCE: emg-knowledge-graph-audience
       EMG_STUDIO_BFF_KNOWLEDGE_GRAPH_BASE_URL: http://knowledge-graph:8000
       # No EMG_STUDIO_BFF_SESSION_BACKEND / REDIS_URL: this app never holds a

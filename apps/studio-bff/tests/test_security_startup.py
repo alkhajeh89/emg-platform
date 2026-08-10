@@ -35,6 +35,11 @@ def test_production_accepts_non_placeholder_oidc_client_secret() -> None:
     validate_runtime_configuration(_production_settings())  # must not raise
 
 
+def test_production_rejects_insecure_cookies() -> None:
+    with pytest.raises(RuntimeError, match="cookies must be Secure"):
+        validate_runtime_configuration(_production_settings(secure_cookies=False))
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # --- Server-side session (ADR-035 D-8) ------------------------------
     session_cookie_name: str = "__Host-emg_studio_session"
     csrf_cookie_name: str = "__Host-emg_studio_csrf"
+    # Secure by default. Plain-HTTP local development must opt out explicitly;
+    # production startup rejects that opt-out below.
+    secure_cookies: bool = True
     # Explicit, configurable, short development/test default — see module
     # docstring. NOT a production recommendation.
     session_ttl_seconds: int = 300
@@ -136,6 +139,8 @@ def validate_runtime_configuration(settings: Settings) -> None:
         raise RuntimeError("studio-bff production redirect_uri must use HTTPS")
     if urlsplit(settings.studio_frontend_url).scheme != "https":
         raise RuntimeError("studio-bff production frontend URL must use HTTPS")
+    if not settings.secure_cookies:
+        raise RuntimeError("studio-bff production cookies must be Secure")
     for name, value in (
         ("session_cookie_name", settings.session_cookie_name),
         ("csrf_cookie_name", settings.csrf_cookie_name),
