@@ -170,6 +170,30 @@ class QueryLimitExceededError(KnowledgeGraphApplicationError):
     error_code = "KNOWLEDGE_GRAPH_QUERY_LIMIT_EXCEEDED"
 
 
+class InvalidSearchRequestError(KnowledgeGraphApplicationError):
+    """Stable, privacy-safe ADR-042 malformed-search response."""
+
+    error_code = "KNOWLEDGE_GRAPH_INVALID_SEARCH_REQUEST"
+
+
+class InvalidSearchContinuationError(KnowledgeGraphApplicationError):
+    """Uniform response for every invalid or unavailable continuation."""
+
+    error_code = "KNOWLEDGE_GRAPH_INVALID_SEARCH_CONTINUATION"
+
+
+class SearchWorkLimitError(KnowledgeGraphApplicationError):
+    """Retryable failure when authorization-safe candidate work is exhausted."""
+
+    error_code = "KNOWLEDGE_GRAPH_SEARCH_WORK_LIMIT_REACHED"
+
+
+class SearchUnavailableError(KnowledgeGraphApplicationError):
+    """Authoritative search state is unavailable for a first-page request."""
+
+    error_code = "KNOWLEDGE_GRAPH_SEARCH_UNAVAILABLE"
+
+
 class InvalidTemporalFilterError(KnowledgeGraphApplicationError):
     """A ``valid_at`` value is invalid or timezone-naive (ADR-024 §13, §17).
     Raised before any store interaction."""

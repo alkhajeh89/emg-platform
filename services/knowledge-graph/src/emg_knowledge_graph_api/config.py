@@ -13,13 +13,16 @@ new, Sprint-7.4-only convention with no existing repository precedent).
 
 from __future__ import annotations
 
+import base64
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 
 from emg_api_contracts import reject_unknown_environment
 from emg_knowledge_graph_infrastructure import SchemaCatalogValidationError
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 StoreBackend = Literal["memory", "postgres"]
@@ -117,6 +120,41 @@ class Settings(BaseSettings):
     deployment_environment: Literal["development", "test", "production"] | None = None
     allow_unconfigured_schema_negotiation: bool = False
 
+    # ADR-042 approved implementation profile.
+    search_cursor_default_ttl_seconds: int = 900
+    search_cursor_max_ttl_seconds: int = 1800
+    search_representation_retention_seconds: int = 3600
+    search_cleanup_interval_seconds: int = 900
+    search_cleanup_batch_size: int = 500
+    search_candidate_batch_size: int = 200
+    search_candidate_work_ceiling: int = 10_000
+    search_cursor_active_key_id: str = "development"
+    search_cursor_keys_json: SecretStr = SecretStr(
+        '{"development":"ZGV2ZWxvcG1lbnQtb25seS1rZXktMzItYnl0ZXMhISE="}'
+    )
+
+    @model_validator(mode="after")
+    def _search_profile_valid(self) -> Settings:
+        if not (
+            0
+            < self.search_cursor_default_ttl_seconds
+            <= self.search_cursor_max_ttl_seconds
+            <= self.search_representation_retention_seconds
+        ):
+            raise ValueError(
+                "search cursor TTL must be positive and no longer than representation retention"
+            )
+        if self.search_cleanup_interval_seconds <= 0:
+            raise ValueError("search cleanup interval must be positive")
+        if not 1 <= self.search_cleanup_batch_size <= 5_000:
+            raise ValueError("search cleanup batch size must be in [1, 5000]")
+        if not 1 <= self.search_candidate_batch_size <= 1_000 or not (
+            self.search_candidate_batch_size <= self.search_candidate_work_ceiling <= 10_000
+        ):
+            raise ValueError("invalid governed-search candidate work configuration")
+        search_cursor_keys(self)
+        return self
+
     @property
     def keycloak_issuer(self) -> str:
         return f"{self.keycloak_base_url}/realms/{self.keycloak_realm}"
@@ -132,6 +170,84 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def search_cursor_keys(settings: Settings, *, now: datetime | None = None) -> dict[str, bytes]:
+    """Decode keys whose governed acceptance windows have not ended.
+
+    An active-only string value remains a compact local-development form.
+    Every prior key requires explicit retirement metadata; there is no
+    revision-count-like key limit that can evict a still-required key.
+    """
+    try:
+        raw = json.loads(settings.search_cursor_keys_json.get_secret_value())
+        if not isinstance(raw, dict) or not raw:
+            raise ValueError
+        current = now or datetime.now(timezone.utc)
+        keys: dict[str, bytes] = {}
+        active_entries = 0
+        for key_id, entry in raw.items():
+            if not isinstance(key_id, str) or not key_id or len(key_id) > 64:
+                raise ValueError
+            if isinstance(entry, str):
+                if key_id != settings.search_cursor_active_key_id:
+                    raise ValueError
+                active_entries += 1
+                keys[key_id] = _decode_cursor_key(entry)
+                continue
+            if not isinstance(entry, dict) or set(entry) - {
+                "key",
+                "status",
+                "retired_at",
+                "accept_until",
+            }:
+                raise ValueError
+            status = entry.get("status")
+            if status == "active":
+                if key_id != settings.search_cursor_active_key_id:
+                    raise ValueError
+                active_entries += 1
+                keys[key_id] = _decode_cursor_key(entry.get("key"))
+                if entry.get("retired_at") is not None or entry.get("accept_until") is not None:
+                    raise ValueError
+                continue
+            if status not in {"retired", "disabled"}:
+                raise ValueError
+            retired_at = _parse_cursor_key_time(entry.get("retired_at"))
+            accept_until = _parse_cursor_key_time(entry.get("accept_until"))
+            if retired_at > current or accept_until < retired_at + timedelta(
+                seconds=settings.search_representation_retention_seconds
+            ):
+                raise ValueError
+            if accept_until > current:
+                if status != "retired":
+                    raise ValueError
+                keys[key_id] = _decode_cursor_key(entry.get("key"))
+            elif entry.get("key") is not None:
+                _decode_cursor_key(entry.get("key"))
+        if active_entries != 1 or settings.search_cursor_active_key_id not in keys:
+            raise ValueError
+        return keys
+    except Exception as exc:
+        raise ValueError("invalid governed-search cursor key-ring configuration") from exc
+
+
+def _decode_cursor_key(encoded: object) -> bytes:
+    if not isinstance(encoded, str):
+        raise ValueError
+    key = base64.b64decode(encoded, validate=True)
+    if len(key) != 32:
+        raise ValueError
+    return key
+
+
+def _parse_cursor_key_time(value: object) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError
+    return parsed.astimezone(timezone.utc)
 
 
 _DEV_PLACEHOLDER_AUDIT_PRODUCER_SECRET = (
@@ -198,6 +314,8 @@ def validate_secure_transport(settings: Settings) -> None:
         raise SchemaCatalogValidationError(
             "knowledge-graph production schema catalog file is missing"
         )
+    if settings.search_cursor_active_key_id == "development":
+        raise RuntimeError("knowledge-graph production search cursor key is a development key")
 
 
 def validate_migration_configuration(settings: Settings) -> None:

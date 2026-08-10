@@ -16,8 +16,11 @@ from collections.abc import Awaitable, Callable
 
 from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import EMGError
+from emg_knowledge_graph import InvalidSearchRequestError
 from emg_telemetry import get_logger, set_correlation_id
 from fastapi import FastAPI, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .dependencies import validate_schema_runtime_configuration
@@ -75,6 +78,14 @@ def create_app() -> FastAPI:
             content=_envelope_dict(envelope),
             headers=error_headers(exc),
         )
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request: Request, exc: RequestValidationError) -> Response:
+        if request.url.path == "/v1/knowledge-graph/search":
+            return await emg_error_handler(
+                request, InvalidSearchRequestError("invalid governed search request")
+            )
+        return await request_validation_exception_handler(request, exc)
 
     app.include_router(health_router)
     app.include_router(knowledge_graph_router)

@@ -45,7 +45,7 @@ def test_audit_stream_is_independent_and_idempotent() -> None:
 def test_run_migrations_applies_packaged_postgres_baseline() -> None:
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     applied = run_migrations(ex)  # uses the packaged default dir
-    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert [a.version for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert applied[0].name == "baseline"
     assert applied[1].name == "projection_checkpoints"
     assert applied[2].name == "mutation_idempotency"
@@ -73,7 +73,7 @@ def test_knowledge_graph_compatibility_records_immutable_v005_checksum() -> None
         default_migrations_dir(MigrationKind.POSTGRES), MigrationKind.POSTGRES
     )
 
-    assert [migration.version for migration in applied] == list(range(1, 10))
+    assert [migration.version for migration in applied] == list(range(1, 11))
     assert applied[4].checksum == discovered[4].checksum
     assert run_knowledge_graph_migrations(ex) == ()
 
@@ -81,7 +81,7 @@ def test_knowledge_graph_compatibility_records_immutable_v005_checksum() -> None
 def test_migration_status_reports_pending_baseline() -> None:
     ex = FakeMigrationExecutor(MigrationKind.POSTGRES)
     status = migration_status(ex)
-    assert [m.version for m in status.pending] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert [m.version for m in status.pending] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert status.is_up_to_date is False
 
 

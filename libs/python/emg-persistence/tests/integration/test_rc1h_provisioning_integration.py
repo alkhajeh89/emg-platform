@@ -266,7 +266,7 @@ def test_fresh_colocated_streams_use_scoped_v005_compatibility(
 
     with psycopg.connect(kg_migrator_dsn) as connection:
         applied = run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
-        assert [migration.version for migration in applied] == list(range(1, 10))
+        assert [migration.version for migration in applied] == list(range(1, 11))
         assert run_knowledge_graph_migrations(PostgresMigrationExecutor(connection)) == ()
     with psycopg.connect(admin_dsn) as connection:
         assert connection.execute(
@@ -367,7 +367,7 @@ def test_colocated_streams_recover_dirty_v005_without_cross_stream_mutation(
         retry_dirty_knowledge_graph_v005(kg_migrator_dsn)
     with psycopg.connect(kg_migrator_dsn) as connection:
         applied = run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
-        assert [migration.version for migration in applied] == [6, 7, 8, 9]
+        assert [migration.version for migration in applied] == [6, 7, 8, 9, 10]
 
     validate_provisioned_databases(audit_migrator_dsn, kg_migrator_dsn)
     with psycopg.connect(admin_dsn) as connection:

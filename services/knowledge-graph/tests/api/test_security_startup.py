@@ -83,6 +83,8 @@ def test_production_accepts_non_placeholder_audit_producer_secret() -> None:
         migration_postgres_dsn="postgresql://migration:migration-password@postgres/emg?sslmode=verify-full",
         schema_catalog_path=Path("services/knowledge-graph/config/schema-catalog.json"),
         audit_producer_client_secret="a-real-production-secret",
+        search_cursor_active_key_id="active",
+        search_cursor_keys_json=('{"active":"YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="}'),
     )
     validate_secure_transport(settings)  # must not raise
 
@@ -189,6 +191,11 @@ def test_missing_or_invalid_catalog_prevents_production_startup(
     monkeypatch.setenv(
         "EMG_KNOWLEDGE_GRAPH_API_SCHEMA_CATALOG_PATH",
         str(catalog_path),
+    )
+    monkeypatch.setenv("EMG_KNOWLEDGE_GRAPH_API_SEARCH_CURSOR_ACTIVE_KEY_ID", "active")
+    monkeypatch.setenv(
+        "EMG_KNOWLEDGE_GRAPH_API_SEARCH_CURSOR_KEYS_JSON",
+        '{"active":"YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="}',
     )
     _clear_startup_singletons()
 

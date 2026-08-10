@@ -105,6 +105,51 @@ def test_delegated_request_fails_closed_when_audit_emission_fails(delegated_clie
     assert '"node_id"' not in response.text
 
 
+def test_delegated_search_audits_only_bounded_safe_metadata(delegated_client, monkeypatch):
+    fake_emit = AsyncMock(return_value=None)
+    monkeypatch.setattr(audit_producer, "emit_delegated_audit_event", fake_emit)
+
+    response = delegated_client.post(
+        "/v1/knowledge-graph/search", json={"q": "person-secret-term", "limit": 7}
+    )
+
+    assert response.status_code == 200
+    fake_emit.assert_awaited_once()
+    _, kwargs = fake_emit.await_args
+    assert kwargs["action"] == "search"
+    assert kwargs["resource_id"] is None
+    assert kwargs["safe_metadata"] == {
+        "requested_page_size": "7",
+        "continuation": "false",
+        "normalizer_version": "1",
+        "query_length_bucket": "17-64",
+    }
+    assert "person-secret-term" not in repr(kwargs)
+
+
+def test_delegated_search_audit_failure_is_fail_closed(delegated_client, monkeypatch):
+    async def failing_emit(*args, **kwargs):
+        raise UpstreamServiceError("simulated audit outage")
+
+    monkeypatch.setattr(audit_producer, "emit_delegated_audit_event", failing_emit)
+    response = delegated_client.post("/v1/knowledge-graph/search", json={"q": "person", "limit": 1})
+    assert response.status_code >= 500
+    assert '"node_id"' not in response.text
+
+
+def test_delegated_search_validation_failure_is_audit_attributed(delegated_client, monkeypatch):
+    fake_emit = AsyncMock(return_value=None)
+    monkeypatch.setattr(audit_producer, "emit_delegated_audit_event", fake_emit)
+    response = delegated_client.post(
+        "/v1/knowledge-graph/search", json={"q": "sensitive-invalid-term", "limit": 0}
+    )
+    assert response.status_code == 400
+    fake_emit.assert_awaited_once()
+    _, kwargs = fake_emit.await_args
+    assert kwargs["outcome"] == "error"
+    assert "sensitive-invalid-term" not in repr(kwargs)
+
+
 def test_non_delegated_service_request_never_calls_audit_and_is_unaffected(
     service_client, monkeypatch
 ):

@@ -15,6 +15,7 @@ from emg_memory_graph import (
     MemoryNode,
     MetadataItem,
     ensure_safe_label,
+    normalize_search_text,
 )
 from emg_memory_graph.limits import MAX_LABEL_LENGTH
 from emg_ontology import Entity, Relationship
@@ -46,6 +47,8 @@ MAX_QUERY_PAGE_SIZE = 200
 MAX_QUERY_PROPERTY_PREDICATES = 8
 MAX_TRAVERSAL_DEPTH = _MAX_TRAVERSAL_DEPTH
 MAX_IDEMPOTENCY_KEY_LENGTH = 256
+DEFAULT_SEARCH_PAGE_SIZE = 20
+MAX_SEARCH_PAGE_SIZE = 100
 
 
 def _validate_label(value: object, *, field: str) -> None:
@@ -450,6 +453,26 @@ class GraphQueryScope:
                 raise InvalidQueryError("revision_number must be an int")
             if self.revision_number < 1:
                 raise InvalidQueryError("revision_number must be >= 1")
+
+
+@dataclass(frozen=True, slots=True)
+class SearchEntitiesQuery:
+    scope: GraphQueryScope
+    query: str
+    candidate_limit: int = 200
+    after_tier: int = 0
+    after_node_id: str = ""
+
+    def validate(self) -> None:
+        self.scope.validate()
+        try:
+            normalize_search_text(self.query)
+        except ValueError as exc:
+            raise InvalidQueryError("invalid governed search query") from exc
+        if not 1 <= self.candidate_limit <= 1_000:
+            raise InvalidQueryError("candidate_limit must be in [1, 1000]")
+        if not 0 <= self.after_tier <= 6 or not isinstance(self.after_node_id, str):
+            raise InvalidQueryError("invalid governed search ordering boundary")
 
 
 @dataclass(frozen=True, slots=True)
