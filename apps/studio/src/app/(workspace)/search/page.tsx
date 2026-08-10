@@ -1,2 +1,6 @@
-import { PlannedWorkspace } from "@/components/planned-workspace";
-export default function SearchPage() { return <PlannedWorkspace title="search" />; }
+import { SearchWorkspace } from "@/components/search-workspace";
+
+export default async function SearchPage({ searchParams }: Readonly<{ searchParams: Promise<{ q?: string }> }>) {
+  const { q = "" } = await searchParams;
+  return <SearchWorkspace initialQuery={q} />;
+}

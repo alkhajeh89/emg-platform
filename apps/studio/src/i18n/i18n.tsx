@@ -13,7 +13,7 @@ const en = {
   checkingSession: "Checking secure session…", studioUnavailable: "Studio is unavailable",
   sessionUnavailable: "The secure session service could not be reached.", retry: "Try again",
   openNavigation: "Open navigation", closeNavigation: "Close navigation", primaryNavigation: "Primary navigation", skipContent: "Skip to content",
-  globalSearch: "Global search", searchPlaceholder: "Search EMG workspaces", searchAction: "Open search workspace",
+  globalSearch: "Entity lookup", searchPlaceholder: "Canonical entity ID", searchAction: "Look up entity",
   currentSection: "Current section", dashboard: "Dashboard", search: "Search", knowledgeGraph: "Knowledge Graph",
   entities: "Entities", evidence: "Evidence", timeline: "Timeline", decisions: "Decisions",
   dashboardEyebrow: "Enterprise workspace", dashboardTitle: "Welcome to EMG Studio",
@@ -36,6 +36,10 @@ const en = {
   properties: "Properties", noProperties: "No additional properties are available.", aliases: "Aliases",
   noAliases: "No aliases recorded", evidenceLabel: "Evidence", linkedRecord: "linked record", linkedRecords: "linked records",
   entityType: "Entity type", platform: "EMG Platform", boundary: "Browser → Studio BFF → Authorized services",
+  searchTitle: "Entity lookup", searchBody: "Retrieve an authorized entity by its exact canonical identifier. Free-text and relevance-ranked search are not available through an approved contract.",
+  canonicalId: "Canonical entity identifier", canonicalIdPlaceholder: "Enter an exact entity ID", lookup: "Look up", exactLookupOnly: "Exact canonical ID only — labels, aliases, and partial text are not searched.", searching: "Looking up authorized entity…",
+  searchReadyTitle: "Ready for an exact lookup", searchReadyBody: "Enter a canonical entity identifier. The request is authorized by the Knowledge Graph service.", noResultsTitle: "No authorized result", noResultsBody: "No authorized entity matched that exact canonical identifier.", searchUnavailable: "Lookup unavailable", openEntity: "Open entity workspace",
+  canonicalLookupHint: "Canonical identifiers are case-sensitive and are safely encoded in the URL.", identity: "Identity", createdAt: "Created", updatedAt: "Updated", revisionCommitted: "Revision committed", locator: "Locator", capturedAt: "Captured", noEvidence: "No evidence references are returned for this entity.", relationships: "Relationships", noRelationships: "No authorized relationships are returned for this entity.", relationshipsUnavailable: "Relationship data could not be loaded; the entity view remains available.", moreRelationshipsAvailable: "More authorized relationships exist. Relationship pagination is not yet exposed in this workspace.", history: "History", noHistory: "No temporal histories are returned for this entity.", current: "current",
 } as const;
 
 const ar: Record<keyof typeof en, string> = {
@@ -47,7 +51,7 @@ const ar: Record<keyof typeof en, string> = {
   checkingSession: "جارٍ التحقق من الجلسة الآمنة…", studioUnavailable: "الاستوديو غير متاح",
   sessionUnavailable: "تعذر الوصول إلى خدمة الجلسة الآمنة.", retry: "إعادة المحاولة",
   openNavigation: "فتح التنقل", closeNavigation: "إغلاق التنقل", primaryNavigation: "التنقل الرئيسي", skipContent: "التخطي إلى المحتوى",
-  globalSearch: "البحث العام", searchPlaceholder: "البحث في مساحات عمل EMG", searchAction: "فتح مساحة البحث",
+  globalSearch: "البحث عن كيان", searchPlaceholder: "معرّف الكيان الأساسي", searchAction: "البحث عن الكيان",
   currentSection: "القسم الحالي", dashboard: "لوحة المعلومات", search: "البحث", knowledgeGraph: "الرسم البياني المعرفي",
   entities: "الكيانات", evidence: "الأدلة", timeline: "الخط الزمني", decisions: "القرارات",
   dashboardEyebrow: "مساحة عمل مؤسسية", dashboardTitle: "مرحباً بك في استوديو EMG",
@@ -70,6 +74,10 @@ const ar: Record<keyof typeof en, string> = {
   properties: "الخصائص", noProperties: "لا توجد خصائص إضافية متاحة.", aliases: "الأسماء البديلة",
   noAliases: "لا توجد أسماء بديلة مسجلة", evidenceLabel: "الأدلة", linkedRecord: "سجل مرتبط", linkedRecords: "سجلات مرتبطة",
   entityType: "نوع الكيان", platform: "منصة EMG", boundary: "المتصفح ← Studio BFF ← الخدمات المصرح بها",
+  searchTitle: "البحث عن كيان", searchBody: "استرجع كياناً مصرحاً به باستخدام معرّفه الأساسي المطابق تماماً. لا يتوفر بحث نصي حر أو ترتيب حسب الصلة عبر عقد معتمد.",
+  canonicalId: "معرّف الكيان الأساسي", canonicalIdPlaceholder: "أدخل معرّف كيان مطابقاً", lookup: "بحث", exactLookupOnly: "المعرّف الأساسي المطابق فقط — لا يتم البحث في التسميات أو الأسماء البديلة أو النص الجزئي.", searching: "جارٍ البحث عن الكيان المصرح به…",
+  searchReadyTitle: "جاهز للبحث المطابق", searchReadyBody: "أدخل معرّف كيان أساسياً. تصرّح خدمة الرسم البياني المعرفي بالطلب.", noResultsTitle: "لا توجد نتيجة مصرح بها", noResultsBody: "لم يطابق أي كيان مصرح به ذلك المعرّف الأساسي تماماً.", searchUnavailable: "البحث غير متاح", openEntity: "فتح مساحة الكيان",
+  canonicalLookupHint: "معرّفات الكيانات حساسة لحالة الأحرف ويتم ترميزها بأمان في عنوان URL.", identity: "الهوية", createdAt: "تاريخ الإنشاء", updatedAt: "تاريخ التحديث", revisionCommitted: "اعتماد المراجعة", locator: "الموقع", capturedAt: "تاريخ الالتقاط", noEvidence: "لا توجد مراجع أدلة مسترجعة لهذا الكيان.", relationships: "العلاقات", noRelationships: "لا توجد علاقات مصرح بها مسترجعة لهذا الكيان.", relationshipsUnavailable: "تعذر تحميل بيانات العلاقات؛ لا يزال عرض الكيان متاحاً.", moreRelationshipsAvailable: "توجد علاقات مصرح بها إضافية. لم تُتح إتاحة صفحات العلاقات في مساحة العمل بعد.", history: "السجل التاريخي", noHistory: "لا توجد سجلات زمنية مسترجعة لهذا الكيان.", current: "الحالي",
 };
 
 const messages = { en, ar };

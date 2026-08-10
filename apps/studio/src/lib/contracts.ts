@@ -24,7 +24,21 @@ export interface EvidenceReference {
 export interface TemporalFact {
   value: string;
   validity: { valid_from: string; valid_until?: string | null };
+  evidence: EvidenceReference[];
   recorded_at: string;
+  metadata: Record<string, string>;
+}
+
+export interface NeighborResponse {
+  items: Array<{
+    entity: EntitySummary;
+    via_edge_id: string;
+    edge_type: string;
+    confidence: number;
+    direction: string;
+  }>;
+  page_info: { limit: number; returned_count: number; next_cursor: string | null; has_more: boolean };
+  revision_context: EntityResponse["revision_context"];
 }
 
 export interface EntityDetails {

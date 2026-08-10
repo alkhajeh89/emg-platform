@@ -31,6 +31,15 @@ describe("Studio BFF client", () => {
     );
   });
 
+  it("loads relationships only through the same-origin read proxy", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    await bff.neighbors("pilot/entity", "edge/cursor");
+    expect(fetch).toHaveBeenCalledWith(
+      "/bff/api/knowledge-graph/v1/knowledge-graph/entities/pilot%2Fentity/neighbors?limit=20&before_edge_id=edge%2Fcursor",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   it("echoes the CSRF cookie on logout", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
     await bff.logout();

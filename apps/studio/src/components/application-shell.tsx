@@ -34,13 +34,13 @@ export function ApplicationShell({ children }: Readonly<{ children: React.ReactN
   const [logoutError, setLogoutError] = useState(false);
   const session = useQuery({ queryKey: ["session"], queryFn: bff.session });
   const unauthorized = session.error instanceof BffError && session.error.status === 401;
-  const current = navigation.find((item) => pathname === item.href)?.label ?? "dashboard";
+  const current = navigation.find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))?.label ?? "dashboard";
 
   async function logout() {
     setLogoutError(false);
     try { await bff.logout(); await session.refetch(); } catch { setLogoutError(true); }
   }
-  function search(event: FormEvent<HTMLFormElement>) { event.preventDefault(); router.push("/search"); }
+  function search(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const query = String(data.get("q") ?? "").trim(); router.push(query ? `/search?q=${encodeURIComponent(query)}` : "/search"); }
 
   if (session.isPending) return <main className="center-stage"><div className="state-card" aria-live="polite"><span className="spinner" />{t("checkingSession")}</div></main>;
   if (unauthorized) return <LoginPanel />;
@@ -50,7 +50,7 @@ export function ApplicationShell({ children }: Readonly<{ children: React.ReactN
     <a className="skip-link" href="#main-content">{t("skipContent")}</a>
     <aside className={`sidebar ${drawerOpen ? "sidebar--open" : ""}`} aria-label={t("primaryNavigation")}>
       <div className="sidebar-brand"><Link href="/dashboard" aria-label={t("brandHome")}><span className="brand-mark">E</span><span>{t("brand")}</span></Link><button type="button" className="drawer-close" onClick={() => setDrawerOpen(false)} aria-label={t("closeNavigation")}>×</button></div>
-      <nav><ul>{navigation.map((item) => { const active = pathname === item.href; return <li key={item.href}><Link href={item.href} aria-current={active ? "page" : undefined} onClick={() => setDrawerOpen(false)}><span className="nav-mark" aria-hidden="true">{item.mark}</span>{t(item.label)}</Link></li>; })}</ul></nav>
+      <nav><ul>{navigation.map((item) => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <li key={item.href}><Link href={item.href} aria-current={active ? "page" : undefined} onClick={() => setDrawerOpen(false)}><span className="nav-mark" aria-hidden="true">{item.mark}</span>{t(item.label)}</Link></li>; })}</ul></nav>
       <div className="sidebar-boundary"><StatusMark /><span>{t("boundary")}</span></div>
     </aside>
     {drawerOpen && <button type="button" className="drawer-scrim" onClick={() => setDrawerOpen(false)} aria-label={t("closeNavigation")} />}
@@ -58,7 +58,7 @@ export function ApplicationShell({ children }: Readonly<{ children: React.ReactN
       <header className="application-bar">
         <button type="button" className="menu-button" onClick={() => setDrawerOpen(true)} aria-label={t("openNavigation")} aria-expanded={drawerOpen}>☰</button>
         <div className="section-indicator"><span>{t("currentSection")}</span><strong>{t(current)}</strong></div>
-        <form className="global-search" role="search" onSubmit={search}><label className="sr-only" htmlFor="global-search">{t("globalSearch")}</label><input id="global-search" placeholder={t("searchPlaceholder")} /><button type="submit" aria-label={t("searchAction")}>⌕</button></form>
+        <form className="global-search" role="search" onSubmit={search}><label className="sr-only" htmlFor="global-search">{t("globalSearch")}</label><input id="global-search" name="q" dir="ltr" placeholder={t("searchPlaceholder")} /><button type="submit" aria-label={t("searchAction")}>⌕</button></form>
         <div className="application-actions"><LanguageSwitcher /><div className="session-area"><span><StatusMark />{t("authenticated")}</span><button type="button" onClick={logout}>{t("logout")}</button></div></div>
       </header>
       <main id="main-content" className="page-content" tabIndex={-1}>{children}</main>
