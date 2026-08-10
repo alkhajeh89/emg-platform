@@ -12,7 +12,19 @@ license = { text = "Proprietary" }
 dependencies = ["emg-common-types"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "mypy>=1.10", "ruff>=0.6"]
+dev = [
+  "pytest>=8.0",
+  "mypy>=1.10",
+  "ruff>=0.6",
+  # Only to exercise the optional `emg_telemetry.http_metrics` submodule's
+  # tests (test_http_metrics.py); not imported by emg_telemetry itself and
+  # not a runtime dependency of this package. Both are already governed,
+  # hash-locked production roots (see requirements-production.in) because
+  # every HTTP service depends on them directly, so this adds no new
+  # third-party dependency to the platform.
+  "fastapi>=0.115",
+  "httpx>=0.27",
+]
 
 [tool.hatch.build]
 dev-mode-dirs = ["src"]

@@ -1,0 +1,79 @@
+{
+  "uid": "emg-datastore-projection-health",
+  "title": "EMG / Datastore & Projection Health",
+  "description": "RC-C (EMG v1 RC closure package). Grafana dashboard JSON -- the standard Prometheus-ecosystem dashboard format, importable into self-hosted Grafana, Grafana Cloud, or Amazon Managed Grafana regardless of which metrics backend is eventually selected (see observability/alerts/emg-platform-alerts.yaml's ARCHITECTURAL STOP note -- no backend is deployed by this repository). Requires a Prometheus-compatible datasource named \"EMG-Prometheus\" (or update the datasource UID after import) scraping the metrics this dashboard's panels query. PostgreSQL/Neo4j dependency reachability (bucket A, application-observed) plus placeholders for postgres_exporter-sourced panels (bucket B/C -- see observability/alerts/emg-platform-alerts.yaml's emg-datastore group; PostgreSQL/Neo4j are environment-owned per ADR-041 and are not deployed or exported by this repository).",
+  "tags": [
+    "emg",
+    "rc-c",
+    "datastore",
+    "projection"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "EMG-Prometheus",
+          "value": "EMG-Prometheus"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Dependency Health: postgres / neo4j",
+      "description": "1 = healthy, 0 = unhealthy. This is the only datastore-health signal this repository emits today; see the text panel below for what a postgres_exporter/neo4j-exporter panel would add.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "emg_dependency_healthy{dependency=~\"postgres|neo4j\"}",
+          "legendFormat": "{{service}} / {{dependency}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "text",
+      "title": "Datastore-internal metrics (bucket B/C)",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Not available from this repository.** Replication lag, connection-pool saturation, query performance, and Neo4j projection-store internals require `postgres_exporter` / a Neo4j exporter deployed against the environment-owned database instances (ADR-041). Deploying either is an infrastructure decision (and, since they are third-party community images, an ADR-040 image-governance question) this repository does not make. Panels here are reserved for `pg_up`, `pg_replication_lag_seconds`, and `pg_stat_activity_count` once that exporter exists -- see `observability/alerts/emg-platform-alerts.yaml`'s `emg-datastore` group."
+      }
+    }
+  ]
+}

@@ -94,3 +94,41 @@ spec:
     - to:
         - podSelector: {matchLabels: {app.kubernetes.io/name: emg-studio-bff}}
       ports: [{protocol: TCP, port: 8000}]
+---
+# RC-C (EMG v1 RC closure, P0 alerting): every EMG workload now serves
+# `/metrics` (see emg_telemetry.http_metrics for the four HTTP services and
+# emg_audit_projector.metrics_server for the headless worker), but this
+# default-deny model blocks it from anywhere until explicitly opened. This
+# label is DISTINCT from `networking.emg.io/ingress-access` (product
+# traffic): it is deliberately scoped to metrics-only ports, never the main
+# application port's full API surface for services where they differ.
+# Applying this label to the actual metrics-scraper's namespace is an
+# operational step outside this repository's scope (no metrics backend is
+# selected/deployed here -- see docs/release/EMG_V1_RELEASE_CANDIDATE_CLOSURE_REVIEW.md
+# RC-P0-C and observability/README.md); until it is applied, this rule
+# grants access to nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-observability-scrape-http}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [emg-identity, emg-audit, emg-knowledge-graph, emg-studio-bff]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {networking.emg.io/observability-access: "true"}
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-observability-scrape-audit-projector}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-audit-projector}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {networking.emg.io/observability-access: "true"}
+      ports: [{protocol: TCP, port: 9464}]

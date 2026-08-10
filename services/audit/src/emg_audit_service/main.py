@@ -21,6 +21,7 @@ from emg_errors import (
     ValidationError,
 )
 from emg_telemetry import get_logger, set_correlation_id
+from emg_telemetry.http_metrics import install_http_metrics, metrics_router, record_http_error
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
         version="0.3.0",
     )
     app.add_middleware(HttpRequestSecurityMiddleware)
+    install_http_metrics(app, service="audit")
 
     async def validate_startup() -> None:
         settings = get_settings()
@@ -98,6 +100,7 @@ def create_app() -> FastAPI:
                 "outcome": "error",
             },
         )
+        record_http_error(app, exc.error_code, status_code)
         error = ApiError(
             error_code=exc.error_code,
             message=_public_error_message(exc, status_code),
@@ -109,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(integrity_router)
     app.include_router(custody_router)
+    app.include_router(metrics_router())
     return app
 
 

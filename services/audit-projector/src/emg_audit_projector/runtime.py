@@ -13,6 +13,12 @@ from emg_persistence.postgres import (
 
 from .config import Settings, validate_runtime_configuration
 from .delivery import AuditDeliveryClient
+from .metrics_server import MetricsServer
+from .telemetry import (
+    CompositeProjectorObserver,
+    PrometheusProjectorObserver,
+    StructuredProjectorObserver,
+)
 from .worker import AuditProjectorWorker
 
 
@@ -28,10 +34,16 @@ class ProjectorRuntime:
         self._connections = PooledConnectionProvider(persistence)
         self._transactions = PostgresTransactionProvider(self._connections)
         self._delivery = AuditDeliveryClient(settings)
-        self.worker = AuditProjectorWorker(settings, self._transactions, self._delivery)
+        observer = CompositeProjectorObserver(
+            StructuredProjectorObserver(), PrometheusProjectorObserver()
+        )
+        self.worker = AuditProjectorWorker(
+            settings, self._transactions, self._delivery, observer=observer
+        )
         self._thread: Thread | None = None
         self._drain_timeout = settings.drain_timeout_seconds
         self._ready_path = Path("/tmp/emg-audit-projector-ready")
+        self._metrics_server = MetricsServer(port=settings.metrics_port)
 
     def start(self) -> None:
         # Fail startup before claiming if PostgreSQL is unreachable.
@@ -39,6 +51,7 @@ class ProjectorRuntime:
             cursor.execute("SELECT 1")
             if cursor.fetchone() != (1,):
                 raise RuntimeError("Audit Projector PostgreSQL startup probe failed")
+        self._metrics_server.start()
         thread = Thread(target=self.worker.run, name="audit-projector", daemon=True)
         thread.start()
         self._thread = thread
@@ -61,5 +74,6 @@ class ProjectorRuntime:
 
     def close(self) -> None:
         self._ready_path.unlink(missing_ok=True)
+        self._metrics_server.stop()
         self._delivery.close()
         self._connections.close()

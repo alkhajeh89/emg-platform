@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable
 from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddleware
 from emg_errors import AuthorizationError, EMGError, UpstreamServiceError, ValidationError
 from emg_telemetry import get_logger, set_correlation_id
+from emg_telemetry.http_metrics import install_http_metrics, metrics_router, record_http_error
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
     app.add_middleware(HttpRequestSecurityMiddleware)
+    install_http_metrics(app, service="studio-bff")
 
     def validate_startup() -> None:
         validate_runtime_configuration(get_settings())
@@ -86,6 +88,7 @@ def create_app() -> FastAPI:
             status_code,
             extra={"module": "studio-bff", "action": "http_request", "outcome": "error"},
         )
+        record_http_error(app, exc.error_code, status_code)
         error = ApiError(error_code=exc.error_code, message=_public_error_message(exc, status_code))
         envelope: ApiResponse[None] = ApiResponse(data=None, error=error)
         response = JSONResponse(status_code=status_code, content=_envelope_dict(envelope))
@@ -95,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(kg_proxy_router)
+    app.include_router(metrics_router())
     return app
 
 

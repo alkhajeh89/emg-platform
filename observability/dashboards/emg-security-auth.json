@@ -1,0 +1,151 @@
+{
+  "uid": "emg-security-auth",
+  "title": "EMG / Security & Authentication",
+  "description": "RC-C (EMG v1 RC closure package). Grafana dashboard JSON -- the standard Prometheus-ecosystem dashboard format, importable into self-hosted Grafana, Grafana Cloud, or Amazon Managed Grafana regardless of which metrics backend is eventually selected (see observability/alerts/emg-platform-alerts.yaml's ARCHITECTURAL STOP note -- no backend is deployed by this repository). Requires a Prometheus-compatible datasource named \"EMG-Prometheus\" (or update the datasource UID after import) scraping the metrics this dashboard's panels query. Security monitoring view (ADR-015 Section 8): authentication failures, authorization denials, and mutation-path policy denials. Deliberately narrower access than the general engineering dashboards per ADR-015 Section 8's \"subject to its own, more restrictive access control.\"",
+  "tags": [
+    "emg",
+    "rc-c",
+    "security",
+    "auth"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "EMG-Prometheus",
+          "value": "EMG-Prometheus"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Authentication Failure Rate (401 AUTHORIZATION_ERROR)",
+      "description": "Backs EMGHighAuthenticationFailureRate.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(http_errors_total{error_code=\"AUTHORIZATION_ERROR\"}[5m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP Errors by Code",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (service, error_code) (rate(http_errors_total[5m]))",
+          "legendFormat": "{{service}} / {{error_code}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "KG Mutation Authorization Denials",
+      "description": "Backs EMGMutationAuthorizationDenialsSpike.",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate(kg_mutation_authorization_denials_total[5m]))",
+          "legendFormat": "{{operation}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "KG Mutation Requests by Outcome",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, outcome) (rate(kg_mutation_requests_total[5m]))",
+          "legendFormat": "{{operation}} / {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

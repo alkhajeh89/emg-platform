@@ -18,6 +18,7 @@ from emg_api_contracts import ApiError, ApiResponse, HttpRequestSecurityMiddlewa
 from emg_errors import EMGError
 from emg_knowledge_graph import InvalidSearchRequestError
 from emg_telemetry import get_logger, set_correlation_id
+from emg_telemetry.http_metrics import install_http_metrics, metrics_router, record_http_error
 from fastapi import FastAPI, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -28,6 +29,7 @@ from .errors import error_headers, error_status, public_error_message
 from .routers.health import router as health_router
 from .routers.knowledge_graph import router as knowledge_graph_router
 from .routers.mutations import router as mutation_router
+from .search_metrics import install_search_metrics_collector
 from .store import close_store_runtime
 
 _log = get_logger("knowledge_graph.api")
@@ -44,6 +46,8 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
     app.add_middleware(HttpRequestSecurityMiddleware)
+    install_http_metrics(app, service="knowledge-graph")
+    install_search_metrics_collector()
     app.router.add_event_handler("startup", validate_schema_runtime_configuration)
     app.router.add_event_handler("shutdown", close_store_runtime)
 
@@ -71,6 +75,7 @@ def create_app() -> FastAPI:
                 "outcome": "error",
             },
         )
+        record_http_error(app, exc.error_code, status_code)
         error = ApiError(error_code=exc.error_code, message=public_error_message(exc))
         envelope: ApiResponse[None] = ApiResponse(data=None, error=error)
         return JSONResponse(
@@ -90,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(knowledge_graph_router)
     app.include_router(mutation_router)
+    app.include_router(metrics_router())
     return app
 
 

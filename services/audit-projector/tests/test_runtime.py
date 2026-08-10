@@ -61,8 +61,8 @@ class _Delivery:
 
 
 class _Worker:
-    def __init__(self, *args: object) -> None:
-        del args
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        del args, kwargs
         self.stopped = Event()
 
     def run(self) -> None:

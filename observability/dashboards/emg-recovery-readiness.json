@@ -1,0 +1,180 @@
+{
+  "uid": "emg-recovery-readiness",
+  "title": "EMG / Backup & Recovery Readiness",
+  "description": "RC-C (EMG v1 RC closure package). Grafana dashboard JSON -- the standard Prometheus-ecosystem dashboard format, importable into self-hosted Grafana, Grafana Cloud, or Amazon Managed Grafana regardless of which metrics backend is eventually selected (see observability/alerts/emg-platform-alerts.yaml's ARCHITECTURAL STOP note -- no backend is deployed by this repository). Requires a Prometheus-compatible datasource named \"EMG-Prometheus\" (or update the datasource UID after import) scraping the metrics this dashboard's panels query. PostgreSQL backup/WAL-archive freshness against the governed RPO/RTO in docs/operations/postgresql-backup-recovery.md (RPO 5 minutes, RTO 4 hours). Metrics are emitted by tools/backup/emit_metrics.py; wiring it into the production backup/WAL-archive/verify cron path is RC-P0-D, a sibling P0 to this package -- see docs/release/EMG_V1_RELEASE_CANDIDATE_CLOSURE_REVIEW.md.",
+  "tags": [
+    "emg",
+    "rc-c",
+    "recovery",
+    "backup"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "EMG-Prometheus",
+          "value": "EMG-Prometheus"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Backup Age",
+      "description": "Alert threshold: 24h (EMGBackupAgeExceeded), per the runbook's documented requirement.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "time() - emg_backup_last_success_timestamp_seconds",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "WAL Archive Lag",
+      "description": "Alert threshold: 5m (EMGWalArchiveLagExceeded) -- the documented RPO.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "time() - emg_wal_archive_last_success_timestamp_seconds",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Last Backup Verify Status",
+      "description": "1 = passed checksum/manifest verification, 0 = failed (EMGBackupChecksumFailure).",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "emg_backup_last_verify_status",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Backup Age Over Time",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "time() - emg_backup_last_success_timestamp_seconds",
+          "legendFormat": "backup age",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "WAL Archive Lag Over Time",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "time() - emg_wal_archive_last_success_timestamp_seconds",
+          "legendFormat": "WAL archive lag",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
