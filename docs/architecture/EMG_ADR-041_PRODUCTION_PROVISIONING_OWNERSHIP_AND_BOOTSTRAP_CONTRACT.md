@@ -108,6 +108,14 @@ role names and required attributes. The environment secret-management system gov
 actual passwords, initial materialization, and rotation. Rotation must not rename a role
 or expand its privileges.
 
+Managed PostgreSQL providers may reserve alteration of superuser, replication, or
+row-security-bypass attributes to the provider's true superuser. On such platforms,
+bootstrap must explicitly create new roles with the governed safe attributes, verify
+reserved attributes on existing roles rather than issuing a prohibited alteration, and
+fail closed if any reserved attribute is elevated. It must still converge provider-
+permitted attributes and credentials and verify the complete effective role state. This
+is an operational compatibility rule; it does not relax the governed role contract.
+
 The bootstrap authority may be implemented as a bounded one-shot Job or an equivalent
 operator/CD-controlled step using existing platform patterns. It is not a new database
 operator or orchestration system.

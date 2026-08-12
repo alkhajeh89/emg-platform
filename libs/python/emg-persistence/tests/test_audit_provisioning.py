@@ -1,10 +1,46 @@
 from __future__ import annotations
 
 import sys
+from typing import Any
 
+import pytest
 from emg_persistence.migrate import audit_migrations_dir
 from emg_persistence.provisioning import AUDIT_HISTORY_TABLE, GOVERNED_DATABASE_ROLES
 from emg_persistence.provisioning import __main__ as provisioning_cli
+from emg_persistence.provisioning.database import _create_or_converge_role
+
+
+class _RoleCursor:
+    def __init__(self, attributes: tuple[bool, ...] | None, *, ignore_mutable_alter: bool = False):
+        self.attributes = attributes
+        self.ignore_mutable_alter = ignore_mutable_alter
+        self.statements: list[str] = []
+        self.password_updates = 0
+
+    def execute(self, query: Any, _params: Any = None) -> None:
+        statement = query if isinstance(query, str) else query.as_string(None)
+        self.statements.append(statement)
+        if statement.startswith("CREATE ROLE"):
+            self.attributes = (True, False, False, False, False, False, False)
+        elif statement.startswith("ALTER ROLE") and " WITH LOGIN" in statement:
+            assert "NOSUPERUSER" not in statement
+            assert "NOREPLICATION" not in statement
+            assert "NOBYPASSRLS" not in statement
+            if not self.ignore_mutable_alter and self.attributes is not None:
+                self.attributes = (
+                    True,
+                    self.attributes[1],
+                    False,
+                    False,
+                    False,
+                    self.attributes[5],
+                    self.attributes[6],
+                )
+        elif statement.startswith("ALTER ROLE") and " PASSWORD " in statement:
+            self.password_updates += 1
+
+    def fetchone(self) -> tuple[bool, ...] | None:
+        return self.attributes
 
 
 def test_database_bootstrap_declares_only_adr_041_roles() -> None:
@@ -82,3 +118,52 @@ def test_database_bootstrap_cli_sources_all_role_credentials_from_canonical_dsns
             },
         )
     ]
+
+
+def test_role_creation_uses_explicit_complete_safe_attributes() -> None:
+    cursor = _RoleCursor(None)
+
+    _create_or_converge_role(cursor, "emg_audit_app", "synthetic-password")
+
+    create = next(statement for statement in cursor.statements if statement.startswith("CREATE"))
+    assert (
+        "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT " "NOREPLICATION NOBYPASSRLS"
+    ) in create
+    assert cursor.password_updates == 1
+
+
+def test_existing_safe_role_converges_without_reserved_cloud_sql_alter_clauses() -> None:
+    cursor = _RoleCursor((False, False, True, True, True, False, False))
+
+    _create_or_converge_role(cursor, "emg_audit_app", "rotated-synthetic-password")
+
+    convergence = next(
+        statement
+        for statement in cursor.statements
+        if statement.startswith("ALTER ROLE") and " WITH LOGIN" in statement
+    )
+    assert convergence.endswith("WITH LOGIN NOCREATEDB NOCREATEROLE NOINHERIT")
+    assert cursor.attributes == (True, False, False, False, False, False, False)
+    assert cursor.password_updates == 1
+
+
+@pytest.mark.parametrize("unsafe_index", (1, 5, 6))
+def test_existing_role_with_reserved_privilege_fails_before_alter(unsafe_index: int) -> None:
+    attributes = [True, False, False, False, False, False, False]
+    attributes[unsafe_index] = True
+    cursor = _RoleCursor(tuple(attributes))
+
+    with pytest.raises(RuntimeError, match="privileged attributes"):
+        _create_or_converge_role(cursor, "emg_audit_app", "synthetic-password")
+
+    assert not [statement for statement in cursor.statements if statement.startswith("ALTER ROLE")]
+
+
+@pytest.mark.parametrize("unsafe_index", (2, 3, 4))
+def test_role_fails_closed_if_mutable_attribute_cannot_be_converged(unsafe_index: int) -> None:
+    attributes = [True, False, False, False, False, False, False]
+    attributes[unsafe_index] = True
+    cursor = _RoleCursor(tuple(attributes), ignore_mutable_alter=True)
+
+    with pytest.raises(RuntimeError, match="non-conformant attributes"):
+        _create_or_converge_role(cursor, "emg_audit_app", "synthetic-password")

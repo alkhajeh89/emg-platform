@@ -24,6 +24,7 @@ GOVERNED_DATABASE_ROLES = (
     "emg_knowledge_graph_migrator",
     "emg_knowledge_graph_app",
 )
+_GOVERNED_ROLE_ATTRIBUTES = (True, False, False, False, False, False, False)
 _AUDIT_TABLES = ("audit_events", "evidence_custody_events")
 _AUDIT_COLUMNS = {
     "audit_events": (
@@ -128,6 +129,34 @@ def _dsn_credential(dsn: str, expected_role: str) -> str:
     return password
 
 
+def _create_or_converge_role(cursor: Any, role: str, password: str) -> None:
+    attributes = _role_attributes_from_cursor(cursor, role)
+    if attributes is None:
+        cursor.execute(
+            sql.SQL(
+                "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
+                "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
+            ).format(sql.Identifier(role))
+        )
+    else:
+        if attributes[1] or attributes[5] or attributes[6]:
+            raise RuntimeError(
+                f"PostgreSQL role {role} has privileged attributes that "
+                "bootstrap cannot safely converge"
+            )
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} WITH LOGIN NOCREATEDB NOCREATEROLE NOINHERIT").format(
+                sql.Identifier(role)
+            )
+        )
+    cursor.execute(
+        sql.SQL("ALTER ROLE {} PASSWORD {}").format(sql.Identifier(role), sql.Literal(password))
+    )
+    effective_attributes = _role_attributes_from_cursor(cursor, role)
+    if effective_attributes != _GOVERNED_ROLE_ATTRIBUTES:
+        raise RuntimeError(f"PostgreSQL role {role} has non-conformant attributes")
+
+
 def bootstrap_database_roles(
     admin_dsn: str, role_dsns: Mapping[str, str]
 ) -> None:  # pragma: no cover - live PostgreSQL
@@ -149,26 +178,7 @@ def bootstrap_database_roles(
         if current_user in GOVERNED_DATABASE_ROLES:
             raise RuntimeError("database bootstrap administrator cannot be a runtime role")
         for role in GOVERNED_DATABASE_ROLES:
-            cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
-            if cursor.fetchone() is None:
-                cursor.execute(
-                    sql.SQL(
-                        "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
-                        "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
-                    ).format(sql.Identifier(role))
-                )
-            else:
-                cursor.execute(
-                    sql.SQL(
-                        "ALTER ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
-                        "NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS"
-                    ).format(sql.Identifier(role))
-                )
-            cursor.execute(
-                sql.SQL("ALTER ROLE {} PASSWORD {}").format(
-                    sql.Identifier(role), sql.Literal(passwords[role])
-                )
-            )
+            _create_or_converge_role(cursor, role, passwords[role])
         cursor.execute("SELECT current_schema()")
         schema_row = cursor.fetchone()
         if schema_row is None or not isinstance(schema_row[0], str):
@@ -415,23 +425,28 @@ def retry_dirty_audit_v001(
     )
 
 
+def _role_attributes_from_cursor(cursor: Any, role: str) -> tuple[bool, ...] | None:
+    cursor.execute(
+        "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit, "
+        "rolreplication, rolbypassrls FROM pg_roles WHERE rolname = %s",
+        (role,),
+    )
+    row = cursor.fetchone()
+    return None if row is None else tuple(bool(value) for value in row)
+
+
 def _role_attributes(connection: Connection[Any], role: str) -> tuple[bool, ...]:
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit, "
-            "rolreplication, rolbypassrls FROM pg_roles WHERE rolname = %s",
-            (role,),
-        )
-        row = cursor.fetchone()
-    if row is None:
+        attributes = _role_attributes_from_cursor(cursor, role)
+    if attributes is None:
         raise RuntimeError(f"required PostgreSQL role {role} is absent")
-    return tuple(bool(value) for value in row)
+    return attributes
 
 
 def _validate_role_attributes(connection: Connection[Any]) -> None:
     for role in GOVERNED_DATABASE_ROLES:
         attributes = _role_attributes(connection, role)
-        if attributes != (True, False, False, False, False, False, False):
+        if attributes != _GOVERNED_ROLE_ATTRIBUTES:
             raise RuntimeError(f"PostgreSQL role {role} has non-conformant attributes")
 
 

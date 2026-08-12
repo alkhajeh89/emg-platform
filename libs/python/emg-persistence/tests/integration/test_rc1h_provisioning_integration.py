@@ -248,9 +248,7 @@ def test_database_bootstrap_creates_and_converges_knowledge_graph_roles(
         pass
 
     with psycopg.connect(admin_dsn) as connection:
-        connection.execute(
-            "ALTER ROLE emg_knowledge_graph_migrator CREATEDB CREATEROLE INHERIT REPLICATION"
-        )
+        connection.execute("ALTER ROLE emg_knowledge_graph_migrator CREATEDB CREATEROLE INHERIT")
         connection.execute("ALTER ROLE emg_knowledge_graph_app CREATEDB CREATEROLE INHERIT")
     bootstrap_database_roles(admin_dsn, role_dsns)
     with psycopg.connect(admin_dsn) as connection:
@@ -260,6 +258,16 @@ def test_database_bootstrap_creates_and_converges_knowledge_graph_roles(
                 "rolreplication, rolbypassrls FROM pg_roles WHERE rolname = %s",
                 (role,),
             ).fetchone() == (True, False, False, False, False, False, False)
+
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute("ALTER ROLE emg_knowledge_graph_app REPLICATION")
+    with pytest.raises(RuntimeError, match="privileged attributes"):
+        bootstrap_database_roles(admin_dsn, role_dsns)
+    with psycopg.connect(admin_dsn) as connection:
+        assert connection.execute(
+            "SELECT rolreplication FROM pg_roles " "WHERE rolname = 'emg_knowledge_graph_app'"
+        ).fetchone() == (True,)
+        connection.execute("ALTER ROLE emg_knowledge_graph_app NOREPLICATION")
 
 
 @requires_postgres
