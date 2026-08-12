@@ -41,6 +41,10 @@ def main() -> None:
                 "emg_audit_migrator": _required("EMG_AUDIT_MIGRATION_POSTGRES_DSN"),
                 "emg_audit_app": _required("EMG_AUDIT_POSTGRES_DSN"),
                 "emg_audit_projector": _required("EMG_AUDIT_PROJECTOR_POSTGRES_DSN"),
+                "emg_knowledge_graph_migrator": _required(
+                    "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN"
+                ),
+                "emg_knowledge_graph_app": _required("EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN"),
             },
         )
     elif args.command == "audit-migrate":

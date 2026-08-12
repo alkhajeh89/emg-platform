@@ -10,6 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 OVERLAY = ROOT / "infra/environments/production"
+STAGING_OVERLAY = ROOT / "infra/environments/staging"
 sys.path.insert(0, str(ROOT / "tools/ci"))
 from validate_production_provisioning import ProvisioningValidationError  # noqa: E402
 from validate_production_provisioning import validate as validate_provisioning  # noqa: E402
@@ -30,6 +31,18 @@ def test_production_manifests_render_without_literal_secrets() -> None:
     assert objects
     assert not [obj for obj in objects if obj["kind"] == "Secret"]
     assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 8
+
+
+def test_staging_manifests_render_without_literal_secrets() -> None:
+    rendered = subprocess.run(
+        ["kubectl", "kustomize", str(STAGING_OVERLAY)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    objects = [document for document in yaml.safe_load_all(rendered) if document]
+    assert objects
+    assert not [obj for obj in objects if obj["kind"] == "Secret"]
 
 
 def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
@@ -142,6 +155,9 @@ def test_privileged_credentials_are_confined_to_jobs() -> None:
     bootstrap = yaml.safe_dump(jobs["emg-database-bootstrap"])
     assert "admin-postgres-dsn" in bootstrap
     assert "database-bootstrap" in bootstrap
+    assert "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN" in bootstrap
+    assert "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN" in bootstrap
+    assert "emg-knowledge-graph-secrets" in bootstrap
     assert "migration-postgres-dsn" in yaml.safe_dump(jobs["emg-audit-migration"])
     assert "migration-postgres-dsn" in yaml.safe_dump(jobs["emg-knowledge-graph-migration"])
     provision = yaml.safe_dump(jobs["emg-keycloak-provision"])
@@ -182,6 +198,46 @@ def test_provisioning_validation_rejects_inventory_or_allow_list_divergence() ->
     )
 
     with pytest.raises(ProvisioningValidationError, match="independent projector allow-list"):
+        validate_provisioning(objects)
+
+
+@pytest.mark.parametrize(
+    "missing_name",
+    (
+        "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN",
+        "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
+    ),
+)
+def test_provisioning_validation_rejects_missing_kg_bootstrap_dsn(missing_name: str) -> None:
+    objects = _objects()
+    bootstrap = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Job" and obj["metadata"]["name"] == "emg-database-bootstrap"
+    )
+    container = bootstrap["spec"]["template"]["spec"]["containers"][0]
+    container["env"] = [entry for entry in container["env"] if entry["name"] != missing_name]
+
+    with pytest.raises(ProvisioningValidationError, match="credentials are incomplete"):
+        validate_provisioning(objects)
+
+
+def test_provisioning_validation_rejects_wrong_kg_bootstrap_secret_key() -> None:
+    objects = _objects()
+    bootstrap = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Job" and obj["metadata"]["name"] == "emg-database-bootstrap"
+    )
+    env = {
+        entry["name"]: entry
+        for entry in bootstrap["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    env["EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN"]["valueFrom"]["secretKeyRef"][
+        "key"
+    ] = "migration-postgres-dsn"
+
+    with pytest.raises(ProvisioningValidationError, match="credential wiring is invalid"):
         validate_provisioning(objects)
 
 

@@ -40,6 +40,23 @@ def _dsn(database: str, user: str, password: str) -> str:
     return make_conninfo(**values)
 
 
+def _bootstrap_role_dsns(
+    admin_dsn: str, audit_migrator_dsn: str, audit_app_dsn: str, projector_dsn: str
+) -> dict[str, str]:
+    database = str(conninfo_to_dict(admin_dsn)["dbname"])
+    return {
+        "emg_audit_migrator": audit_migrator_dsn,
+        "emg_audit_app": audit_app_dsn,
+        "emg_audit_projector": projector_dsn,
+        "emg_knowledge_graph_migrator": _dsn(
+            database, "emg_knowledge_graph_migrator", "rc1h-kg-migrator-password"
+        ),
+        "emg_knowledge_graph_app": _dsn(
+            database, "emg_knowledge_graph_app", "rc1h-kg-app-password"
+        ),
+    }
+
+
 @pytest.fixture
 def provisioned_database() -> Iterator[tuple[str, str, str, str]]:  # pragma: no cover
     assert _PG_DSN is not None
@@ -70,11 +87,7 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
     provisioned_database: tuple[str, str, str, str], tmp_path: Path
 ) -> None:  # pragma: no cover
     admin_dsn, migrator_dsn, app_dsn, projector_dsn = provisioned_database
-    role_dsns = {
-        "emg_audit_migrator": migrator_dsn,
-        "emg_audit_app": app_dsn,
-        "emg_audit_projector": projector_dsn,
-    }
+    role_dsns = _bootstrap_role_dsns(admin_dsn, migrator_dsn, app_dsn, projector_dsn)
 
     bootstrap_database_roles(admin_dsn, role_dsns)
 
@@ -190,12 +203,7 @@ def test_fresh_audit_database_migrates_without_adoption(
 ) -> None:  # pragma: no cover
     admin_dsn, migrator_dsn, app_dsn, projector_dsn = provisioned_database
     bootstrap_database_roles(
-        admin_dsn,
-        {
-            "emg_audit_migrator": migrator_dsn,
-            "emg_audit_app": app_dsn,
-            "emg_audit_projector": projector_dsn,
-        },
+        admin_dsn, _bootstrap_role_dsns(admin_dsn, migrator_dsn, app_dsn, projector_dsn)
     )
 
     assert [migration.name for migration in run_audit_migrations(migrator_dsn)] == ["audit_schema"]
@@ -203,15 +211,63 @@ def test_fresh_audit_database_migrates_without_adoption(
 
 
 @requires_postgres
+def test_database_bootstrap_creates_and_converges_knowledge_graph_roles(
+    provisioned_database: tuple[str, str, str, str],
+) -> None:  # pragma: no cover
+    admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn = provisioned_database
+    role_dsns = _bootstrap_role_dsns(admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn)
+    with psycopg.connect(admin_dsn) as connection:
+        for role in ("emg_knowledge_graph_migrator", "emg_knowledge_graph_app"):
+            connection.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    bootstrap_database_roles(admin_dsn, role_dsns)
+
+    with psycopg.connect(admin_dsn) as connection:
+        for role in ("emg_knowledge_graph_migrator", "emg_knowledge_graph_app"):
+            assert connection.execute(
+                "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit, "
+                "rolreplication, rolbypassrls FROM pg_roles WHERE rolname = %s",
+                (role,),
+            ).fetchone() == (True, False, False, False, False, False, False)
+        assert connection.execute(
+            "SELECT count(*) FROM pg_auth_members m "
+            "JOIN pg_roles member ON member.oid = m.member "
+            "WHERE member.rolname IN "
+            "('emg_knowledge_graph_migrator', 'emg_knowledge_graph_app')"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT has_schema_privilege('emg_knowledge_graph_migrator', "
+            "current_schema(), 'CREATE'), "
+            "has_schema_privilege('emg_knowledge_graph_app', current_schema(), 'CREATE')"
+        ).fetchone() == (True, False)
+
+    with psycopg.connect(role_dsns["emg_knowledge_graph_migrator"]):
+        pass
+    with psycopg.connect(role_dsns["emg_knowledge_graph_app"]):
+        pass
+
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute(
+            "ALTER ROLE emg_knowledge_graph_migrator CREATEDB CREATEROLE INHERIT REPLICATION"
+        )
+        connection.execute("ALTER ROLE emg_knowledge_graph_app CREATEDB CREATEROLE INHERIT")
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    with psycopg.connect(admin_dsn) as connection:
+        for role in ("emg_knowledge_graph_migrator", "emg_knowledge_graph_app"):
+            assert connection.execute(
+                "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit, "
+                "rolreplication, rolbypassrls FROM pg_roles WHERE rolname = %s",
+                (role,),
+            ).fetchone() == (True, False, False, False, False, False, False)
+
+
+@requires_postgres
 def test_audit_adoption_rejects_schema_mismatch(
     provisioned_database: tuple[str, str, str, str],
 ) -> None:  # pragma: no cover
     admin_dsn, migrator_dsn, app_dsn, projector_dsn = provisioned_database
-    role_dsns = {
-        "emg_audit_migrator": migrator_dsn,
-        "emg_audit_app": app_dsn,
-        "emg_audit_projector": projector_dsn,
-    }
+    role_dsns = _bootstrap_role_dsns(admin_dsn, migrator_dsn, app_dsn, projector_dsn)
     bootstrap_database_roles(admin_dsn, role_dsns)
     with psycopg.connect(admin_dsn) as connection:
         connection.execute("CREATE TABLE audit_events (event_id text PRIMARY KEY)")
@@ -233,11 +289,7 @@ def test_fresh_colocated_streams_use_scoped_v005_compatibility(
     admin_dsn, audit_migrator_dsn, app_dsn, projector_dsn = provisioned_database
     bootstrap_database_roles(
         admin_dsn,
-        {
-            "emg_audit_migrator": audit_migrator_dsn,
-            "emg_audit_app": app_dsn,
-            "emg_audit_projector": projector_dsn,
-        },
+        _bootstrap_role_dsns(admin_dsn, audit_migrator_dsn, app_dsn, projector_dsn),
     )
     run_audit_migrations(audit_migrator_dsn)
     database = str(conninfo_to_dict(admin_dsn)["dbname"])
@@ -282,11 +334,7 @@ def test_colocated_streams_recover_dirty_v005_without_cross_stream_mutation(
     provisioned_database: tuple[str, str, str, str], tmp_path: Path
 ) -> None:  # pragma: no cover
     admin_dsn, audit_migrator_dsn, app_dsn, projector_dsn = provisioned_database
-    role_dsns = {
-        "emg_audit_migrator": audit_migrator_dsn,
-        "emg_audit_app": app_dsn,
-        "emg_audit_projector": projector_dsn,
-    }
+    role_dsns = _bootstrap_role_dsns(admin_dsn, audit_migrator_dsn, app_dsn, projector_dsn)
     bootstrap_database_roles(admin_dsn, role_dsns)
     run_audit_migrations(audit_migrator_dsn)
 

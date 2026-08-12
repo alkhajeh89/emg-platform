@@ -17,6 +17,8 @@ REQUIRED_ROLES = {
     "emg_audit_migrator",
     "emg_audit_app",
     "emg_audit_projector",
+    "emg_knowledge_graph_migrator",
+    "emg_knowledge_graph_app",
 }
 REQUIRED_JOBS = {
     "emg-database-bootstrap": "10-database-roles",
@@ -76,8 +78,41 @@ def validate(objects: list[dict] | None = None) -> None:
         "EMG_AUDIT_MIGRATION_POSTGRES_DSN",
         "EMG_AUDIT_POSTGRES_DSN",
         "EMG_AUDIT_PROJECTOR_POSTGRES_DSN",
+        "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN",
+        "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
     }:
         raise ProvisioningValidationError("database bootstrap credentials are incomplete")
+    expected_bootstrap_wiring = {
+        "EMG_DATABASE_BOOTSTRAP_ADMIN_DSN": (
+            "emg-database-bootstrap-secrets",
+            "admin-postgres-dsn",
+        ),
+        "EMG_AUDIT_MIGRATION_POSTGRES_DSN": (
+            "emg-audit-secrets",
+            "migration-postgres-dsn",
+        ),
+        "EMG_AUDIT_POSTGRES_DSN": ("emg-audit-secrets", "postgres-dsn"),
+        "EMG_AUDIT_PROJECTOR_POSTGRES_DSN": (
+            "emg-audit-projector-secrets",
+            "postgres-dsn",
+        ),
+        "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN": (
+            "emg-knowledge-graph-secrets",
+            "migration-postgres-dsn",
+        ),
+        "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN": (
+            "emg-knowledge-graph-secrets",
+            "postgres-dsn",
+        ),
+    }
+    for name, (secret, key) in expected_bootstrap_wiring.items():
+        if bootstrap_env[name] != {
+            "name": name,
+            "valueFrom": {"secretKeyRef": {"name": secret, "key": key}},
+        }:
+            raise ProvisioningValidationError(
+                f"database bootstrap credential wiring is invalid: {name}"
+            )
 
     audit_migration = jobs["emg-audit-migration"]["spec"]["template"]["spec"]["containers"][0]
     if audit_migration.get("command", [])[-1:] != ["audit-migrate"]:
@@ -109,6 +144,7 @@ def validate(objects: list[dict] | None = None) -> None:
             "identity-inventory-json",
             "tenant-credentials-json",
         },
+        "emg-knowledge-graph-secrets": {"postgres-dsn", "migration-postgres-dsn"},
         "emg-keycloak-provision-secrets": {"admin-username", "admin-password"},
     }
     for name, keys in required_secret_keys.items():
