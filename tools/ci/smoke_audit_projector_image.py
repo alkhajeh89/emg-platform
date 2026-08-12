@@ -25,6 +25,7 @@ def _run(command: str) -> None:
             "EMG_AUDIT_POSTGRES_DSN": "postgresql://smoke",
             "EMG_AUDIT_PROJECTOR_POSTGRES_DSN": "postgresql://smoke",
             "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN": "postgresql://smoke",
+            "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN": "postgresql://smoke",
         }
     )
     sys.argv = ["emg-persistence-provisioning", command]

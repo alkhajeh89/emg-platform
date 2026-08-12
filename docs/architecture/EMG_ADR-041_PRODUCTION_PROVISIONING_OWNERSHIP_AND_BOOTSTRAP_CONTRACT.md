@@ -75,14 +75,22 @@ for PostgreSQL cluster/database prerequisites that an application migration cann
 safely own. It is an operational responsibility, not an application Service Principal
 or a continuously running workload.
 
-For the bounded Audit and Audit Projector scope, the explicitly governed production
-roles are:
+For the bounded Audit and Audit Projector scope, and for the pre-existing Knowledge
+Graph role split governed by ADR-034, the explicitly governed production roles are:
 
 | Role | Semantics | Responsibility |
 | :--- | :--- | :--- |
 | `emg_audit_migrator` | `LOGIN` | Apply and own Audit migration objects |
 | `emg_audit_app` | `LOGIN` | Audit Service runtime, with append/read privileges only |
 | `emg_audit_projector` | `LOGIN` | Audit Projector runtime access governed by V007 |
+| `emg_knowledge_graph_migrator` | `LOGIN` | Apply and own Knowledge Graph migration objects under ADR-034 |
+| `emg_knowledge_graph_app` | `LOGIN` | Knowledge Graph serving runtime with migration-governed DML only under ADR-034 |
+
+The two Knowledge Graph roles are not a new authority introduced by this ADR. ADR-034
+already fixes their identities, ownership split, and separate credential contract.
+Bootstrap creates and converges them only so the canonical Knowledge Graph migration
+stream can grant its governed object privileges; that stream remains the sole authority
+for application-object ownership and grants.
 
 The bootstrap authority must:
 
@@ -421,8 +429,8 @@ authorization rule.
 
 RC-1H implementation is conformant only when it demonstrates all of the following:
 
-- idempotent creation of the three governed Audit/projector roles without repository
-  passwords;
+- idempotent creation of the three governed Audit/projector roles and the two ADR-034
+  Knowledge Graph roles without repository passwords;
 - role bootstrap completion before V007 and Audit migrations;
 - exact V007 least-privilege grants for `emg_audit_projector`;
 - a dedicated `emg_audit_migrator`-owned Audit migration stream using

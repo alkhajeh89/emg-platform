@@ -11,6 +11,12 @@ the `emg-studio-tls` certificate, external egress policy, PostgreSQL, Neo4j,
 Keycloak, remote backup storage, and the RC-C telemetry collector. Production
 secret paths or credentials must never be reused in staging.
 
+The staging `emg-knowledge-graph-secrets` contract must provide distinct
+`migration-postgres-dsn` and `postgres-dsn` keys for
+`emg_knowledge_graph_migrator` and `emg_knowledge_graph_app`, respectively.
+The database-bootstrap Job consumes both keys before the Knowledge Graph migration;
+the serving workload consumes only `postgres-dsn`.
+
 Render the source template with:
 
 ```sh

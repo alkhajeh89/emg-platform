@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import sys
+
 from emg_persistence.migrate import audit_migrations_dir
 from emg_persistence.provisioning import AUDIT_HISTORY_TABLE, GOVERNED_DATABASE_ROLES
+from emg_persistence.provisioning import __main__ as provisioning_cli
 
 
 def test_database_bootstrap_declares_only_adr_041_roles() -> None:
@@ -9,6 +12,8 @@ def test_database_bootstrap_declares_only_adr_041_roles() -> None:
         "emg_audit_migrator",
         "emg_audit_app",
         "emg_audit_projector",
+        "emg_knowledge_graph_migrator",
+        "emg_knowledge_graph_app",
     )
     assert AUDIT_HISTORY_TABLE == "audit_schema_migrations"
 
@@ -40,3 +45,40 @@ def test_production_audit_migration_stream_does_not_reference_local_seed_sql() -
         sql = path.read_text(encoding="utf-8")
         assert "tools/seed-data" not in sql
         assert "local_dev" not in sql
+
+
+def test_database_bootstrap_cli_sources_all_role_credentials_from_canonical_dsns(
+    monkeypatch,
+) -> None:
+    env = {
+        "EMG_DATABASE_BOOTSTRAP_ADMIN_DSN": "admin-dsn",
+        "EMG_AUDIT_MIGRATION_POSTGRES_DSN": "audit-migration-dsn",
+        "EMG_AUDIT_POSTGRES_DSN": "audit-runtime-dsn",
+        "EMG_AUDIT_PROJECTOR_POSTGRES_DSN": "audit-projector-dsn",
+        "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN": "kg-migration-dsn",
+        "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN": "kg-runtime-dsn",
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    calls: list[tuple[str, dict[str, str]]] = []
+    monkeypatch.setattr(
+        provisioning_cli,
+        "bootstrap_database_roles",
+        lambda admin_dsn, role_dsns: calls.append((admin_dsn, dict(role_dsns))),
+    )
+    monkeypatch.setattr(sys, "argv", ["emg-persistence-provisioning", "database-bootstrap"])
+
+    provisioning_cli.main()
+
+    assert calls == [
+        (
+            "admin-dsn",
+            {
+                "emg_audit_migrator": "audit-migration-dsn",
+                "emg_audit_app": "audit-runtime-dsn",
+                "emg_audit_projector": "audit-projector-dsn",
+                "emg_knowledge_graph_migrator": "kg-migration-dsn",
+                "emg_knowledge_graph_app": "kg-runtime-dsn",
+            },
+        )
+    ]

@@ -21,6 +21,8 @@ GOVERNED_DATABASE_ROLES = (
     "emg_audit_migrator",
     "emg_audit_app",
     "emg_audit_projector",
+    "emg_knowledge_graph_migrator",
+    "emg_knowledge_graph_app",
 )
 _AUDIT_TABLES = ("audit_events", "evidence_custody_events")
 _AUDIT_COLUMNS = {
@@ -179,6 +181,16 @@ def bootstrap_database_roles(
         )
         cursor.execute(
             sql.SQL("REVOKE CREATE ON SCHEMA {} FROM emg_audit_app, emg_audit_projector").format(
+                sql.Identifier(schema_name)
+            )
+        )
+        cursor.execute(
+            sql.SQL("GRANT CREATE, USAGE ON SCHEMA {} TO emg_knowledge_graph_migrator").format(
+                sql.Identifier(schema_name)
+            )
+        )
+        cursor.execute(
+            sql.SQL("REVOKE CREATE ON SCHEMA {} FROM emg_knowledge_graph_app").format(
                 sql.Identifier(schema_name)
             )
         )

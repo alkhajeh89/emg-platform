@@ -72,7 +72,8 @@ complete successfully before continuing:
    This is part of the external-infrastructure-prerequisite stage; it does not
    make workloads deployable.
 2. Run `emg-database-bootstrap` (`10-database-roles`). In addition to converging
-   the three governed roles, this command validates any pre-existing local-seed
+   the three governed Audit/projector roles and the two ADR-034 Knowledge Graph
+   roles, this command validates any pre-existing local-seed
    Audit tables against the accepted schema contract and transfers ownership of
    only `audit_events` and `evidence_custody_events` to
    `emg_audit_migrator`. A mismatch fails the stage without changing ownership.
@@ -161,7 +162,9 @@ The checked-in `ExternalSecret` resources contain remote keys only. Kubernetes
 Secrets are created by the operator; absent Secrets prevent container startup.
 The database bootstrap administrator credential is mounted only in the
 database-bootstrap Job. Audit and Knowledge Graph migration credentials are
-mounted only in migration/validation Jobs. The Keycloak administrator
+mounted only in bootstrap, migration, and validation Jobs; the Knowledge Graph
+runtime DSN is additionally mounted in bootstrap so its role password can be
+converged, and in the Knowledge Graph serving workload. The Keycloak administrator
 credential is mounted only in provisioning/validation Jobs. Audit and
 projector workloads receive the same non-secret identity inventory; only the
 projector receives the secret-bearing tenant credential mapping.

@@ -17,7 +17,7 @@ spec:
           ports: [{name: http, containerPort: 8000}]
           envFrom: [{configMapRef: {name: emg-knowledge-graph-config}}]
           env:
-            - {name: EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: runtime-postgres-dsn}}}
+            - {name: EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: postgres-dsn}}}
             - {name: EMG_KNOWLEDGE_GRAPH_API_NEO4J_USER, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: neo4j-user}}}
             - {name: EMG_KNOWLEDGE_GRAPH_API_NEO4J_PASSWORD, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: neo4j-password}}}
             - {name: EMG_KNOWLEDGE_GRAPH_API_AUDIT_PRODUCER_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: audit-producer-client-secret}}}
