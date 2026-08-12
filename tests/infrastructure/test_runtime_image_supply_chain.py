@@ -211,6 +211,11 @@ def test_audit_projector_image_is_smoked_before_scan_and_publication() -> None:
     assert "smoke_audit_projector_image.py" in smoke["run"]
     assert '"emg-release/audit-projector:${GITHUB_SHA}" python /smoke.py' in smoke["run"]
 
+    smoke_script = (ROOT / "tools/ci/smoke_audit_projector_image.py").read_text(encoding="utf-8")
+    assert '"EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN": "postgresql://smoke"' in smoke_script
+    assert '"EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN": "postgresql://smoke"' in smoke_script
+    assert "provisioning.bootstrap_database_roles = lambda" in smoke_script
+
 
 def test_workflow_signs_verifies_attests_and_records_every_matrix_digest() -> None:
     workflow = _workflow()
