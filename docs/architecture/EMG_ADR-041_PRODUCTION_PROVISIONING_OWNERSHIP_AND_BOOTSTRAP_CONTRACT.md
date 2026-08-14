@@ -135,6 +135,25 @@ The bootstrap authority may be implemented as a bounded one-shot Job or an equiv
 operator/CD-controlled step using existing platform patterns. It is not a new database
 operator or orchestration system.
 
+Adoption and re-validation of an already-governed object must not assume the bootstrap
+authority itself holds a direct, standing data-plane grant on that object. By this
+contract's own design the authority never does: ownership and all data-plane grants on
+a governed object belong to the migrator/runtime roles it created, not to the authority.
+Any catalog introspection performed to validate or re-assert that state (column,
+constraint, default, or ownership signatures) must therefore use PostgreSQL catalog
+sources whose visibility does not depend on the querying role's own object-level
+privileges (for example `pg_attribute`, `pg_constraint`, `pg_attrdef`, and `pg_tables`),
+never a privilege-filtered `information_schema` view such as `information_schema
+.columns`, `.table_privileges`, or `.column_privileges` for this purpose. A statement
+that re-asserts ownership of an already-correctly-owned object (PostgreSQL requires the
+connecting role to currently own an object before it may run `ALTER ... OWNER TO` on it,
+even to reassign it to its existing owner) is subject to the same temporary-membership
+requirement as authoring a new object: the authority acquires the governed role's
+membership only for that statement and relinquishes it before the enclosing transaction
+commits. This is not a new privilege axis; it is the same "relinquish no administrative
+capability" and SET-ROLE-scoping requirements above, applied to every adoption/
+validation code path, not only initial schema creation.
+
 ## 4. Audit Schema Ownership and Migration Authority
 
 `emg_audit_migrator` is the canonical production owner of Audit Service PostgreSQL
