@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from typing import Any
 
 import psycopg
@@ -221,6 +222,32 @@ def _create_or_converge_role(cursor: Any, role: str, password: str) -> None:
         raise RuntimeError(f"PostgreSQL role {role} has non-conformant attributes")
 
 
+@contextmanager
+def _temporary_role_membership(cursor: Any, role: str) -> Iterator[None]:
+    """Grant the connected administrator SET ROLE on ``role`` only for the
+    statement(s) that require it, then revoke it before the enclosing
+    transaction commits.
+
+    PostgreSQL 16 no longer grants a CREATEROLE administrator implicit
+    membership in roles it creates (unlike PostgreSQL < 16), so operations
+    such as ``CREATE SCHEMA ... AUTHORIZATION`` and ``ALTER ... OWNER TO``
+    fail for a non-superuser bootstrap administrator (e.g. Cloud SQL's
+    default admin) unless it is first granted membership. The bootstrap
+    administrator must not retain standing membership in a governed
+    runtime role, so the grant is scoped to this block only. If the
+    wrapped statement raises, the enclosing transaction is rolled back by
+    the caller and the revoke below is intentionally skipped -- attempting
+    it would itself fail against the now-aborted transaction.
+    """
+    cursor.execute("SELECT current_user")
+    admin_row = cursor.fetchone()
+    assert admin_row is not None
+    admin = admin_row[0]
+    cursor.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(role), sql.Identifier(admin)))
+    yield
+    cursor.execute(sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(role), sql.Identifier(admin)))
+
+
 def bootstrap_database_roles(
     admin_dsn: str, role_dsns: Mapping[str, str]
 ) -> None:  # pragma: no cover - live PostgreSQL
@@ -280,22 +307,26 @@ def _bootstrap_identity_schema(cursor: Any) -> None:
         (IDENTITY_SCHEMA,),
     )
     owner = cursor.fetchone()
-    if owner is None:
+    if owner is not None and owner != ("emg_identity_migrator",):
+        raise RuntimeError("existing emg_identity schema is not owned by emg_identity_migrator")
+    # REVOKE below requires ownership-level authority on every run, not only
+    # at initial creation, so the temporary membership spans the schema's
+    # full owner-privileged statement sequence.
+    with _temporary_role_membership(cursor, "emg_identity_migrator"):
+        if owner is None:
+            cursor.execute(
+                sql.SQL("CREATE SCHEMA {} AUTHORIZATION emg_identity_migrator").format(
+                    sql.Identifier(IDENTITY_SCHEMA)
+                )
+            )
         cursor.execute(
-            sql.SQL("CREATE SCHEMA {} AUTHORIZATION emg_identity_migrator").format(
+            sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(sql.Identifier(IDENTITY_SCHEMA))
+        )
+        cursor.execute(
+            sql.SQL("REVOKE CREATE ON SCHEMA {} FROM emg_identity_app").format(
                 sql.Identifier(IDENTITY_SCHEMA)
             )
         )
-    elif owner != ("emg_identity_migrator",):
-        raise RuntimeError("existing emg_identity schema is not owned by emg_identity_migrator")
-    cursor.execute(
-        sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(sql.Identifier(IDENTITY_SCHEMA))
-    )
-    cursor.execute(
-        sql.SQL("REVOKE CREATE ON SCHEMA {} FROM emg_identity_app").format(
-            sql.Identifier(IDENTITY_SCHEMA)
-        )
-    )
 
 
 def _audit_schema_signature(cursor: Any, schema_name: str, table: str) -> tuple[Any, Any, Any]:
@@ -467,52 +498,63 @@ def _identity_tables_in_schema(cursor: Any, schema_name: str) -> tuple[str, ...]
 
 
 def _adopt_existing_identity_schema(cursor: Any) -> None:
-    legacy = _identity_tables_in_schema(cursor, "public")
-    governed = _identity_tables_in_schema(cursor, IDENTITY_SCHEMA)
-    cursor.execute("SELECT to_regclass(%s)", (IDENTITY_HISTORY_RELATION,))
-    history_exists = cursor.fetchone() != (None,)
-    if governed:
-        if set(governed) != set(_IDENTITY_TABLES) or legacy:
-            raise RuntimeError("Identity schema state is partial or conflicting; adoption refused")
-        _validate_identity_schema(cursor, IDENTITY_SCHEMA)
-        cursor.execute(
-            "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = %s "
-            "AND tablename = ANY(%s) ORDER BY tablename",
-            (IDENTITY_SCHEMA, list(_IDENTITY_TABLES)),
-        )
-        if {str(row[1]) for row in cursor.fetchall()} != {"emg_identity_migrator"}:
-            raise RuntimeError("governed Identity tables have conflicting ownership")
-        return
-    if not legacy:
-        return
-    if history_exists:
-        raise RuntimeError("legacy Identity tables conflict with existing migration history")
-    if set(legacy) != set(_IDENTITY_TABLES):
-        raise RuntimeError("legacy Identity schema is incomplete; adoption refused")
-    _validate_identity_schema(cursor, "public", allow_empty_grants=True)
-    cursor.execute(
-        "SELECT count(DISTINCT tableowner) FROM pg_tables WHERE schemaname = 'public' "
-        "AND tablename = ANY(%s)",
-        (list(_IDENTITY_TABLES),),
-    )
-    if cursor.fetchone() != (1,):
-        raise RuntimeError("legacy Identity tables have ambiguous ownership")
-    for table in _IDENTITY_TABLES:
-        cursor.execute(
-            sql.SQL("ALTER TABLE public.{} SET SCHEMA {}").format(
-                sql.Identifier(table), sql.Identifier(IDENTITY_SCHEMA)
+    # The entire body introspects and (on the legacy-adoption path) alters
+    # objects owned by emg_identity_migrator, none of which are visible or
+    # alterable by a non-superuser administrator without that role's
+    # privileges -- the schema has no PUBLIC grants (see
+    # _bootstrap_identity_schema). Temporary membership spans the whole
+    # function rather than only the DDL statements so every introspection
+    # path (governed-adoption check, legacy-adoption check, and the no-op
+    # "nothing to adopt" path) sees consistent, correct results.
+    with _temporary_role_membership(cursor, "emg_identity_migrator"):
+        legacy = _identity_tables_in_schema(cursor, "public")
+        governed = _identity_tables_in_schema(cursor, IDENTITY_SCHEMA)
+        cursor.execute("SELECT to_regclass(%s)", (IDENTITY_HISTORY_RELATION,))
+        history_exists = cursor.fetchone() != (None,)
+        if governed:
+            if set(governed) != set(_IDENTITY_TABLES) or legacy:
+                raise RuntimeError(
+                    "Identity schema state is partial or conflicting; adoption refused"
+                )
+            _validate_identity_schema(cursor, IDENTITY_SCHEMA)
+            cursor.execute(
+                "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = %s "
+                "AND tablename = ANY(%s) ORDER BY tablename",
+                (IDENTITY_SCHEMA, list(_IDENTITY_TABLES)),
             )
-        )
+            if {str(row[1]) for row in cursor.fetchall()} != {"emg_identity_migrator"}:
+                raise RuntimeError("governed Identity tables have conflicting ownership")
+            return
+        if not legacy:
+            return
+        if history_exists:
+            raise RuntimeError("legacy Identity tables conflict with existing migration history")
+        if set(legacy) != set(_IDENTITY_TABLES):
+            raise RuntimeError("legacy Identity schema is incomplete; adoption refused")
+        _validate_identity_schema(cursor, "public", allow_empty_grants=True)
         cursor.execute(
-            sql.SQL("ALTER TABLE {}.{} OWNER TO emg_identity_migrator").format(
-                sql.Identifier(IDENTITY_SCHEMA), sql.Identifier(table)
-            )
+            "SELECT count(DISTINCT tableowner) FROM pg_tables WHERE schemaname = 'public' "
+            "AND tablename = ANY(%s)",
+            (list(_IDENTITY_TABLES),),
         )
-        cursor.execute(
-            sql.SQL("REVOKE ALL ON TABLE {}.{} FROM PUBLIC, emg_identity_app").format(
-                sql.Identifier(IDENTITY_SCHEMA), sql.Identifier(table)
+        if cursor.fetchone() != (1,):
+            raise RuntimeError("legacy Identity tables have ambiguous ownership")
+        for table in _IDENTITY_TABLES:
+            cursor.execute(
+                sql.SQL("ALTER TABLE public.{} SET SCHEMA {}").format(
+                    sql.Identifier(table), sql.Identifier(IDENTITY_SCHEMA)
+                )
             )
-        )
+            cursor.execute(
+                sql.SQL("ALTER TABLE {}.{} OWNER TO emg_identity_migrator").format(
+                    sql.Identifier(IDENTITY_SCHEMA), sql.Identifier(table)
+                )
+            )
+            cursor.execute(
+                sql.SQL("REVOKE ALL ON TABLE {}.{} FROM PUBLIC, emg_identity_app").format(
+                    sql.Identifier(IDENTITY_SCHEMA), sql.Identifier(table)
+                )
+            )
 
 
 def _validate_adoptable_audit_schema(cursor: Any, schema_name: str) -> None:
