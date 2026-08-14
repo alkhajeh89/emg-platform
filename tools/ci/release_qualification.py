@@ -23,6 +23,29 @@ class QualificationError(ValueError):
     """Release evidence is incomplete, mixed, mutable, or unqualified."""
 
 
+_RELEASE_VERSION = re.compile(
+    r"^v(?P<major>0|[1-9][0-9]*)\."
+    r"(?P<minor>0|[1-9][0-9]*)\."
+    r"(?P<patch>0|[1-9][0-9]*)"
+    r"(?:-rc\.(?P<rc>0|[1-9][0-9]*))?$"
+)
+
+
+def _release_order(version: object) -> tuple[int, int, int, int, int]:
+    if not isinstance(version, str) or (match := _RELEASE_VERSION.fullmatch(version)) is None:
+        raise QualificationError(
+            "rollback release version is not governed vMAJOR.MINOR.PATCH[-rc.N]"
+        )
+    rc = match.group("rc")
+    return (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+        1 if rc is None else 0,
+        0 if rc is None else int(rc),
+    )
+
+
 def _json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -221,6 +244,10 @@ def rollback_gate(current_path: Path, previous_path: Path) -> None:
         raise QualificationError("rollback release sets differ")
     if current["release"] == previous["release"]:
         raise QualificationError("rollback candidate must be a prior distinct release")
+    current_order = _release_order(current["release"].get("version"))
+    previous_order = _release_order(previous["release"].get("version"))
+    if previous_order >= current_order:
+        raise QualificationError("rollback candidate version must predate the current release")
     if (
         current["compatibility"]["migrationSetSha256"]
         != previous["compatibility"]["migrationSetSha256"]
