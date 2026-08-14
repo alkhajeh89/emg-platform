@@ -116,6 +116,21 @@ fail closed if any reserved attribute is elevated. It must still converge provid
 permitted attributes and credentials and verify the complete effective role state. This
 is an operational compatibility rule; it does not relax the governed role contract.
 
+PostgreSQL 16 grants a CREATEROLE administrator only ADMIN OPTION over a role it
+creates, never INHERIT or SET; a non-superuser administrator therefore cannot itself
+author an object with `AUTHORIZATION`/`OWNER TO` naming that role immediately after
+creating it, even though it retains full ability to alter and converge the role's
+attributes on every subsequent bootstrap run. Where the governed contract requires the
+bootstrap authority to create a schema or reassign a table's ownership to a role it
+manages, the authority must acquire that role's membership only for the statement(s)
+that require it and revoke it before the enclosing transaction commits. This is the
+same "relinquish no administrative capability" principle applied to a second, distinct
+PostgreSQL privilege axis (the ability to act as a role, not merely to administer it):
+standing usage-level membership must never persist past the operation it was acquired
+for, while the ADMIN OPTION membership PostgreSQL grants automatically on role creation
+is structural and load-bearing for future convergence, and is not something bootstrap
+can or should relinquish.
+
 The bootstrap authority may be implemented as a bounded one-shot Job or an equivalent
 operator/CD-controlled step using existing platform patterns. It is not a new database
 operator or orchestration system.
