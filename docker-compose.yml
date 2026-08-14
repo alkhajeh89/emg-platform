@@ -142,7 +142,10 @@ services:
     mem_limit: 512m
     cpus: 1.0
     depends_on:
-      - keycloak
+      identity-migrate:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_started
     environment:
       EMG_IDENTITY_DEPLOYMENT_ENVIRONMENT: development
       EMG_IDENTITY_KEYCLOAK_BASE_URL: http://keycloak:8080
@@ -152,8 +155,26 @@ services:
       # Local-dev-only signing key; production overrides via the centralized
       # secrets store (Engineering Master Plan §5), never via this file.
       EMG_IDENTITY_SESSION_SIGNING_KEY: emg_local_dev_session_signing_key_do_not_use_in_prod
+      EMG_IDENTITY_REFRESH_TOKEN_STORE_BACKEND: postgres
+      EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN: postgresql://emg_identity_app:emg_identity_local_dev_only_do_not_use_in_prod@postgres:5432/emg
     ports:
       - "8001:8000"
+
+  identity-migrate:
+    build:
+      context: .
+      dockerfile: services/audit-projector/Dockerfile
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [python, -m, emg_persistence.provisioning, identity-migrate]
+    environment:
+      EMG_IDENTITY_MIGRATION_POSTGRES_DSN: postgresql://emg_identity_migrator:emg_identity_migrator_local_dev_only_do_not_use_in_prod@postgres:5432/emg
 
   audit:
     build:

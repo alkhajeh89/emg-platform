@@ -63,9 +63,18 @@ def keycloak_client_dependency(settings: SettingsDep) -> KeycloakClient:
 
 
 @lru_cache
-def _refresh_token_store_singleton(backend: str, dsn: str) -> RefreshTokenStore:
+def _refresh_token_store_singleton(
+    backend: str, dsn: str, recovery_authority_file: str
+) -> RefreshTokenStore:
     if backend == "postgres":
-        return PostgresRefreshTokenStore(dsn)
+        from pathlib import Path
+
+        return PostgresRefreshTokenStore(
+            dsn,
+            recovery_authority_file=(
+                Path(recovery_authority_file) if recovery_authority_file else None
+            ),
+        )
     return InMemoryRefreshTokenStore()
 
 
@@ -75,6 +84,7 @@ def session_manager_dependency(settings: SettingsDep) -> SessionManager:
         _refresh_token_store_singleton(
             settings.refresh_token_store_backend,
             settings.refresh_token_postgres_dsn,
+            settings.recovery_authority_file,
         ),
     )
 

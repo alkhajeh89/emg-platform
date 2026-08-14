@@ -1,0 +1,17 @@
+# ADR-043 Amendment 1 A9.4 remediation (round 2): workload-scoped PostgreSQL
+# egress for the Audit Projector only. NOT included by kustomization.yaml --
+# copy, fill in the environment-resolved PostgreSQL ipBlock/port (the same
+# address used by every other *-db-egress.example.yaml file), and apply with
+# `kubectl apply -f`.
+#
+# This podSelector never matches any `emg-identity*` label. See
+# external-egress.example.yaml's comment for why PostgreSQL reachability must
+# never be granted through that file's broad selector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-audit-projector-db-egress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: emg-audit-projector}
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for the EMG PostgreSQL target.

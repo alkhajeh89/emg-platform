@@ -7,6 +7,7 @@ PYTHON_BIN="${EMG_BACKUP_PYTHON:-python3}"
 require_command pg_isready
 require_command psql
 : "${EMG_RESTORE_DSN:?must be supplied by the secret store}"
+: "${EMG_IDENTITY_RECOVERY_DSN:?must be supplied by the secret store}"
 [[ $# -eq 1 ]] || die "usage: verify-recovery.sh MANIFEST"
 manifest="$1"
 expected_major="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["postgres"]["majorVersion"])' "$manifest")"
@@ -17,14 +18,17 @@ SELECT current_setting('server_version_num')::integer / 10000,
        current_database(),
        to_regclass('public.audit_events') IS NOT NULL,
        to_regclass('public.evidence_custody_events') IS NOT NULL,
+       to_regclass('emg_identity.identity_refresh_token_families') IS NOT NULL,
+       to_regclass('emg_identity.identity_refresh_tokens') IS NOT NULL,
+       to_regclass('emg_identity.identity_schema_migrations') IS NOT NULL,
        EXISTS (SELECT 1 FROM pg_namespace WHERE nspname='public'),
        NOT pg_is_in_recovery();
 SQL
 )"
-IFS='|' read -r major database audit_table custody_table public_schema recovery_complete <<<"$actual"
+IFS='|' read -r major database audit_table custody_table identity_families identity_tokens identity_history public_schema recovery_complete <<<"$actual"
 [[ "$major" == "$expected_major" ]] || die "PostgreSQL major version mismatch"
 [[ "$database" == "$expected_database" ]] || die "database identity mismatch"
-[[ "$audit_table" == t && "$custody_table" == t && "$public_schema" == t ]] || die "required schema/tables missing"
+[[ "$audit_table" == t && "$custody_table" == t && "$identity_families" == t && "$identity_tokens" == t && "$identity_history" == t && "$public_schema" == t ]] || die "required schema/tables missing"
 [[ "$recovery_complete" == t ]] || die "PostgreSQL is still in recovery"
 if [[ -n "${EMG_REQUIRED_EXTENSIONS:-}" ]]; then
   IFS=',' read -ra extensions <<<"$EMG_REQUIRED_EXTENSIONS"
@@ -45,4 +49,5 @@ fi
 if [[ -n "${EMG_RECOVERY_ASSERT_SQL:-}" ]]; then
   [[ "$(psql "$EMG_RESTORE_DSN" -XAtqc "$EMG_RECOVERY_ASSERT_SQL")" == t ]] || die "recovery row-level assertion failed"
 fi
+"$SCRIPT_DIR/invalidate-identity-refresh-state.sh"
 "$PYTHON_BIN" "$SCRIPT_DIR/verify-evidence-ledger.py" --dsn "$EMG_RESTORE_DSN" --manifest "$manifest"

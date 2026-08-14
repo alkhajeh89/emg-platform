@@ -132,9 +132,11 @@ def repository_qualification(
         "emg-database-bootstrap": "10-database-roles",
         "emg-audit-migration": "20-postgresql-migrations",
         "emg-knowledge-graph-migration": "20-postgresql-migrations",
+        "emg-identity-migration": "20-postgresql-migrations",
         "emg-keycloak-provision": "30-keycloak-projector-clients",
         "emg-provisioning-validate": "50-consistency-validation",
         "emg-audit": "60-audit-service",
+        "emg-identity": "60-identity-service",
         "emg-audit-projector": "70-audit-projector",
     }
     if any(staged.get(name) != stage for name, stage in required_stages.items()):

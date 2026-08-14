@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: emg-identity
+  annotations: {emg.platform/bootstrap-stage: "60-identity-service"}
 spec:
   replicas: 1
   strategy:
@@ -31,6 +32,13 @@ spec:
             - {name: EMG_IDENTITY_SERVICE_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: service-client-secret}}}
             - {name: EMG_IDENTITY_SESSION_SIGNING_KEY, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: session-signing-key}}}
             - {name: EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: refresh-postgres-dsn}}}
+            # ADR-043 Amendment 1 A3.3: path to the read-only mounted
+            # (generation, authority_revision) pair. The workload receives
+            # no provider credential and performs no direct call to the
+            # Approved Recovery Authority -- only the existing
+            # external-configuration controller boundary materializes this
+            # file (see the recovery-authority volume below).
+            - {name: EMG_IDENTITY_RECOVERY_AUTHORITY_FILE, value: /var/run/emg-identity/recovery-authority/recovery-authority.json}
           securityContext: &containerSecurity
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -41,6 +49,7 @@ spec:
           volumeMounts:
             - {name: tmp, mountPath: /tmp}
             - {name: audit-spool, mountPath: /var/lib/emg-identity/audit-spool}
+            - {name: recovery-authority, mountPath: /var/run/emg-identity/recovery-authority, readOnly: true}
           startupProbe: &startupProbe
             httpGet: {path: /healthz, port: http}
             periodSeconds: 2
@@ -61,6 +70,13 @@ spec:
           emptyDir: {sizeLimit: 64Mi}
         - name: audit-spool
           persistentVolumeClaim: {claimName: emg-identity-audit-spool}
+        # ADR-043 Amendment 1 A3.3: materialized by the existing governed
+        # ExternalSecret/controller boundary, never originated in-cluster.
+        # A missing, unreadable, or malformed file fails Identity readiness
+        # and every refresh-token operation closed (A8) -- it is not an
+        # optional mount.
+        - name: recovery-authority
+          secret: {secretName: emg-identity-recovery-authority, defaultMode: 0o440}
 ---
 apiVersion: v1
 kind: ConfigMap

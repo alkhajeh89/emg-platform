@@ -6,6 +6,7 @@ import hashlib
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Protocol
 
 
@@ -93,18 +94,47 @@ class InMemoryRefreshTokenStore:
 
 
 class PostgresRefreshTokenStore:
-    """Durable adapter; raw token and family identifiers are never stored."""
+    """Durable adapter; raw token and family identifiers are never stored.
 
-    def __init__(self, dsn: str) -> None:
+    ``recovery_authority_file``, when supplied, enforces the ADR-043
+    Amendment 1 A8 request-time recovery gate before every operation: the
+    externally materialized (generation, authority_revision) pair must equal
+    PostgreSQL's reconciled pair, re-checked on every call so that a pod
+    that becomes stale after readiness (e.g. the external authority rotates
+    mid-flight) rejects further operations fail closed rather than relying
+    solely on Kubernetes readiness propagation (A8).
+    """
+
+    def __init__(
+        self,
+        dsn: str,
+        *,
+        recovery_authority_file: Path | None = None,
+        recovery_gate_timeout_seconds: float = 2.0,
+    ) -> None:
         self._dsn = dsn
+        self._recovery_authority_file = recovery_authority_file
+        self._recovery_gate_timeout_seconds = recovery_gate_timeout_seconds
+
+    def _enforce_recovery_gate(self) -> None:
+        if self._recovery_authority_file is None:
+            return
+        from .recovery_gate import evaluate_recovery_gate
+
+        evaluate_recovery_gate(
+            dsn=self._dsn,
+            authority_file=self._recovery_authority_file,
+            timeout_seconds=self._recovery_gate_timeout_seconds,
+        )
 
     def register(self, family_id: str, token_id: str, expires_at: datetime) -> None:
         import psycopg
 
+        self._enforce_recovery_gate()
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO identity_refresh_token_families (family_hash)
+                INSERT INTO emg_identity.identity_refresh_token_families (family_hash)
                 VALUES (%s)
                 ON CONFLICT (family_hash) DO NOTHING
                 """,
@@ -112,7 +142,7 @@ class PostgresRefreshTokenStore:
             )
             cursor.execute(
                 """
-                INSERT INTO identity_refresh_tokens
+                INSERT INTO emg_identity.identity_refresh_tokens
                     (token_hash, family_hash, status, expires_at)
                 VALUES (%s, %s, 'active', %s)
                 """,
@@ -128,13 +158,14 @@ class PostgresRefreshTokenStore:
     ) -> bool:
         import psycopg
 
+        self._enforce_recovery_gate()
         family_hash = _identifier_hash(family_id)
         current_hash = _identifier_hash(current_token_id)
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT revoked_at
-                FROM identity_refresh_token_families
+                FROM emg_identity.identity_refresh_token_families
                 WHERE family_hash = %s
                 FOR UPDATE
                 """,
@@ -144,7 +175,7 @@ class PostgresRefreshTokenStore:
             cursor.execute(
                 """
                 SELECT status, expires_at
-                FROM identity_refresh_tokens
+                FROM emg_identity.identity_refresh_tokens
                 WHERE token_hash = %s AND family_hash = %s
                 FOR UPDATE
                 """,
@@ -161,7 +192,7 @@ class PostgresRefreshTokenStore:
             if not valid:
                 cursor.execute(
                     """
-                    UPDATE identity_refresh_token_families
+                    UPDATE emg_identity.identity_refresh_token_families
                     SET revoked_at = clock_timestamp()
                     WHERE family_hash = %s
                     """,
@@ -169,7 +200,7 @@ class PostgresRefreshTokenStore:
                 )
                 cursor.execute(
                     """
-                    UPDATE identity_refresh_tokens
+                    UPDATE emg_identity.identity_refresh_tokens
                     SET status = 'revoked'
                     WHERE family_hash = %s
                     """,
@@ -178,7 +209,7 @@ class PostgresRefreshTokenStore:
                 return False
             cursor.execute(
                 """
-                UPDATE identity_refresh_tokens
+                UPDATE emg_identity.identity_refresh_tokens
                 SET status = 'rotated', rotated_at = clock_timestamp()
                 WHERE token_hash = %s
                 """,
@@ -186,7 +217,7 @@ class PostgresRefreshTokenStore:
             )
             cursor.execute(
                 """
-                INSERT INTO identity_refresh_tokens
+                INSERT INTO emg_identity.identity_refresh_tokens
                     (token_hash, family_hash, status, expires_at)
                 VALUES (%s, %s, 'active', %s)
                 """,
@@ -197,11 +228,12 @@ class PostgresRefreshTokenStore:
     def family_is_active(self, family_id: str) -> bool:
         import psycopg
 
+        self._enforce_recovery_gate()
         with psycopg.connect(self._dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT revoked_at IS NULL
-                FROM identity_refresh_token_families
+                FROM emg_identity.identity_refresh_token_families
                 WHERE family_hash = %s
                 """,
                 (_identifier_hash(family_id),),

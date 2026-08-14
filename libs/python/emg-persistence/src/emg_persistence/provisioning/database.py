@@ -9,7 +9,12 @@ import psycopg
 from psycopg import Connection, sql
 from psycopg.conninfo import conninfo_to_dict
 
-from ..migrate import audit_migrations_dir, default_migrations_dir, run_migrations
+from ..migrate import (
+    audit_migrations_dir,
+    default_migrations_dir,
+    identity_migrations_dir,
+    run_migrations,
+)
 from ..migrations.discovery import discover_migrations
 from ..migrations.executor import MigrationExecutor
 from ..migrations.model import AppliedMigration, Migration, MigrationKind
@@ -17,12 +22,16 @@ from ..migrations.runner import MigrationRunner
 from ..postgres.migration_executor import PostgresMigrationExecutor
 
 AUDIT_HISTORY_TABLE = "audit_schema_migrations"
+IDENTITY_SCHEMA = "emg_identity"
+IDENTITY_HISTORY_RELATION = f"{IDENTITY_SCHEMA}.identity_schema_migrations"
 GOVERNED_DATABASE_ROLES = (
     "emg_audit_migrator",
     "emg_audit_app",
     "emg_audit_projector",
     "emg_knowledge_graph_migrator",
     "emg_knowledge_graph_app",
+    "emg_identity_migrator",
+    "emg_identity_app",
 )
 _GOVERNED_ROLE_ATTRIBUTES = (True, False, False, False, False, False, False)
 _AUDIT_TABLES = ("audit_events", "evidence_custody_events")
@@ -116,6 +125,61 @@ _AUDIT_DEFAULTS = {
         ("metadata", "'{}'::jsonb"),
     },
 }
+IDENTITY_RECOVERY_TABLE = "identity_recovery_state"
+_IDENTITY_TABLES = ("identity_refresh_token_families", "identity_refresh_tokens")
+_IDENTITY_EXPECTED_TABLE_GRANTS: dict[str, tuple[tuple[str, str], ...]] = {
+    "identity_refresh_token_families": (
+        ("emg_identity_app", "INSERT"),
+        ("emg_identity_app", "SELECT"),
+    ),
+    "identity_refresh_tokens": (
+        ("emg_identity_app", "INSERT"),
+        ("emg_identity_app", "SELECT"),
+    ),
+    IDENTITY_RECOVERY_TABLE: (("emg_identity_app", "SELECT"),),
+}
+_IDENTITY_EXPECTED_COLUMN_GRANTS: dict[str, tuple[tuple[str, str], ...]] = {
+    "identity_refresh_token_families": (("emg_identity_app", "revoked_at"),),
+    "identity_refresh_tokens": (
+        ("emg_identity_app", "rotated_at"),
+        ("emg_identity_app", "status"),
+    ),
+    IDENTITY_RECOVERY_TABLE: (),
+}
+_IDENTITY_COLUMNS = {
+    "identity_refresh_token_families": (
+        ("family_hash", "text", True),
+        ("created_at", "timestamp with time zone", True),
+        ("revoked_at", "timestamp with time zone", False),
+    ),
+    "identity_refresh_tokens": (
+        ("token_hash", "text", True),
+        ("family_hash", "text", True),
+        ("status", "text", True),
+        ("expires_at", "timestamp with time zone", True),
+        ("rotated_at", "timestamp with time zone", False),
+    ),
+}
+_IDENTITY_CONSTRAINTS = {
+    "identity_refresh_token_families": {
+        ("p", "PRIMARY KEY (family_hash)"),
+    },
+    "identity_refresh_tokens": {
+        ("p", "PRIMARY KEY (token_hash)"),
+        (
+            "f",
+            "FOREIGN KEY (family_hash) REFERENCES identity_refresh_token_families(family_hash)",
+        ),
+        (
+            "c",
+            "CHECK ((status = ANY (ARRAY['active'::text, 'rotated'::text, 'revoked'::text])))",
+        ),
+    },
+}
+_IDENTITY_DEFAULTS = {
+    "identity_refresh_token_families": {("created_at", "clock_timestamp()")},
+    "identity_refresh_tokens": set(),
+}
 
 
 def _dsn_credential(dsn: str, expected_role: str) -> str:
@@ -204,7 +268,34 @@ def bootstrap_database_roles(
                 sql.Identifier(schema_name)
             )
         )
+        _bootstrap_identity_schema(cursor)
         _adopt_existing_audit_schema(cursor, schema_name)
+        _adopt_existing_identity_schema(cursor)
+
+
+def _bootstrap_identity_schema(cursor: Any) -> None:
+    cursor.execute(
+        "SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner "
+        "WHERE n.nspname = %s",
+        (IDENTITY_SCHEMA,),
+    )
+    owner = cursor.fetchone()
+    if owner is None:
+        cursor.execute(
+            sql.SQL("CREATE SCHEMA {} AUTHORIZATION emg_identity_migrator").format(
+                sql.Identifier(IDENTITY_SCHEMA)
+            )
+        )
+    elif owner != ("emg_identity_migrator",):
+        raise RuntimeError("existing emg_identity schema is not owned by emg_identity_migrator")
+    cursor.execute(
+        sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(sql.Identifier(IDENTITY_SCHEMA))
+    )
+    cursor.execute(
+        sql.SQL("REVOKE CREATE ON SCHEMA {} FROM emg_identity_app").format(
+            sql.Identifier(IDENTITY_SCHEMA)
+        )
+    )
 
 
 def _audit_schema_signature(cursor: Any, schema_name: str, table: str) -> tuple[Any, Any, Any]:
@@ -230,6 +321,198 @@ def _audit_schema_signature(cursor: Any, schema_name: str, table: str) -> tuple[
     )
     defaults = {(str(row[0]), str(row[1])) for row in cursor.fetchall()}
     return columns, constraints, defaults
+
+
+def _identity_schema_signature(cursor: Any, schema_name: str, table: str) -> tuple[Any, Any, Any]:
+    columns, named_constraints, defaults = _audit_schema_signature(cursor, schema_name, table)
+    constraints = {
+        (
+            constraint[1],
+            constraint[2]
+            .replace(f"REFERENCES {schema_name}.", "REFERENCES ")
+            .replace("REFERENCES public.", "REFERENCES "),
+        )
+        for constraint in named_constraints
+    }
+    return columns, constraints, defaults
+
+
+def _validate_identity_index(cursor: Any, schema_name: str) -> None:
+    cursor.execute(
+        "SELECT i.relname, am.amname, ix.indisunique, ix.indisprimary, "
+        "array_agg(a.attname ORDER BY key.ordinality) "
+        "FROM pg_class t JOIN pg_namespace n ON n.oid = t.relnamespace "
+        "JOIN pg_index ix ON ix.indrelid = t.oid "
+        "JOIN pg_class i ON i.oid = ix.indexrelid "
+        "JOIN pg_am am ON am.oid = i.relam "
+        "JOIN unnest(ix.indkey) WITH ORDINALITY AS key(attnum, ordinality) ON true "
+        "JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = key.attnum "
+        "WHERE n.nspname = %s AND t.relname = 'identity_refresh_tokens' "
+        "AND NOT ix.indisprimary GROUP BY i.relname, am.amname, ix.indisunique, ix.indisprimary",
+        (schema_name,),
+    )
+    indexes = cursor.fetchall()
+    if indexes != [("idx_identity_refresh_tokens_family", "btree", False, False, ["family_hash"])]:
+        raise RuntimeError(
+            f"existing {schema_name}.identity_refresh_tokens indexes do not match "
+            "the governed Identity adoption contract"
+        )
+
+
+def _validate_identity_table_security_state(
+    cursor: Any, schema_name: str, table: str, *, allow_empty_grants: bool = False
+) -> None:
+    """P0-1: reject any unexpected security-material catalog state (A11).
+
+    Covers grantee/ACL (including PUBLIC), column ACL, ownership, user
+    triggers, RLS/FORCE RLS, policies, rules, and security labels. When
+    ``allow_empty_grants`` is True (pre-adoption legacy-table validation),
+    the object's non-owner grants must be either empty or exactly the
+    governed baseline; a divergent legacy grant is rejected, never silently
+    normalized (D-6, A11). When False (governed/Stage-50 validation), the
+    non-owner grants and ownership must exactly match the governed baseline.
+    """
+
+    qualified = f"{schema_name}.{table}"
+    cursor.execute(
+        "SELECT tableowner FROM pg_tables WHERE schemaname = %s AND tablename = %s",
+        (schema_name, table),
+    )
+    owner_row = cursor.fetchone()
+    if owner_row is None:
+        raise RuntimeError(f"{qualified} is absent")
+    owner = owner_row[0]
+    cursor.execute(
+        "SELECT grantee, privilege_type FROM information_schema.table_privileges "
+        "WHERE table_schema = %s AND table_name = %s AND grantee <> %s "
+        "ORDER BY grantee, privilege_type",
+        (schema_name, table, owner),
+    )
+    table_grants = cursor.fetchall()
+    expected_table_grants = list(_IDENTITY_EXPECTED_TABLE_GRANTS[table])
+    if table_grants != expected_table_grants and not (allow_empty_grants and not table_grants):
+        raise RuntimeError(f"{qualified} has an unexpected table-level grantee or privilege")
+    cursor.execute(
+        "SELECT grantee, column_name FROM information_schema.column_privileges "
+        "WHERE table_schema = %s AND table_name = %s AND grantee <> %s "
+        "AND privilege_type = 'UPDATE' ORDER BY grantee, column_name",
+        (schema_name, table, owner),
+    )
+    column_grants = cursor.fetchall()
+    expected_column_grants = list(_IDENTITY_EXPECTED_COLUMN_GRANTS[table])
+    if column_grants != expected_column_grants and not (allow_empty_grants and not column_grants):
+        raise RuntimeError(f"{qualified} has an unexpected column-level grantee")
+    cursor.execute(
+        "SELECT tgname FROM pg_trigger WHERE tgrelid = %s::regclass AND NOT tgisinternal",
+        (qualified,),
+    )
+    if cursor.fetchall():
+        raise RuntimeError(f"{qualified} has an unexpected user-defined trigger")
+    cursor.execute(
+        "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = %s::regclass",
+        (qualified,),
+    )
+    if cursor.fetchone() != (False, False):
+        raise RuntimeError(f"{qualified} has unexpected row-level security state")
+    cursor.execute(
+        "SELECT policyname FROM pg_policies WHERE schemaname = %s AND tablename = %s",
+        (schema_name, table),
+    )
+    if cursor.fetchall():
+        raise RuntimeError(f"{qualified} has an unexpected row-security policy")
+    cursor.execute(
+        "SELECT rulename FROM pg_rules WHERE schemaname = %s AND tablename = %s",
+        (schema_name, table),
+    )
+    if cursor.fetchall():
+        raise RuntimeError(f"{qualified} has an unexpected rule")
+    cursor.execute(
+        "SELECT label FROM pg_seclabel WHERE objoid = %s::regclass "
+        "AND classoid = 'pg_class'::regclass",
+        (qualified,),
+    )
+    if cursor.fetchall():
+        raise RuntimeError(f"{qualified} has an unexpected security label")
+    if not allow_empty_grants and owner != "emg_identity_migrator":
+        raise RuntimeError(f"{qualified} owner is not emg_identity_migrator")
+
+
+def _validate_identity_schema(
+    cursor: Any, schema_name: str, *, allow_empty_grants: bool = False
+) -> None:
+    for table in _IDENTITY_TABLES:
+        columns, constraints, defaults = _identity_schema_signature(cursor, schema_name, table)
+        if (
+            columns != _IDENTITY_COLUMNS[table]
+            or constraints != _IDENTITY_CONSTRAINTS[table]
+            or defaults != _IDENTITY_DEFAULTS[table]
+        ):
+            raise RuntimeError(
+                f"existing {schema_name}.{table} does not match the governed "
+                "Identity adoption contract"
+            )
+        _validate_identity_table_security_state(
+            cursor, schema_name, table, allow_empty_grants=allow_empty_grants
+        )
+    _validate_identity_index(cursor, schema_name)
+
+
+def _identity_tables_in_schema(cursor: Any, schema_name: str) -> tuple[str, ...]:
+    cursor.execute(
+        "SELECT tablename FROM pg_tables WHERE schemaname = %s AND tablename = ANY(%s) "
+        "ORDER BY tablename",
+        (schema_name, list(_IDENTITY_TABLES)),
+    )
+    return tuple(str(row[0]) for row in cursor.fetchall())
+
+
+def _adopt_existing_identity_schema(cursor: Any) -> None:
+    legacy = _identity_tables_in_schema(cursor, "public")
+    governed = _identity_tables_in_schema(cursor, IDENTITY_SCHEMA)
+    cursor.execute("SELECT to_regclass(%s)", (IDENTITY_HISTORY_RELATION,))
+    history_exists = cursor.fetchone() != (None,)
+    if governed:
+        if set(governed) != set(_IDENTITY_TABLES) or legacy:
+            raise RuntimeError("Identity schema state is partial or conflicting; adoption refused")
+        _validate_identity_schema(cursor, IDENTITY_SCHEMA)
+        cursor.execute(
+            "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = %s "
+            "AND tablename = ANY(%s) ORDER BY tablename",
+            (IDENTITY_SCHEMA, list(_IDENTITY_TABLES)),
+        )
+        if {str(row[1]) for row in cursor.fetchall()} != {"emg_identity_migrator"}:
+            raise RuntimeError("governed Identity tables have conflicting ownership")
+        return
+    if not legacy:
+        return
+    if history_exists:
+        raise RuntimeError("legacy Identity tables conflict with existing migration history")
+    if set(legacy) != set(_IDENTITY_TABLES):
+        raise RuntimeError("legacy Identity schema is incomplete; adoption refused")
+    _validate_identity_schema(cursor, "public", allow_empty_grants=True)
+    cursor.execute(
+        "SELECT count(DISTINCT tableowner) FROM pg_tables WHERE schemaname = 'public' "
+        "AND tablename = ANY(%s)",
+        (list(_IDENTITY_TABLES),),
+    )
+    if cursor.fetchone() != (1,):
+        raise RuntimeError("legacy Identity tables have ambiguous ownership")
+    for table in _IDENTITY_TABLES:
+        cursor.execute(
+            sql.SQL("ALTER TABLE public.{} SET SCHEMA {}").format(
+                sql.Identifier(table), sql.Identifier(IDENTITY_SCHEMA)
+            )
+        )
+        cursor.execute(
+            sql.SQL("ALTER TABLE {}.{} OWNER TO emg_identity_migrator").format(
+                sql.Identifier(IDENTITY_SCHEMA), sql.Identifier(table)
+            )
+        )
+        cursor.execute(
+            sql.SQL("REVOKE ALL ON TABLE {}.{} FROM PUBLIC, emg_identity_app").format(
+                sql.Identifier(IDENTITY_SCHEMA), sql.Identifier(table)
+            )
+        )
 
 
 def _validate_adoptable_audit_schema(cursor: Any, schema_name: str) -> None:
@@ -273,6 +556,15 @@ def run_audit_migrations(
     with psycopg.connect(migration_dsn) as connection:
         executor = PostgresMigrationExecutor(connection, history_table=AUDIT_HISTORY_TABLE)
         return run_migrations(executor, audit_migrations_dir())
+
+
+def run_identity_migrations(
+    migration_dsn: str,
+) -> tuple[AppliedMigration, ...]:  # pragma: no cover - live PostgreSQL
+    _dsn_credential(migration_dsn, "emg_identity_migrator")
+    with psycopg.connect(migration_dsn) as connection:
+        executor = PostgresMigrationExecutor(connection, history_table=IDENTITY_HISTORY_RELATION)
+        return run_migrations(executor, identity_migrations_dir())
 
 
 def run_knowledge_graph_migrations(
@@ -511,11 +803,279 @@ def _validate_projector_database(connection: Connection[Any]) -> None:
             raise RuntimeError("Audit Projector UPDATE privileges do not match V007")
 
 
+def _validate_identity_database(connection: Connection[Any]) -> None:
+    _validate_role_attributes(connection)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner "
+            "WHERE n.nspname = %s",
+            (IDENTITY_SCHEMA,),
+        )
+        if cursor.fetchone() != ("emg_identity_migrator",):
+            raise RuntimeError("Identity schema is absent or not owned by its migrator")
+        _validate_identity_schema(cursor, IDENTITY_SCHEMA)
+        cursor.execute(
+            "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = %s "
+            "AND tablename IN ('identity_refresh_token_families', "
+            "'identity_refresh_tokens', 'identity_schema_migrations') ORDER BY tablename",
+            (IDENTITY_SCHEMA,),
+        )
+        if cursor.fetchall() != [
+            ("identity_refresh_token_families", "emg_identity_migrator"),
+            ("identity_refresh_tokens", "emg_identity_migrator"),
+            ("identity_schema_migrations", "emg_identity_migrator"),
+        ]:
+            raise RuntimeError("Identity objects are absent or not owned by their migrator")
+        cursor.execute(
+            "SELECT member.rolname, parent.rolname FROM pg_auth_members membership "
+            "JOIN pg_roles member ON member.oid = membership.member "
+            "JOIN pg_roles parent ON parent.oid = membership.roleid "
+            "WHERE member.rolname IN ('emg_identity_migrator', 'emg_identity_app') "
+            "ORDER BY member.rolname, parent.rolname"
+        )
+        if cursor.fetchall():
+            raise RuntimeError("Identity roles have prohibited role membership")
+        cursor.execute(
+            "SELECT version, success, dirty FROM "
+            "emg_identity.identity_schema_migrations WHERE kind = 'postgres' "
+            "ORDER BY version"
+        )
+        if cursor.fetchall() != [(1, True, False), (2, True, False)]:
+            raise RuntimeError("Identity migration history is incomplete or non-conformant")
+        cursor.execute(
+            "SELECT has_schema_privilege('emg_identity_app', %s, 'USAGE'), "
+            "has_schema_privilege('emg_identity_app', %s, 'CREATE'), "
+            "has_schema_privilege('public', %s, 'USAGE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_token_families', 'SELECT'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_token_families', 'INSERT'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_token_families', 'UPDATE'), "
+            "has_column_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_token_families', 'revoked_at', 'UPDATE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_token_families', 'DELETE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_token_families', 'TRUNCATE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'SELECT'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'INSERT'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'UPDATE'), "
+            "has_column_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'status', 'UPDATE'), "
+            "has_column_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'rotated_at', 'UPDATE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'DELETE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_refresh_tokens', 'TRUNCATE'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_schema_migrations', 'SELECT'), "
+            "has_table_privilege('emg_identity_app', "
+            "'emg_identity.identity_schema_migrations', 'UPDATE')",
+            (IDENTITY_SCHEMA, IDENTITY_SCHEMA, IDENTITY_SCHEMA),
+        )
+        if cursor.fetchone() != (
+            True,
+            False,
+            False,
+            True,
+            True,
+            False,
+            True,
+            False,
+            False,
+            True,
+            True,
+            False,
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+        ):
+            raise RuntimeError("Identity runtime privileges do not match ADR-043")
+        cursor.execute(
+            "SELECT table_name, column_name FROM information_schema.column_privileges "
+            "WHERE grantee = 'emg_identity_app' AND table_schema = %s "
+            "AND privilege_type = 'UPDATE' ORDER BY table_name, column_name",
+            (IDENTITY_SCHEMA,),
+        )
+        if cursor.fetchall() != [
+            ("identity_refresh_token_families", "revoked_at"),
+            ("identity_refresh_tokens", "rotated_at"),
+            ("identity_refresh_tokens", "status"),
+        ]:
+            raise RuntimeError("Identity runtime column privileges do not match ADR-043")
+        cursor.execute(
+            "SELECT n.nspname, c.relname, acl.privilege_type FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, "
+            "acldefault('r', c.relowner))) acl "
+            "JOIN pg_roles grantee ON grantee.oid = acl.grantee "
+            "WHERE grantee.rolname = 'emg_identity_app' AND n.nspname <> %s "
+            "UNION ALL "
+            "SELECT n.nspname, '', acl.privilege_type FROM pg_namespace n "
+            "CROSS JOIN LATERAL aclexplode(COALESCE(n.nspacl, "
+            "acldefault('n', n.nspowner))) acl "
+            "JOIN pg_roles grantee ON grantee.oid = acl.grantee "
+            "WHERE grantee.rolname = 'emg_identity_app' AND n.nspname <> %s "
+            "ORDER BY 1, 2, 3",
+            (IDENTITY_SCHEMA, IDENTITY_SCHEMA),
+        )
+        if cursor.fetchall():
+            raise RuntimeError("Identity runtime has unintended cross-schema table authority")
+        _validate_identity_recovery_state(cursor)
+
+
+def _validate_identity_recovery_state(cursor: Any) -> None:
+    """A11/Stage-50: validate the Amendment 1 recovery relation exactly.
+
+    Proves the relation exists, is owned by the migrator, carries the exact
+    singleton constraint, has no security-material divergence (ACLs,
+    triggers, RLS, policies, rules, security labels -- via the same P0-1
+    helper used for the refresh-state tables), grants runtime exactly
+    SELECT with no mutation/DDL authority, and holds exactly one reconciled
+    row (A8's bootstrap-then-reconcile-then-validate ordering). Structural
+    only: this function never creates, rotates, or reconciles a generation
+    (A11).
+    """
+
+    cursor.execute(
+        "SELECT r.rolname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname = %s AND c.relname = %s",
+        (IDENTITY_SCHEMA, IDENTITY_RECOVERY_TABLE),
+    )
+    if cursor.fetchone() != ("emg_identity_migrator",):
+        raise RuntimeError(
+            "Identity recovery-state relation is absent or not owned by its migrator"
+        )
+    _validate_identity_table_security_state(cursor, IDENTITY_SCHEMA, IDENTITY_RECOVERY_TABLE)
+    cursor.execute(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conrelid = %s::regclass AND contype = 'c'",
+        (f"{IDENTITY_SCHEMA}.{IDENTITY_RECOVERY_TABLE}",),
+    )
+    if cursor.fetchall() != [("CHECK ((singleton_id = 1))",)]:
+        raise RuntimeError("Identity recovery-state singleton constraint is missing or altered")
+    cursor.execute(
+        sql.SQL("SELECT count(*) FROM {}").format(
+            sql.Identifier(IDENTITY_SCHEMA, IDENTITY_RECOVERY_TABLE)
+        )
+    )
+    if cursor.fetchone() != (1,):
+        raise RuntimeError("Identity recovery-state does not hold exactly one reconciled row")
+
+
+def reconcile_identity_recovery(
+    recovery_dsn: str,
+    generation: str,
+    authority_revision: str,
+    *,
+    live_reverify: Any = None,
+) -> None:  # pragma: no cover - live PostgreSQL
+    """A6: one PostgreSQL transaction that invalidates every restored
+    refresh family/token, proves none remains valid, and records the
+    supplied externally-authoritative (generation, authority_revision) pair.
+
+    ``live_reverify``, when supplied, is a zero-argument callable returning
+    ``(generation, authority_revision)`` from the live Approved Recovery
+    Authority. It is invoked once, immediately before the recording
+    statement, purely as defense-in-depth (A6): the external authority's own
+    serialized rotation (A3.2) remains the primary concurrency control, and
+    this re-check never substitutes for it. A mismatch aborts the
+    transaction before commit.
+
+    Crash-safe: any error before commit rolls back invalidation and the
+    recovery-state write together; a crash after commit is safe because both
+    are already durable; a retry with the same pair is idempotent (A6, A7(F)).
+    """
+
+    if not generation or not authority_revision:
+        raise RuntimeError(
+            "Identity recovery reconciliation requires a non-empty generation and revision"
+        )
+    _dsn_credential(recovery_dsn, "emg_identity_migrator")
+    with (
+        psycopg.connect(recovery_dsn) as connection,
+        connection.transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute("SELECT current_user")
+        if cursor.fetchone() != ("emg_identity_migrator",):
+            raise RuntimeError(
+                "Identity recovery reconciliation must authenticate as emg_identity_migrator"
+            )
+        cursor.execute(
+            "SELECT r.rolname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner "
+            "WHERE n.nspname = %s",
+            (IDENTITY_SCHEMA,),
+        )
+        if cursor.fetchone() != ("emg_identity_migrator",):
+            raise RuntimeError("Identity recovery reconciliation refused: schema is not governed")
+        cursor.execute(
+            sql.SQL("LOCK TABLE {}, {}, {} IN SHARE ROW EXCLUSIVE MODE").format(
+                sql.Identifier(IDENTITY_SCHEMA, IDENTITY_RECOVERY_TABLE),
+                sql.Identifier(IDENTITY_SCHEMA, "identity_refresh_token_families"),
+                sql.Identifier(IDENTITY_SCHEMA, "identity_refresh_tokens"),
+            )
+        )
+        cursor.execute(
+            sql.SQL("UPDATE {} SET revoked_at = COALESCE(revoked_at, clock_timestamp())").format(
+                sql.Identifier(IDENTITY_SCHEMA, "identity_refresh_token_families")
+            )
+        )
+        cursor.execute(
+            sql.SQL("UPDATE {} SET status = 'revoked' WHERE status <> 'revoked'").format(
+                sql.Identifier(IDENTITY_SCHEMA, "identity_refresh_tokens")
+            )
+        )
+        cursor.execute(
+            sql.SQL(
+                "SELECT NOT EXISTS (SELECT 1 FROM {} WHERE revoked_at IS NULL) "
+                "AND NOT EXISTS (SELECT 1 FROM {} WHERE status <> 'revoked')"
+            ).format(
+                sql.Identifier(IDENTITY_SCHEMA, "identity_refresh_token_families"),
+                sql.Identifier(IDENTITY_SCHEMA, "identity_refresh_tokens"),
+            )
+        )
+        if cursor.fetchone() != (True,):
+            raise RuntimeError("Identity recovery reconciliation could not prove full invalidation")
+        if live_reverify is not None:
+            live_pair = live_reverify()
+            if tuple(live_pair) != (generation, authority_revision):
+                raise RuntimeError(
+                    "Identity recovery reconciliation aborted: external authority "
+                    "advanced since rotation; the supplied pair is no longer current"
+                )
+        cursor.execute(
+            sql.SQL(
+                "INSERT INTO {} (singleton_id, reconciled_generation, "
+                "reconciled_authority_revision, reconciled_at) "
+                "VALUES (1, %s, %s, clock_timestamp()) "
+                "ON CONFLICT (singleton_id) DO UPDATE SET "
+                "reconciled_generation = EXCLUDED.reconciled_generation, "
+                "reconciled_authority_revision = EXCLUDED.reconciled_authority_revision, "
+                "reconciled_at = EXCLUDED.reconciled_at"
+            ).format(sql.Identifier(IDENTITY_SCHEMA, IDENTITY_RECOVERY_TABLE)),
+            (generation, authority_revision),
+        )
+
+
 def validate_provisioned_databases(
-    audit_migration_dsn: str, knowledge_graph_migration_dsn: str
+    audit_migration_dsn: str,
+    knowledge_graph_migration_dsn: str,
+    identity_migration_dsn: str,
 ) -> None:  # pragma: no cover - live PostgreSQL
     _dsn_credential(audit_migration_dsn, "emg_audit_migrator")
     with psycopg.connect(audit_migration_dsn) as audit_connection:
         _validate_audit_database(audit_connection)
     with psycopg.connect(knowledge_graph_migration_dsn) as graph_connection:
         _validate_projector_database(graph_connection)
+    _dsn_credential(identity_migration_dsn, "emg_identity_migrator")
+    with psycopg.connect(identity_migration_dsn) as identity_connection:
+        _validate_identity_database(identity_connection)

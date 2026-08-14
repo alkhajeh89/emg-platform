@@ -1,0 +1,28 @@
+# ADR-043 Amendment 1 A9.4 Phase 1 -- reconciliation fence.
+#
+# Replaces identity-db-egress.normal.example.yaml for the duration of A9.2-A9.6
+# step 5. Only the governed recovery/migration actor (emg_identity_migrator,
+# reached through the Identity migration Job or the recovery-reconcile Job) may
+# reach the recovery PostgreSQL target. No Identity serving workload identity,
+# fresh or stale, has a network path during Phase 1 -- in particular
+# `emg-identity` (which authenticates as emg_identity_app) and
+# `emg-identity-recovery-qualify` are both deliberately absent from the
+# podSelector below. Because the workload fence (A9.2) has already reduced
+# `emg-identity` to zero replicas before this policy is applied, this is a
+# belt-and-suspenders exclusion, not the sole control.
+#
+# Applied and read-back verified by tools/backup/identity-recovery-fence.sh.
+# Copy this file, fill in the same environment-resolved PostgreSQL ipBlock/port
+# used in the normal-phase template, and let the recovery-fence script apply it
+# -- do not hand-edit the live cluster object.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-identity-db-egress}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [emg-identity-migration, emg-identity-recovery-reconcile]
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for the EMG PostgreSQL target.

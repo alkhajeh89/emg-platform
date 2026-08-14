@@ -1,0 +1,27 @@
+# ADR-043 Amendment 1 A9.4 remediation (round 2): workload-scoped PostgreSQL
+# egress for the one-time database bootstrap Job and the Stage-50 provisioning
+# validation Job only. NOT included by kustomization.yaml -- copy, fill in the
+# environment-resolved PostgreSQL ipBlock/port (the same address used by every
+# other *-db-egress.example.yaml file), and apply with `kubectl apply -f`.
+#
+# emg-database-bootstrap converges all seven ADR-041/043 governed roles in one
+# pass (admin credential plus every app/migration DSN) and emg-provisioning-
+# validate's database-validation container re-verifies all three migration
+# streams; both are platform-wide governance Jobs, not owned by a single
+# service, so they are grouped here rather than duplicated per-service.
+#
+# This podSelector never matches any `emg-identity*` label besides these two
+# Jobs' own names. See external-egress.example.yaml's comment for why
+# PostgreSQL reachability must never be granted through that file's broad
+# selector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-provisioning-db-egress}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [emg-database-bootstrap, emg-provisioning-validate]
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for the EMG PostgreSQL target.

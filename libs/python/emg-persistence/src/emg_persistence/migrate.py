@@ -36,6 +36,12 @@ def audit_migrations_dir() -> Path:
     return _MIGRATIONS_ROOT / "audit_postgres"
 
 
+def identity_migrations_dir() -> Path:
+    """Return the packaged ADR-043 Identity PostgreSQL migration stream."""
+
+    return _MIGRATIONS_ROOT / "identity_postgres"
+
+
 def run_migrations(
     executor: MigrationExecutor, migrations_dir: Path | None = None
 ) -> tuple[AppliedMigration, ...]:

@@ -5,12 +5,21 @@ import shutil
 import socket
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
 import pytest
 from emg_audit_client import SubmittedAuditEvent, SubmittedCustodyEvent
 from emg_audit_pipeline import PostgresAuditEventStore, PostgresCustodyEventStore
+from emg_identity.recovery_gate import RecoveryGateDenied, evaluate_recovery_gate
+from emg_identity.refresh_tokens import PostgresRefreshTokenStore
+from emg_persistence.provisioning import (
+    InMemoryApprovedRecoveryAuthority,
+    reconcile_identity_recovery,
+    rotate_identity_recovery_generation,
+)
+from emg_persistence.provisioning.database import _validate_identity_recovery_state
 
 ROOT = Path(__file__).parents[2]
 BACKUP = ROOT / "tools/backup"
@@ -89,6 +98,43 @@ def test_real_backup_full_restore_startup_and_pitr(tmp_path: Path) -> None:
             "-f",
             ROOT / "tools/seed-data/postgres/006_audit_tenant.sql",
         )
+        run(
+            "psql",
+            dsn,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-f",
+            ROOT / "tools/seed-data/postgres/007_identity_refresh_tokens.sql",
+        )
+        identity_migration_dsn = (
+            f"postgresql://emg_identity_migrator:local-test@localhost:{primary_port}/emg"
+        )
+        run(
+            ROOT / ".venv/bin/python",
+            "-c",
+            "from emg_persistence.provisioning import run_identity_migrations; "
+            "import os; run_identity_migrations(os.environ['IDENTITY_DSN'])",
+            env={**os.environ, "IDENTITY_DSN": identity_migration_dsn},
+        )
+        # ADR-043 Amendment 1 A8: establish the initial (generation,
+        # authority_revision) pair via a deterministic test-double authority
+        # (mechanism 3a: genuine atomic CAS) before any refresh state exists,
+        # as bootstrap requires.
+        authority = InMemoryApprovedRecoveryAuthority()
+        initial_pair = authority.read_current()
+        reconcile_identity_recovery(
+            identity_migration_dsn, initial_pair.generation, initial_pair.authority_revision
+        )
+        run(
+            "psql",
+            identity_migration_dsn,
+            "-c",
+            "INSERT INTO emg_identity.identity_refresh_token_families (family_hash) "
+            "VALUES ('restored-family'); INSERT INTO emg_identity.identity_refresh_tokens "
+            "(token_hash, family_hash, status, expires_at) VALUES "
+            "('restored-token', 'restored-family', 'active', "
+            "clock_timestamp() + interval '1 hour')",
+        )
         run("psql", dsn, "-c", "CREATE TABLE recovery_markers(id integer PRIMARY KEY)")
         with psycopg.connect(dsn) as connection:
             audit = PostgresAuditEventStore(connection)
@@ -129,6 +175,12 @@ def test_real_backup_full_restore_startup_and_pitr(tmp_path: Path) -> None:
         run(BACKUP / "scheduled-backup.sh", env=env)
         backup_dir = repository / "full/integration-base"
         assert (repository / "recovery-evidence/integration-base.json").is_file()
+        # ADR-043 Amendment 1 A7 replay-resistance proof, step (B)/(C): the
+        # external authority legitimately advances AFTER this backup was
+        # taken, via the same CAS-protected rotation the accepted A3.2
+        # algorithm uses. The backup below carries only the superseded
+        # (generation, authority_revision) pair.
+        rotated_pair = rotate_identity_recovery_generation(authority)
         run("psql", dsn, "-c", "INSERT INTO recovery_markers VALUES (1)")
         time.sleep(1)
         target = run(
@@ -206,13 +258,111 @@ def test_real_backup_full_restore_startup_and_pitr(tmp_path: Path) -> None:
             )
             == "1"
         )
+        # ADR-043 Amendment 1 A7(E)/A8: before reconciliation, the restored
+        # database's recovery-state row is still the superseded pair; the
+        # live authority (materialized here as a fresh-Identity-workload
+        # authority file) has already advanced. Readiness and every
+        # refresh-token operation must fail closed against this mismatch.
+        restored_app_dsn = f"postgresql://emg_identity_app:local-test@localhost:{pitr_port}/emg"
+        stale_authority_file = tmp_path / "post-rotation-authority.json"
+        stale_authority_file.write_text(
+            f'{{"generation": "{rotated_pair.generation}", '
+            f'"authority_revision": "{rotated_pair.authority_revision}"}}',
+            encoding="utf-8",
+        )
+        with pytest.raises(RecoveryGateDenied):
+            evaluate_recovery_gate(dsn=restored_app_dsn, authority_file=stale_authority_file)
+        pre_reconciliation_store = PostgresRefreshTokenStore(
+            restored_app_dsn, recovery_authority_file=stale_authority_file
+        )
+        with pytest.raises(RecoveryGateDenied):
+            pre_reconciliation_store.family_is_active("restored-family")
         verify_env = {
             **restore_env,
             "EMG_RESTORE_DSN": restored_dsn,
+            "EMG_IDENTITY_RECOVERY_DSN": (
+                f"postgresql://emg_identity_migrator:local-test@localhost:{pitr_port}/emg"
+            ),
+            "EMG_IDENTITY_RECOVERY_GENERATION": rotated_pair.generation,
+            "EMG_IDENTITY_RECOVERY_AUTHORITY_REVISION": rotated_pair.authority_revision,
             "EMG_EXPECTED_PITR_TARGET_TIME": target,
             "EMG_RECOVERY_ASSERT_SQL": "SELECT count(*)=1 FROM recovery_markers",
         }
         run(BACKUP / "verify-recovery.sh", backup_dir / "manifest.json", env=verify_env)
+        assert (
+            run(
+                "psql",
+                verify_env["EMG_IDENTITY_RECOVERY_DSN"],
+                "-Atqc",
+                "SELECT bool_and(revoked_at IS NOT NULL) FROM "
+                "emg_identity.identity_refresh_token_families",
+                capture=True,
+            )
+            == "t"
+        )
+        # A6/A7(E): the reconciliation transaction, run above via the
+        # governed shell entrypoint, must have recorded exactly the rotated
+        # (generation, authority_revision) pair -- never left the restored,
+        # superseded pair active.
+        assert (
+            run(
+                "psql",
+                verify_env["EMG_IDENTITY_RECOVERY_DSN"],
+                "-Atqc",
+                "SELECT reconciled_generation, reconciled_authority_revision "
+                "FROM emg_identity.identity_recovery_state",
+                capture=True,
+            )
+            == f"{rotated_pair.generation}|{rotated_pair.authority_revision}"
+        )
+        assert (
+            run(
+                "psql",
+                verify_env["EMG_IDENTITY_RECOVERY_DSN"],
+                "-Atqc",
+                "SELECT count(*) FROM emg_identity.identity_recovery_state",
+                capture=True,
+            )
+            == "1"
+        )
+        # Stage-50 recovery validation (A11): the recovery relation's exact
+        # structure, ownership, and security state. The full cross-stream
+        # ADR-041 role-set check in _validate_identity_database is exercised
+        # separately by test_rc1h_provisioning_integration.py, which runs
+        # the complete bootstrap flow this lighter seed-based recovery
+        # rehearsal does not.
+        with (
+            psycopg.connect(verify_env["EMG_IDENTITY_RECOVERY_DSN"]) as connection,
+            connection.cursor() as cursor,
+        ):
+            _validate_identity_recovery_state(cursor)
+
+        # A8: a fresh Identity workload, materializing the now-current
+        # rotated pair, reaches READY only now -- never before reconciliation.
+        fresh_authority_file = tmp_path / "post-reconciliation-authority.json"
+        fresh_authority_file.write_text(
+            f'{{"generation": "{rotated_pair.generation}", '
+            f'"authority_revision": "{rotated_pair.authority_revision}"}}',
+            encoding="utf-8",
+        )
+        evaluate_recovery_gate(dsn=restored_app_dsn, authority_file=fresh_authority_file)
+
+        # D-10/A7: the restored refresh credential remains rejected even
+        # after reconciliation succeeds and the gate opens.
+        post_reconciliation_store = PostgresRefreshTokenStore(
+            restored_app_dsn, recovery_authority_file=fresh_authority_file
+        )
+        assert post_reconciliation_store.family_is_active("restored-family") is False
+        assert (
+            post_reconciliation_store.rotate(
+                "restored-family",
+                "restored-token",
+                "post-recovery-token",
+                datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+            is False
+        )
+
         run("psql", restored_dsn, "-c", "DELETE FROM audit_events WHERE sequence_number=3")
         tampered = subprocess.run(
             [str(BACKUP / "verify-recovery.sh"), str(backup_dir / "manifest.json")],

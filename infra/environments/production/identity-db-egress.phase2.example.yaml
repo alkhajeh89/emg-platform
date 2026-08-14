@@ -1,0 +1,29 @@
+# ADR-043 Amendment 1 A9.4 Phase 2 -- readiness-qualification fence.
+#
+# Replaces identity-db-egress.phase1.example.yaml only after A9.6 steps 1-4
+# (reconciliation committed, Stage-50 PASS, authority pair and materialization
+# reverified) have each produced positive evidence. Reachability is narrowed,
+# not opened: only the dedicated `emg-identity-recovery-qualify` workload (see
+# infra/kubernetes/base/identity-recovery.yaml) may reach the recovery
+# PostgreSQL target -- never `emg-identity` (the ordinary serving label, held
+# at zero replicas since A9.2 and not scaled up until State 3), and
+# `emg_identity_migrator`'s Phase 1 access is deliberately not carried forward
+# (A9.4 Phase 2: "emg_identity_migrator's Phase 1 access is not required to
+# persist into Phase 2 and MAY be withdrawn at the same transition").
+#
+# Database privileges reachable over this path remain exactly the accepted
+# emg_identity_app runtime least-privilege grants (D-4, A4); this policy only
+# ever narrows network reachability, never widens SQL privilege.
+#
+# This policy alone is NOT client-traffic restoration (A9.4 Phase 2): the
+# `emg-identity-recovery-qualify` workload has no Service selecting it (see
+# identity-recovery.yaml), so becoming reachable here has no effect on ordinary
+# client routing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-identity-db-egress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: emg-identity-recovery-qualify}
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for the EMG PostgreSQL target.

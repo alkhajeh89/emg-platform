@@ -1,0 +1,22 @@
+# ADR-043 Amendment 1 A9.4 remediation (round 2): workload-scoped PostgreSQL
+# egress for Audit only. NOT included by kustomization.yaml -- copy, fill in
+# the environment-resolved PostgreSQL ipBlock/port (the same address used by
+# every other *-db-egress.example.yaml file, since PostgreSQL is co-located
+# per D-1), and apply with `kubectl apply -f`.
+#
+# This podSelector never matches any `emg-identity*` label. It exists
+# specifically so Audit's PostgreSQL reachability is never granted through the
+# broad `external-egress.example.yaml` selector, which would otherwise
+# additively defeat the Identity recovery network fence (see that file's
+# comment for the full explanation).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-audit-db-egress}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [emg-audit, emg-audit-migration]
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for the EMG PostgreSQL target.

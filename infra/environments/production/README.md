@@ -72,18 +72,21 @@ complete successfully before continuing:
    This is part of the external-infrastructure-prerequisite stage; it does not
    make workloads deployable.
 2. Run `emg-database-bootstrap` (`10-database-roles`). In addition to converging
-   the three governed Audit/projector roles and the two ADR-034 Knowledge Graph
-   roles, this command validates any pre-existing local-seed
+   the three governed Audit/projector roles, the two ADR-034 Knowledge Graph
+   roles, and the two ADR-043 Identity roles, this command validates any pre-existing local-seed
    Audit tables against the accepted schema contract and transfers ownership of
    only `audit_events` and `evidence_custody_events` to
    `emg_audit_migrator`. A mismatch fails the stage without changing ownership.
-3. Run both `emg-audit-migration` and `emg-knowledge-graph-migration`
-   (`20-postgresql-migrations`) after database bootstrap succeeds.
+3. Run `emg-audit-migration`, `emg-knowledge-graph-migration`, and
+   `emg-identity-migration` (`20-postgresql-migrations`) after database bootstrap succeeds.
 4. Run `emg-keycloak-provision` (`30-keycloak-projector-clients`).
 5. Confirm External Secrets has synchronized the final workload material.
 6. Run `emg-provisioning-validate` (`50-consistency-validation`). Both its
-   database and identity containers must succeed.
-7. Roll out `emg-audit` (`60-audit-service`) and wait for readiness.
+   database and identity containers must succeed. The Identity migration uses the
+   separately delivered `emg_identity_migrator` DSN and the runtime Deployment receives
+   only the `emg_identity_app` refresh-state DSN.
+7. Roll out `emg-identity` (`60-identity-service`) and `emg-audit`
+   (`60-audit-service`) and wait for readiness.
 8. Roll out `emg-audit-projector` (`70-audit-projector`).
 
 ### Transactionally failed Audit V001 recovery
@@ -156,12 +159,75 @@ External Secrets controller egress are cluster/CNI responsibilities.
 Until the environment-specific external egress rules exist, workloads and Jobs
 fail closed because their mandatory dependencies are unreachable.
 
+Enforcement of NetworkPolicy egress (including the phase-scoped Identity
+PostgreSQL rules below) requires a CNI that implements the `egress`
+`policyTypes` (e.g. GKE Dataplane V2, Calico, Cilium). Confirm this before
+relying on the recovery fence; on a CNI that only enforces ingress, every
+egress rule in this overlay -- not only the recovery ones -- is silently
+advisory.
+
+### ADR-043 Amendment 1 recovery network fence
+
+`identity-db-egress.normal.example.yaml`, `.phase1.example.yaml`, and
+`.phase2.example.yaml` are three mutually exclusive templates for the same
+NetworkPolicy object (`emg-identity-db-egress`), scoped only to Identity-owned
+workload labels (see comments in each file). They are not included in this
+overlay's `kustomization.yaml`; the environment applies exactly one of them at
+a time, normally the `normal` variant. `tools/backup/identity-recovery-fence.sh`
+applies the phase-appropriate template during a recovery event, reads back
+both the object itself and every other NetworkPolicy in the namespace (to
+detect a second, broader policy additively granting the same reachability --
+see the round-2 remediation note in `external-egress.example.yaml`), and
+writes a hash-bound, non-secret fence-evidence file only when both checks
+pass. `python -m emg_persistence.provisioning validate-recovery-fence`
+independently recomputes that hash from the evidence file's own embedded
+canonical policy spec and re-derives the pod-selector labels from it -- never
+trusting a separately-asserted label list -- before the recovery coordinator
+may proceed to the next A9.6 step. See
+`docs/operations/postgresql-backup-recovery.md` for the full procedure.
+
+Audit, Audit Projector, Knowledge Graph, and the bootstrap/Stage-50
+provisioning Jobs each have their own dedicated PostgreSQL-egress template
+(`audit-db-egress.example.yaml`, `audit-projector-db-egress.example.yaml`,
+`knowledge-graph-db-egress.example.yaml`, `provisioning-db-egress.example.yaml`)
+rather than sharing the broad `external-egress.example.yaml` selector for
+database reachability. `external-egress.example.yaml` remains the correct
+place for dependencies with no recovery-phase exclusivity requirement
+(Keycloak, the backup repository); it must never carry PostgreSQL content,
+and Stage-50 statically rejects it, or any other template, if it does while
+its selector also matches an Identity-owned pod.
+
+Two further A9 evidence records are required before Stage-50 recovery
+qualification will pass (`python -m emg_persistence.provisioning
+validate-recovery-qualification`, or
+`infra/kubernetes/base/provisioning-validation-recovery.yaml`): a database-
+session-fence record (A9.3), produced by `tools/backup/identity-session-fence.sh`
+using the governed database-bootstrap-administrator credential to terminate
+and re-prove the absence of surviving `emg_identity_app` PostgreSQL sessions;
+and a CNI egress-enforcement qualification record, produced by
+`tools/backup/identity-cni-qualification-attest.sh` -- a schema-and-freshness
+attestation only, since no packet-level enforcement test can run from this
+repository. Ordinary Stage-50 (`emg-provisioning-validate`, `validate-database`)
+never requires or consults any of this; only the distinct recovery-mode
+command/Job does.
+
+`infra/kubernetes/base/identity-recovery.yaml` additionally defines the
+`emg-identity-recovery-qualify` Deployment: the same Identity image and
+`emg_identity_app` runtime credential as `emg-identity`, held at zero replicas
+outside a recovery window and deliberately not selected by the `emg-identity`
+Service. The recovery coordinator scales it to one replica only after the
+Phase 2 fence is established (A9.6 step 6); because no Service selects it,
+reaching `READY` on this workload has no effect on client-facing traffic.
+Final release (A9.6 step 9) scales it back to zero and scales the ordinary
+`emg-identity` Deployment from zero to one, which is the only action that
+restores client-facing service.
+
 ## Secret and job isolation
 
 The checked-in `ExternalSecret` resources contain remote keys only. Kubernetes
 Secrets are created by the operator; absent Secrets prevent container startup.
 The database bootstrap administrator credential is mounted only in the
-database-bootstrap Job. Audit and Knowledge Graph migration credentials are
+database-bootstrap Job. Audit, Knowledge Graph, and Identity migration credentials are
 mounted only in bootstrap, migration, and validation Jobs; the Knowledge Graph
 runtime DSN is additionally mounted in bootstrap so its role password can be
 converged, and in the Knowledge Graph serving workload. The Keycloak administrator
