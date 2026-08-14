@@ -2,6 +2,10 @@
 
 This directory contains the authoritative documentation for the EMG Platform.
 
+For the implemented V1 audience-oriented package, start with the
+[EMG v1 documentation index](v1/README.md). Historical phase, sprint, and planning records do not
+override that index, accepted ADRs, or executable repository contracts.
+
 ## Governance
 
 - [GR-001 — Documentation Governance Framework](governance/GR-001_EMG_DOCUMENTATION_GOVERNANCE_FRAMEWORK.md)
