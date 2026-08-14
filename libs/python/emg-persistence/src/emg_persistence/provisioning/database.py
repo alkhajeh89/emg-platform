@@ -345,9 +345,26 @@ def _audit_schema_signature(cursor: Any, schema_name: str, table: str) -> tuple[
         (f"{schema_name}.{table}",),
     )
     constraints = {(str(row[0]), str(row[1]), str(row[2])) for row in cursor.fetchall()}
+    # Deliberately pg_attrdef/pg_attribute, not information_schema.columns: the
+    # latter only lists a column when the *connecting* role owns the table or
+    # holds some direct privilege on it. A Cloud SQL bootstrap administrator
+    # (NOSUPERUSER, CREATEROLE-only) holds neither for a table already owned by
+    # its governed migrator role -- exactly the state a correctly-adopted table
+    # is expected to be in -- so that view silently returns zero rows and every
+    # adoption looked like a defaults mismatch regardless of the table's actual
+    # shape. pg_attrdef/pg_attribute are ordinary system catalogs with no such
+    # per-object ACL check. pg_get_expr(adbin, adrelid) is the same expression
+    # information_schema.columns.column_default itself evaluates, so this is a
+    # privilege-independent read of the identical value, not a re-derivation
+    # requiring new normalization or expected-value changes.
     cursor.execute(
-        "SELECT column_name, column_default FROM information_schema.columns "
-        "WHERE table_schema = %s AND table_name = %s AND column_default IS NOT NULL",
+        "SELECT a.attname, pg_get_expr(d.adbin, d.adrelid) "
+        "FROM pg_attrdef d JOIN pg_attribute a "
+        "ON a.attrelid = d.adrelid AND a.attnum = d.adnum "
+        "JOIN pg_class c ON c.oid = d.adrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND c.relname = %s "
+        "AND a.attnum > 0 AND NOT a.attisdropped",
         (schema_name, table),
     )
     defaults = {(str(row[0]), str(row[1])) for row in cursor.fetchall()}
@@ -583,12 +600,23 @@ def _adopt_existing_audit_schema(cursor: Any, schema_name: str) -> None:
     if set(existing) != set(_AUDIT_TABLES):
         raise RuntimeError("existing Audit schema is incomplete; ownership adoption refused")
     _validate_adoptable_audit_schema(cursor, schema_name)
-    for table in _AUDIT_TABLES:
-        cursor.execute(
-            sql.SQL("ALTER TABLE {}.{} OWNER TO emg_audit_migrator").format(
-                sql.Identifier(schema_name), sql.Identifier(table)
+    # PostgreSQL requires the connecting role to already own a table before
+    # it may run ALTER TABLE ... OWNER TO on it (re-asserting the same
+    # owner is not exempt). The bootstrap administrator never owns these
+    # tables once a prior adoption has correctly left them owned by
+    # emg_audit_migrator -- the common, steady-state case this function
+    # runs against on every subsequent bootstrap. Scope the administrator's
+    # membership in emg_audit_migrator to only this re-assertion, the same
+    # "relinquish no administrative capability" pattern ADR-041 already
+    # requires for Identity schema/ownership authoring statements (see
+    # _bootstrap_identity_schema).
+    with _temporary_role_membership(cursor, "emg_audit_migrator"):
+        for table in _AUDIT_TABLES:
+            cursor.execute(
+                sql.SQL("ALTER TABLE {}.{} OWNER TO emg_audit_migrator").format(
+                    sql.Identifier(schema_name), sql.Identifier(table)
+                )
             )
-        )
 
 
 def run_audit_migrations(
