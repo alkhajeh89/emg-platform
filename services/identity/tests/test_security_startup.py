@@ -29,6 +29,7 @@ def _production_settings(**overrides: object) -> Settings:
             "postgresql://identity:production-password@postgres.example.gov/emg?sslmode=verify-full"
         ),
         "audit_spool_path": Path.cwd() / "services/identity/config/audit-spool.jsonl",
+        "recovery_authority_file": "/var/run/emg-identity/recovery-authority.json",
     }
     values.update(overrides)
     return Settings(**values)
@@ -82,6 +83,23 @@ def test_production_accepts_secure_runtime_configuration(
 )
 def test_production_rejects_plaintext_transport(overrides: dict[str, object]) -> None:
     with pytest.raises(RuntimeError, match="transport"):
+        validate_runtime_configuration(_production_settings(**overrides))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"recovery_authority_file": ""},
+        {"recovery_authority_file": "relative/recovery-authority.json"},
+    ],
+)
+def test_production_rejects_missing_or_relative_recovery_authority_file(
+    overrides: dict[str, object],
+) -> None:
+    """ADR-043 Amendment 1 A3.3: production Identity must be configured with
+    an absolute path to the materialized recovery-authority pair file."""
+
+    with pytest.raises(RuntimeError, match="recovery-authority"):
         validate_runtime_configuration(_production_settings(**overrides))
 
 

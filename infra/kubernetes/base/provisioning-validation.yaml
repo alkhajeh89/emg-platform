@@ -19,6 +19,7 @@ spec:
           env:
             - {name: EMG_AUDIT_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-secrets, key: migration-postgres-dsn}}}
             - {name: EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_IDENTITY_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: migration-postgres-dsn}}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 250m, memory: 128Mi}}
           volumeMounts: [{name: tmp, mountPath: /tmp}]

@@ -68,6 +68,37 @@ def test_config_contracts_parse() -> None:
     assert restore["spec"]["verification"]["requireEvidenceLedgerIntegrity"] is True
 
 
+def test_recovery_requires_transactional_identity_refresh_invalidation() -> None:
+    """ADR-043 Amendment 1 A6: the governed recovery tool delegates to the
+    Python ``identity-reconcile`` command (more testable with real
+    PostgreSQL than a psql heredoc), which must implement the transactional
+    invalidate-then-record contract; the shell wrapper's own job is only to
+    require the recovery DSN and the externally-authoritative pair."""
+
+    invalidation = (ROOT / "tools/backup/invalidate-identity-refresh-state.sh").read_text(
+        encoding="utf-8"
+    )
+    verification = (ROOT / "tools/backup/verify-recovery.sh").read_text(encoding="utf-8")
+    reconciliation = (
+        ROOT / "libs/python/emg-persistence/src/emg_persistence/provisioning/database.py"
+    ).read_text(encoding="utf-8")
+
+    assert "EMG_IDENTITY_RECOVERY_DSN" in invalidation
+    assert "EMG_IDENTITY_RECOVERY_GENERATION" in invalidation
+    assert "EMG_IDENTITY_RECOVERY_AUTHORITY_REVISION" in invalidation
+    assert "identity-reconcile" in invalidation
+
+    assert "current_user" in reconciliation and "emg_identity_migrator" in reconciliation
+    assert "connection.transaction()" in reconciliation
+    assert "SET revoked_at = COALESCE(revoked_at, clock_timestamp())" in reconciliation
+    assert "SET status = 'revoked'" in reconciliation
+    assert "WHERE revoked_at IS NULL" in reconciliation
+    assert "WHERE status <> 'revoked'" in reconciliation
+    assert "identity_recovery_state" in reconciliation
+    assert '"$SCRIPT_DIR/invalidate-identity-refresh-state.sh"' in verification
+    assert "emg_identity.identity_schema_migrations" in verification
+
+
 def test_manifest_requires_roles_and_detects_corruption(tmp_path: Path) -> None:
     path = write_manifest(tmp_path)
     assert backup_manifest.load_manifest(path, verify_files=True)["schemaVersion"] == 2

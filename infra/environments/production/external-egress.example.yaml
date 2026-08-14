@@ -1,6 +1,37 @@
 # NOT included by kustomization.yaml. Copy and replace every documented CIDR
 # using environment-owned network data before deployment. Standard Kubernetes
 # NetworkPolicy cannot restrict arbitrary external FQDNs.
+#
+# Do NOT add ANY PostgreSQL ipBlock/port here, for ANY workload. Round-2
+# independent review found that the prior version of this file instructed
+# operators to exclude only "Identity's" PostgreSQL entry while still telling
+# them to list Audit's and Knowledge Graph's PostgreSQL entries here -- but
+# Audit, Knowledge Graph, and Identity share the identical co-located
+# PostgreSQL network endpoint (ADR-043 D-1: "current single DSN endpoint"), so
+# that instruction was self-contradictory and unsatisfiable: any entry that
+# lets Audit/KG reach that address necessarily also lets every other
+# `app.kubernetes.io/part-of: emg-platform` pod reach it, because Kubernetes
+# NetworkPolicy allow-rules are additive across policies with no deny/priority
+# override. This file's podSelector matches virtually every workload in the
+# platform (including emg-identity and emg-identity-recovery-qualify), so it
+# MUST NOT be the mechanism that grants PostgreSQL reachability to anything.
+#
+# PostgreSQL egress for every workload that needs it is instead governed by a
+# dedicated, workload-scoped NetworkPolicy family, none of which share this
+# file's broad selector:
+#   - identity-db-egress.{normal,phase1,phase2}.example.yaml (Identity, ADR-043
+#     Amendment 1 A9.4 two-phase fence)
+#   - audit-db-egress.example.yaml (emg-audit, emg-audit-migration)
+#   - audit-projector-db-egress.example.yaml (emg-audit-projector)
+#   - knowledge-graph-db-egress.example.yaml (emg-knowledge-graph,
+#     emg-knowledge-graph-migration)
+#   - provisioning-db-egress.example.yaml (emg-database-bootstrap,
+#     emg-provisioning-validate)
+# This file remains the correct place for genuinely platform-wide external
+# dependencies that carry no recovery-phase exclusivity requirement, such as
+# the Keycloak endpoint and the encrypted backup/custody repository -- those
+# do not need per-workload isolation, so additive coexistence with the broad
+# selector below is safe for them.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: emg-external-dependencies}

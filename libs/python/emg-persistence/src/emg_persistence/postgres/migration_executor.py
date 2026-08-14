@@ -22,13 +22,18 @@ from ..migrations.model import AppliedMigration, Migration, MigrationKind
 if TYPE_CHECKING:
     from psycopg import Connection
 
-_HISTORY_TABLE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+_HISTORY_IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
 
 def _history_sql(history_table: str) -> tuple[str, str, str, str]:
-    if not _HISTORY_TABLE_PATTERN.fullmatch(history_table):
-        raise ValueError("PostgreSQL migration history table must be a simple identifier")
-    quoted = f'"{history_table}"'
+    identifiers = history_table.split(".")
+    if len(identifiers) not in {1, 2} or any(
+        not _HISTORY_IDENTIFIER_PATTERN.fullmatch(identifier) for identifier in identifiers
+    ):
+        raise ValueError(
+            "PostgreSQL migration history relation must contain one or two safe identifiers"
+        )
+    quoted = ".".join(f'"{identifier}"' for identifier in identifiers)
     history_ddl = f"""
 CREATE TABLE IF NOT EXISTS {quoted} (
     kind        text        NOT NULL,

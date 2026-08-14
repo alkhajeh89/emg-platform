@@ -1,0 +1,132 @@
+# ADR-043 Amendment 1 A6/A9/A10: governed recovery reconciliation Job.
+#
+# Run only by the authorized recovery coordinator (A9.1) after A9.2-A9.5's
+# required positive evidence exists and the external Approved Recovery
+# Authority has already been rotated (A3.2). This Job performs only the
+# PostgreSQL transaction itself (A6): it does not establish fences, does
+# not rotate the external authority, and its success alone does not release
+# any fence (A9.6) or restore client traffic. The recovery coordinator
+# supplies EMG_IDENTITY_RECOVERY_GENERATION and
+# EMG_IDENTITY_RECOVERY_AUTHORITY_REVISION at recovery time through the
+# governed environment boundary (A6); they are deliberately NOT part of the
+# steady-state emg-identity-secrets ExternalSecret because they are
+# recovery-specific, one-shot values, never a standing credential.
+#
+# The recovery coordinator boundary is kept separate from runtime Identity:
+# this Job authenticates as emg_identity_migrator (never emg_identity_app)
+# and is never scheduled as part of ordinary rollout (no bootstrap-stage
+# annotation ties it into the standard stage sequence; it is invoked
+# on-demand by the recovery procedure only).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: emg-identity-recovery-reconcile
+  annotations: {emg.platform/bootstrap-stage: "recovery-only"}
+spec:
+  backoffLimit: 0
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-identity-recovery-reconcile, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: emg-identity
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: identity-recovery-reconcile
+          image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          command: [python, -m, emg_persistence.provisioning, identity-reconcile]
+          env:
+            - {name: EMG_IDENTITY_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_IDENTITY_RECOVERY_GENERATION, valueFrom: {secretKeyRef: {name: emg-identity-recovery-reconcile-input, key: generation}}}
+            - {name: EMG_IDENTITY_RECOVERY_AUTHORITY_REVISION, valueFrom: {secretKeyRef: {name: emg-identity-recovery-reconcile-input, key: authority-revision}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 250m, memory: 128Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 16Mi}}]
+---
+# ADR-043 Amendment 1 A9.4 Phase 2 / A9.6 steps 6-7: the sole "freshly started
+# Identity workload instance" permitted a Phase 2 database path.
+#
+# This is a distinct Deployment from emg-identity, not a scaled-up copy of it,
+# for exactly one reason: no Service in this repository selects
+# app.kubernetes.io/name: emg-identity-recovery-qualify. Reaching /readyz here
+# therefore has no effect on client-facing traffic (READY_POD_AUTO_TRAFFIC_RISK
+# is structurally controlled, not merely evidenced) -- the property A9.4 Phase
+# 2 requires ("Network access granted under Phase 2 ... does NOT constitute
+# restoration of client service"). It runs the identical image, identical
+# emg_identity_app runtime credential, and identical readiness predicate (A8)
+# as emg-identity; it is not a functionally different application.
+#
+# replicas stays 0 outside a recovery window (identical posture to
+# emg-identity-recovery-reconcile: no bootstrap-stage annotation ties it into
+# the standard 10-70 stage sequence). The recovery coordinator scales it to 1
+# only after identity-db-egress.phase2.example.yaml is applied and verified
+# (A9.6 step 6), and scales it back to 0 at final release (A9.6 step 9), when
+# emg-identity itself is scaled from 0 to 1 to resume ordinary serving.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emg-identity-recovery-qualify
+  annotations: {emg.platform/bootstrap-stage: "recovery-only"}
+spec:
+  replicas: 0
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: emg-identity-recovery-qualify}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: emg-identity-recovery-qualify, app.kubernetes.io/part-of: emg-platform}
+    spec:
+      serviceAccountName: emg-identity
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: identity
+          image: registry.invalid/emg/identity@sha256:0000000000000000000000000000000000000000000000000000000000000001
+          ports: [{name: http, containerPort: 8000}]
+          envFrom: [{configMapRef: {name: emg-identity-config}}]
+          env:
+            - {name: EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: keycloak-client-secret}}}
+            - {name: EMG_IDENTITY_SERVICE_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: service-client-secret}}}
+            - {name: EMG_IDENTITY_SESSION_SIGNING_KEY, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: session-signing-key}}}
+            - {name: EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: refresh-postgres-dsn}}}
+            - {name: EMG_IDENTITY_RECOVERY_AUTHORITY_FILE, value: /var/run/emg-identity/recovery-authority/recovery-authority.json}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 192Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: audit-spool, mountPath: /var/lib/emg-identity/audit-spool}
+            - {name: recovery-authority, mountPath: /var/run/emg-identity/recovery-authority, readOnly: true}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: audit-spool
+          emptyDir: {sizeLimit: 64Mi}
+        - name: recovery-authority
+          secret: {secretName: emg-identity-recovery-authority, defaultMode: 0o440}

@@ -1,0 +1,81 @@
+# ADR-043 Amendment 1 A11: Stage-50 RECOVERY-QUALIFICATION mode.
+#
+# Distinct object from emg-provisioning-validate (ordinary Stage-50, which
+# runs on every deployment and never requires or consults recovery evidence).
+# This Job additionally requires and validates the A9 network-fence,
+# database-session-fence, and CNI-egress-qualification positive-evidence
+# records for the recovery being validated -- A11's requirement that "Stage-50
+# SHALL additionally confirm that the A9 fence positive-evidence records
+# exist and are attributable to the fence owner for the recovery being
+# validated."
+#
+# Round-3 remediation: attribution was previously checked only for
+# non-emptiness, never compared against the actual governed fence owner
+# (independent review round 3). EMG_IDENTITY_RECOVERY_FENCE_EXPECTED_OWNER
+# carries the recovery coordinator's own step-1 fence-owner identification
+# (docs/operations/postgresql-backup-recovery.md) as an explicit,
+# coordinator-supplied input -- audit metadata, not a credential -- through
+# the same non-secret-but-security-relevant input Secret as
+# expected-phase/cluster-identifier below; it is never inferred from the
+# evidence files themselves. EMG_IDENTITY_RECOVERY_FENCE_EXPECTED_NAMESPACE
+# is sourced from the downward API (this Job's own live namespace) rather
+# than a coordinator-supplied value, since the namespace this container is
+# actually running in is the one authoritative, tamper-resistant source for
+# what "the namespace being recovered" means.
+#
+# Like emg-identity-recovery-reconcile, no bootstrap-stage annotation ties
+# this into the standard 10-70 stage sequence; it is invoked on-demand by the
+# recovery coordinator only, per docs/operations/postgresql-backup-recovery.md.
+#
+# The three evidence files are delivered as a recovery-time-only Secret the
+# coordinator populates immediately before running this Job (analogous to
+# emg-identity-recovery-reconcile-input): they are recovery-specific,
+# one-shot, non-secret-but-security-relevant artifacts, never a standing
+# credential, and are never part of the steady-state emg-identity-secrets
+# ExternalSecret.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: emg-provisioning-validate-recovery
+  annotations: {emg.platform/bootstrap-stage: "recovery-only"}
+spec:
+  backoffLimit: 0
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-provisioning-validate-recovery, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: emg-keycloak-provision
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: recovery-qualification
+          image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          command: [python, -m, emg_persistence.provisioning, validate-recovery-qualification]
+          env:
+            - {name: EMG_AUDIT_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-audit-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-knowledge-graph-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_IDENTITY_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: migration-postgres-dsn}}}
+            - {name: EMG_IDENTITY_RECOVERY_TARGET_ENVIRONMENT, valueFrom: {secretKeyRef: {name: emg-provisioning-validate-recovery-input, key: target-environment}}}
+            - {name: EMG_IDENTITY_RECOVERY_FENCE_EXPECTED_PHASE, valueFrom: {secretKeyRef: {name: emg-provisioning-validate-recovery-input, key: expected-phase}}}
+            - {name: EMG_IDENTITY_CNI_QUALIFICATION_CLUSTER, valueFrom: {secretKeyRef: {name: emg-provisioning-validate-recovery-input, key: cluster-identifier}}}
+            - {name: EMG_IDENTITY_RECOVERY_FENCE_EXPECTED_OWNER, valueFrom: {secretKeyRef: {name: emg-provisioning-validate-recovery-input, key: expected-owner}}}
+            - {name: EMG_IDENTITY_RECOVERY_FENCE_EXPECTED_NAMESPACE, valueFrom: {fieldRef: {fieldPath: metadata.namespace}}}
+            - {name: EMG_IDENTITY_RECOVERY_FENCE_EVIDENCE, value: /var/run/emg-provisioning-validate-recovery/evidence/network-fence-evidence.json}
+            - {name: EMG_IDENTITY_SESSION_FENCE_EVIDENCE, value: /var/run/emg-provisioning-validate-recovery/evidence/session-fence-evidence.json}
+            - {name: EMG_IDENTITY_CNI_QUALIFICATION_EVIDENCE, value: /var/run/emg-provisioning-validate-recovery/evidence/cni-qualification-evidence.json}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 250m, memory: 128Mi}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: evidence, mountPath: /var/run/emg-provisioning-validate-recovery/evidence, readOnly: true}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 16Mi}
+        - name: evidence
+          secret:
+            secretName: emg-provisioning-validate-recovery-input
+            defaultMode: 0o440
+            items:
+              - {key: network-fence-evidence.json, path: network-fence-evidence.json}
+              - {key: session-fence-evidence.json, path: session-fence-evidence.json}
+              - {key: cni-qualification-evidence.json, path: cni-qualification-evidence.json}

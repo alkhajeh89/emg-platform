@@ -68,7 +68,9 @@ For the exact retained release set:
 3. Apply staging prerequisites and wait for External Secrets and external dependencies.
 4. Execute ADR-041 stages in order, waiting for success before continuing:
    `10-database-roles`; both `20-postgresql-migrations` Jobs; `30-keycloak-projector-clients`;
-   `50-consistency-validation`; Audit stage 60; Audit Projector stage 70.
+   `50-consistency-validation`; Identity and Audit stage 60; Audit Projector stage 70.
+   The PostgreSQL migration stage includes the isolated Audit, Knowledge Graph, and
+   ADR-043 Identity migration Jobs; all must complete before Stage 50.
 5. Roll out Identity, Knowledge Graph, Studio BFF, Studio, recovery scheduling, and
    RC-C telemetry integration only after their prerequisites are ready.
 6. Run bounded health, authentication/delegation, governed-search, mutation/outbox,

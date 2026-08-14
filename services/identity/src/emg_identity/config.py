@@ -52,6 +52,12 @@ class Settings(BaseSettings):
         "postgresql://emg_identity_app:emg_identity_local_dev_only_do_not_use_in_prod"
         "@localhost:5432/emg"
     )
+    # ADR-043 Amendment 1 A3.3: read-only file materializing the current
+    # external Approved Recovery Authority (generation, authority_revision)
+    # pair. Required whenever refresh_token_store_backend is "postgres";
+    # missing/unreadable/malformed state fails the recovery gate closed
+    # (A8) rather than being treated as an optional dependency.
+    recovery_authority_file: str = ""
     token_issuer: str = "emg-identity-service"
     token_audience: str = "emg-platform"
 
@@ -186,6 +192,12 @@ def validate_runtime_configuration(settings: Settings) -> None:
     if not parsed_refresh_dsn.password or "local_dev_only" in parsed_refresh_dsn.password:
         raise RuntimeError(
             "identity production PostgreSQL credential is blank or uses a development value"
+        )
+    recovery_authority_file = settings.recovery_authority_file
+    if not recovery_authority_file or not Path(recovery_authority_file).is_absolute():
+        raise RuntimeError(
+            "identity production configuration requires an absolute recovery-authority "
+            "file path (ADR-043 Amendment 1 A3.3)"
         )
     if not settings.audit_spool_path.is_absolute():
         raise RuntimeError("identity production audit spool path must be absolute")

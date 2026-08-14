@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
-from emg_persistence.migrate import audit_migrations_dir
-from emg_persistence.provisioning import AUDIT_HISTORY_TABLE, GOVERNED_DATABASE_ROLES
+from emg_persistence.migrate import audit_migrations_dir, identity_migrations_dir
+from emg_persistence.provisioning import (
+    AUDIT_HISTORY_TABLE,
+    GOVERNED_DATABASE_ROLES,
+    IDENTITY_HISTORY_RELATION,
+)
 from emg_persistence.provisioning import __main__ as provisioning_cli
 from emg_persistence.provisioning.database import _create_or_converge_role
 
@@ -50,8 +55,30 @@ def test_database_bootstrap_declares_only_adr_041_roles() -> None:
         "emg_audit_projector",
         "emg_knowledge_graph_migrator",
         "emg_knowledge_graph_app",
+        "emg_identity_migrator",
+        "emg_identity_app",
     )
     assert AUDIT_HISTORY_TABLE == "audit_schema_migrations"
+    assert IDENTITY_HISTORY_RELATION == "emg_identity.identity_schema_migrations"
+
+
+def test_identity_migration_is_the_only_refresh_schema_authority() -> None:
+    sql = (identity_migrations_dir() / "V001__identity_refresh_state.sql").read_text(
+        encoding="utf-8"
+    )
+    normalized = " ".join(sql.split())
+    seed = Path("tools/seed-data/postgres/007_identity_refresh_tokens.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CREATE TABLE IF NOT EXISTS emg_identity.identity_refresh_token_families" in normalized
+    assert "CREATE TABLE IF NOT EXISTS emg_identity.identity_refresh_tokens" in normalized
+    assert "GRANT UPDATE (revoked_at)" in normalized
+    assert "GRANT UPDATE (status, rotated_at)" in normalized
+    assert "REVOKE DELETE, TRUNCATE" in normalized
+    assert "REVOKE ALL ON emg_identity.identity_schema_migrations" in normalized
+    assert "CREATE ROLE" not in normalized and "PASSWORD" not in normalized
+    assert "CREATE TABLE" not in seed and "CREATE INDEX" not in seed
 
 
 def test_audit_migration_preserves_seed_semantics_and_runtime_restriction() -> None:
@@ -93,6 +120,8 @@ def test_database_bootstrap_cli_sources_all_role_credentials_from_canonical_dsns
         "EMG_AUDIT_PROJECTOR_POSTGRES_DSN": "audit-projector-dsn",
         "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN": "kg-migration-dsn",
         "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN": "kg-runtime-dsn",
+        "EMG_IDENTITY_MIGRATION_POSTGRES_DSN": "identity-migration-dsn",
+        "EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN": "identity-runtime-dsn",
     }
     for name, value in env.items():
         monkeypatch.setenv(name, value)
@@ -115,6 +144,8 @@ def test_database_bootstrap_cli_sources_all_role_credentials_from_canonical_dsns
                 "emg_audit_projector": "audit-projector-dsn",
                 "emg_knowledge_graph_migrator": "kg-migration-dsn",
                 "emg_knowledge_graph_app": "kg-runtime-dsn",
+                "emg_identity_migrator": "identity-migration-dsn",
+                "emg_identity_app": "identity-runtime-dsn",
             },
         )
     ]

@@ -4,7 +4,12 @@ Production refresh tokens are single-use and family-scoped. Configure
 `EMG_IDENTITY_REFRESH_TOKEN_STORE_BACKEND=postgres` and
 `EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN` with the restricted
 `emg_identity_app` credential. Reuse revokes the whole family; raw tokens
-are never stored.
+are never stored. ADR-043 makes
+`emg_persistence/migrations/identity_postgres/V001__identity_refresh_state.sql`
+the sole schema authority. Production applies it with the separately held
+`emg_identity_migrator` credential before this service starts; runtime SQL is
+explicitly schema-qualified and cannot perform DDL, deletion, truncation, or
+migration-history access.
 
 Module 4 — Identity & Authentication, plus (Sprint 4) a reference
 integration of Module 5's Policy Enforcement Point.
@@ -131,10 +136,10 @@ sprint's concrete choices, and why:
    Point (FEAT-03-1) can consume it directly once built — satisfying US-02's
    "token carries the claims Module 5's PEP requires" acceptance criterion
    ahead of Module 5 existing.
-2. **Stateless JWT sessions, no session database.** Module 6 (audit/session
-   storage) is Sprint 5-6 scope; introducing a bespoke Postgres schema for
-   session state now would be schema debt to migrate later. Refresh tokens
-   are rotated on every use to limit replay exposure.
+2. **JWT access tokens with durable refresh-token rotation state.** Access tokens remain
+   self-contained. ADR-034 and ADR-043 require hashed refresh token/family identifiers and
+   rotation state in the governed `emg_identity` PostgreSQL schema; raw refresh tokens are
+   never persisted.
 3. **Authentication-event logging via `emg_telemetry`, not a real audit
    store.** See "Known Limitations."
 4. **User federation (LDAP/AD) is not configured in the local-dev realm.**

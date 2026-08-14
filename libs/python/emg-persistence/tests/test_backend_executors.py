@@ -36,10 +36,19 @@ def test_postgres_executor_supports_isolated_audit_history_namespace() -> None:
     assert '"audit_schema_migrations"' in ex._history_ddl
 
 
+def test_postgres_executor_supports_schema_qualified_identity_history_namespace() -> None:
+    ex = PostgresMigrationExecutor(
+        connection=object(),  # type: ignore[arg-type]
+        history_table="emg_identity.identity_schema_migrations",
+    )
+    assert ex._history_table == "emg_identity.identity_schema_migrations"
+    assert '"emg_identity"."identity_schema_migrations"' in ex._history_ddl
+
+
 def test_postgres_executor_rejects_unsafe_history_identifier() -> None:
     import pytest
 
-    with pytest.raises(ValueError, match="simple identifier"):
+    with pytest.raises(ValueError, match="safe identifiers"):
         PostgresMigrationExecutor(
             connection=object(), history_table="schema_migrations; DROP TABLE audit_events"  # type: ignore[arg-type]
         )

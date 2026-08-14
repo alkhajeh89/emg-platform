@@ -1,5 +1,13 @@
 # EMG v1.0 Release Candidate Closure Review
 
+> **Historical review.** This record captures the repository at commit `8556137`. RC-A through
+> RC-F subsequently closed several repository gaps described below; do not treat this historical P0
+> count as the current implementation inventory. `docs/release/EMG_V1_RC8_PARALLEL_COMPLETION_REVIEW.md`
+> is the next historical checkpoint (RC.8, source commit `b3e6cc7`). For current repository status —
+> including the since-committed ADR-043 Identity durable refresh-state/recovery-governance
+> implementation and the rollback-version-chronology release-tooling fix, neither of which existed at
+> RC.8 — use `docs/release/EMG_V1_RC9_PREPARATION_AND_CLAUDE_RECONCILIATION.md`.
+
 **Review date:** 2026-08-11
 **Branch:** `audit/release-candidate-closure`
 **HEAD:** `8556137fd42dc840bda1c85fa1045c2bbd88dd12`

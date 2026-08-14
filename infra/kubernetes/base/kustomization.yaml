@@ -10,11 +10,14 @@ resources:
   - audit-projector.yaml
   - database-bootstrap.yaml
   - audit-migration.yaml
+  - identity-migration.yaml
+  - identity-recovery.yaml
   - knowledge-graph.yaml
   - knowledge-graph-migration.yaml
   - studio-bff.yaml
   - studio.yaml
   - keycloak-provision.yaml
   - provisioning-validation.yaml
+  - provisioning-validation-recovery.yaml
   - postgresql-backup.yaml
   - network-policies.yaml

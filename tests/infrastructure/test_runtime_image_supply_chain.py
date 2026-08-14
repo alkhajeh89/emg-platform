@@ -487,6 +487,93 @@ def test_rollback_gate_requires_complete_distinct_migration_compatible_set(
 
 
 @pytest.mark.parametrize(
+    ("current_version", "candidate_version", "message"),
+    [
+        ("v1.0.0-rc.8", "v1.0.0-rc.8", "prior distinct"),
+        ("v1.0.0-rc.8", "v1.0.0-rc.9", "must predate"),
+        ("v1.0.0-rc.8", "v1.0.0", "must predate"),
+        ("v1.0.0", "v1.0.1-rc.1", "must predate"),
+        ("v1.0", "v1.0.0-rc.7", "not governed"),
+    ],
+)
+def test_rollback_gate_rejects_equal_newer_or_ungoverned_versions(
+    tmp_path: Path,
+    current_version: str,
+    candidate_version: str,
+    message: str,
+) -> None:
+    current_directory, current_records = _records(tmp_path / "current")
+    previous_directory, previous_records = _records(tmp_path / "previous")
+    current = release_manifest(
+        current_records,
+        version=current_version,
+        commit=COMMIT,
+        repository=SOURCE_REPOSITORY,
+    )
+    previous = release_manifest(
+        previous_records,
+        version=candidate_version,
+        commit=COMMIT,
+        repository=SOURCE_REPOSITORY,
+    )
+    configuration = {
+        "sourceBundleSha256": {"production": "1" * 64},
+        "resolvedBundleSha256": {"production": "2" * 64},
+    }
+    current["configuration"] = configuration
+    previous["configuration"] = configuration
+    current_path = current_directory / "release-images.json"
+    previous_path = previous_directory / "release-images.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    previous_path.write_text(json.dumps(previous), encoding="utf-8")
+
+    with pytest.raises(QualificationError, match=message):
+        rollback_gate(current_path, previous_path)
+
+
+@pytest.mark.parametrize(
+    ("current_version", "candidate_version"),
+    [
+        ("v1.0.0-rc.8", "v1.0.0-rc.7"),
+        ("v1.0.0", "v1.0.0-rc.8"),
+        ("v1.1.0", "v1.0.9"),
+        ("v2.0.0", "v1.99.99"),
+    ],
+)
+def test_rollback_gate_accepts_only_earlier_governed_versions(
+    tmp_path: Path,
+    current_version: str,
+    candidate_version: str,
+) -> None:
+    current_directory, current_records = _records(tmp_path / "current")
+    previous_directory, previous_records = _records(tmp_path / "previous")
+    current = release_manifest(
+        current_records,
+        version=current_version,
+        commit=COMMIT,
+        repository=SOURCE_REPOSITORY,
+    )
+    previous = release_manifest(
+        previous_records,
+        version=candidate_version,
+        commit=COMMIT,
+        repository=SOURCE_REPOSITORY,
+    )
+    configuration = {
+        "sourceBundleSha256": {"production": "1" * 64},
+        "resolvedBundleSha256": {"production": "2" * 64},
+    }
+    current["configuration"] = configuration
+    previous["configuration"] = configuration
+    current_path = current_directory / "release-images.json"
+    previous_path = previous_directory / "release-images.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    previous_path.write_text(json.dumps(previous), encoding="utf-8")
+
+    rollback_gate(current_path, previous_path)
+
+
+@pytest.mark.parametrize(
     "image",
     [
         "registry.invalid/emg/identity@sha256:" + "1" * 64,

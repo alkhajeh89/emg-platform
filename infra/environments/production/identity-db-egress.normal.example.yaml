@@ -1,0 +1,37 @@
+# ADR-043 Amendment 1 A9.4: steady-state (non-recovery) PostgreSQL egress for
+# Identity-owned workloads only. NOT included by kustomization.yaml -- copy,
+# fill in the environment-resolved PostgreSQL ipBlock/port, and apply with
+# `kubectl apply -f` (or through the recovery-fence tooling, which treats this
+# file as the "normal" phase and applies it at State 3 release, A9.6 step 9).
+#
+# Scope is deliberately narrow: this policy governs only Identity-labeled
+# workload identities that need to reach the co-located EMG PostgreSQL
+# database (D-1). Audit, Audit Projector, and Knowledge Graph database egress
+# are governed by their own dedicated files (audit-db-egress.example.yaml,
+# audit-projector-db-egress.example.yaml, knowledge-graph-db-egress.example.yaml)
+# and by provisioning-db-egress.example.yaml for the bootstrap/validation
+# Jobs -- never by this file, and never by the broad
+# `external-egress.example.yaml` selector, which MUST NOT carry a PostgreSQL
+# entry for any workload (see that file's comment).
+#
+# Standard Kubernetes NetworkPolicy rules for the same object name REPLACE
+# (not additively layer on top of) a prior version when re-applied -- this is
+# what lets the recovery-fence script swap this file for
+# identity-db-egress.phase1.example.yaml / .phase2.example.yaml and back
+# without ever having two conflicting allow-rules active for the same target
+# at once. `tools/backup/identity-recovery-fence.sh` additionally scans every
+# other live NetworkPolicy for a rule that would grant this same PostgreSQL
+# reachability to an Identity-labeled pod before it will produce fence
+# evidence, so a stray policy elsewhere in the cluster is caught, not merely
+# discouraged by convention.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-identity-db-egress}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [emg-identity, emg-identity-migration]
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for the EMG PostgreSQL target.

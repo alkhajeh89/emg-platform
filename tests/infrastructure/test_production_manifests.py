@@ -30,7 +30,7 @@ def test_production_manifests_render_without_literal_secrets() -> None:
     objects = _objects()
     assert objects
     assert not [obj for obj in objects if obj["kind"] == "Secret"]
-    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 8
+    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 9
 
 
 def test_staging_manifests_render_without_literal_secrets() -> None:
@@ -54,10 +54,18 @@ def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
         "emg-knowledge-graph",
         "emg-studio",
         "emg-studio-bff",
+        "emg-identity-recovery-qualify",
     }
     digest = re.compile(r"^[^:]+(?:/[^:]+)+@sha256:[0-9a-f]{64}$")
     for deployment in deployments:
-        assert deployment["spec"]["replicas"] == 1
+        # ADR-043 Amendment 1 A9.4 Phase 2: the recovery-qualification
+        # workload defaults to zero replicas -- it exists only to be scaled
+        # to one, on demand, by the recovery coordinator during a fenced
+        # recovery window (see infra/kubernetes/base/identity-recovery.yaml).
+        if deployment["metadata"]["name"] == "emg-identity-recovery-qualify":
+            assert deployment["spec"]["replicas"] == 0
+        else:
+            assert deployment["spec"]["replicas"] == 1
         assert deployment["spec"]["strategy"]["type"] == "Recreate"
         pod = deployment["spec"]["template"]["spec"]
         assert pod["automountServiceAccountToken"] is False
@@ -85,9 +93,12 @@ def test_one_shot_jobs_are_hardened_and_digest_pinned() -> None:
     assert {job["metadata"]["name"] for job in jobs} == {
         "emg-database-bootstrap",
         "emg-audit-migration",
+        "emg-identity-migration",
+        "emg-identity-recovery-reconcile",
         "emg-knowledge-graph-migration",
         "emg-keycloak-provision",
         "emg-provisioning-validate",
+        "emg-provisioning-validate-recovery",
     }
     digest = re.compile(r"^[^:]+(?:/[^:]+)+@sha256:[0-9a-f]{64}$")
     for job in jobs:
@@ -157,9 +168,14 @@ def test_privileged_credentials_are_confined_to_jobs() -> None:
     assert "database-bootstrap" in bootstrap
     assert "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN" in bootstrap
     assert "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN" in bootstrap
+    assert "EMG_IDENTITY_MIGRATION_POSTGRES_DSN" in bootstrap
+    assert "EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN" in bootstrap
     assert "emg-knowledge-graph-secrets" in bootstrap
     assert "migration-postgres-dsn" in yaml.safe_dump(jobs["emg-audit-migration"])
     assert "migration-postgres-dsn" in yaml.safe_dump(jobs["emg-knowledge-graph-migration"])
+    identity_migration = yaml.safe_dump(jobs["emg-identity-migration"])
+    assert "migration-postgres-dsn" in identity_migration
+    assert "refresh-postgres-dsn" not in identity_migration
     provision = yaml.safe_dump(jobs["emg-keycloak-provision"])
     assert "admin-password" in provision
     assert "admin-username" in provision
@@ -180,8 +196,10 @@ def test_adr_041_provisioning_contract_is_complete_and_ordered() -> None:
     }
     assert stages["emg-database-bootstrap"] == "10-database-roles"
     assert stages["emg-audit-migration"] == "20-postgresql-migrations"
+    assert stages["emg-identity-migration"] == "20-postgresql-migrations"
     assert stages["emg-keycloak-provision"] == "30-keycloak-projector-clients"
     assert stages["emg-provisioning-validate"] == "50-consistency-validation"
+    assert stages["emg-identity"] == "60-identity-service"
     assert stages["emg-audit"] == "60-audit-service"
     assert stages["emg-audit-projector"] == "70-audit-projector"
 
@@ -206,6 +224,8 @@ def test_provisioning_validation_rejects_inventory_or_allow_list_divergence() ->
     (
         "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN",
         "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN",
+        "EMG_IDENTITY_MIGRATION_POSTGRES_DSN",
+        "EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN",
     ),
 )
 def test_provisioning_validation_rejects_missing_kg_bootstrap_dsn(missing_name: str) -> None:

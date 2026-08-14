@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: emg-identity-migration
+  annotations: {emg.platform/bootstrap-stage: "20-postgresql-migrations"}
+spec:
+  backoffLimit: 3
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-identity-migration, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: emg-identity
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: identity-migration
+          image: registry.invalid/emg/audit-projector@sha256:0000000000000000000000000000000000000000000000000000000000000005
+          command: [python, -m, emg_persistence.provisioning, identity-migrate]
+          env:
+            - {name: EMG_IDENTITY_MIGRATION_POSTGRES_DSN, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: migration-postgres-dsn}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 250m, memory: 128Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 16Mi}}]

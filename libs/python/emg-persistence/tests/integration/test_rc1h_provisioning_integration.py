@@ -4,24 +4,32 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
 import psycopg
 import pytest
+from emg_identity.refresh_tokens import PostgresRefreshTokenStore
 from emg_persistence.migrate import default_migrations_dir, run_migrations
 from emg_persistence.migrations import MigrationKind
 from emg_persistence.migrations.errors import FailedMigrationError
 from emg_persistence.postgres import PostgresMigrationExecutor
 from emg_persistence.provisioning import (
+    InMemoryApprovedRecoveryAuthority,
     bootstrap_database_roles,
+    reconcile_identity_recovery,
     retry_dirty_audit_v001,
     retry_dirty_knowledge_graph_v005,
+    rotate_identity_recovery_generation,
     run_audit_migrations,
+    run_identity_migrations,
     run_knowledge_graph_migrations,
     validate_provisioned_databases,
 )
+from emg_persistence.provisioning.database import _validate_identity_database
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.errors import InsufficientPrivilege
@@ -30,6 +38,18 @@ _PG_DSN = os.environ.get("EMG_PERSISTENCE_TEST_POSTGRES_DSN")
 requires_postgres = pytest.mark.skipif(
     not _PG_DSN, reason="requires EMG_PERSISTENCE_TEST_POSTGRES_DSN"
 )
+
+
+def _reconcile_initial(identity_migrator_dsn: str) -> tuple[str, str]:
+    """A8: establish the initial (generation, authority_revision) pair and
+    record it via A6 reconciliation, as bootstrap requires before Stage-50
+    may validate the recovery relation."""
+
+    pair = InMemoryApprovedRecoveryAuthority().read_current()
+    reconcile_identity_recovery(identity_migrator_dsn, pair.generation, pair.authority_revision)
+    return pair.generation, pair.authority_revision
+
+
 ROOT = Path(__file__).resolve().parents[5]
 
 
@@ -54,6 +74,10 @@ def _bootstrap_role_dsns(
         "emg_knowledge_graph_app": _dsn(
             database, "emg_knowledge_graph_app", "rc1h-kg-app-password"
         ),
+        "emg_identity_migrator": _dsn(
+            database, "emg_identity_migrator", "rc9-identity-migrator-password"
+        ),
+        "emg_identity_app": _dsn(database, "emg_identity_app", "rc9-identity-app-password"),
     }
 
 
@@ -186,7 +210,10 @@ def test_database_bootstrap_audit_adoption_and_v007_least_privilege(
     with psycopg.connect(admin_dsn) as connection:
         run_migrations(PostgresMigrationExecutor(connection), tmp_path)
 
-    validate_provisioned_databases(migrator_dsn, admin_dsn)
+    identity_migrator_dsn = role_dsns["emg_identity_migrator"]
+    run_identity_migrations(identity_migrator_dsn)
+    _reconcile_initial(identity_migrator_dsn)
+    validate_provisioned_databases(migrator_dsn, admin_dsn, identity_migrator_dsn)
 
     with psycopg.connect(projector_dsn) as connection:
         assert connection.execute("SELECT count(*) FROM mutation_ledger").fetchone() == (0,)
@@ -291,6 +318,181 @@ def test_audit_adoption_rejects_schema_mismatch(
 
 
 @requires_postgres
+def test_identity_clean_migration_runtime_privileges_and_recovery_invalidation(
+    provisioned_database: tuple[str, str, str, str],
+) -> None:  # pragma: no cover
+    admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn = provisioned_database
+    role_dsns = _bootstrap_role_dsns(admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn)
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    migrator_dsn = role_dsns["emg_identity_migrator"]
+    runtime_dsn = role_dsns["emg_identity_app"]
+
+    assert [migration.name for migration in run_identity_migrations(migrator_dsn)] == [
+        "identity_refresh_state",
+        "identity_recovery_state",
+    ]
+    assert run_identity_migrations(migrator_dsn) == ()
+    authority = InMemoryApprovedRecoveryAuthority()
+    initial_pair = authority.read_current()
+    reconcile_identity_recovery(
+        migrator_dsn, initial_pair.generation, initial_pair.authority_revision
+    )
+
+    store = PostgresRefreshTokenStore(runtime_dsn)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    store.register("runtime-family", "runtime-token-1", expires_at)
+    assert store.rotate("runtime-family", "runtime-token-1", "runtime-token-2", expires_at)
+    assert not store.rotate("runtime-family", "runtime-token-1", "runtime-token-3", expires_at)
+    assert not store.family_is_active("runtime-family")
+
+    with psycopg.connect(runtime_dsn) as connection:
+        connection.execute(
+            "INSERT INTO emg_identity.identity_refresh_token_families (family_hash) "
+            "VALUES ('family')"
+        )
+        connection.execute(
+            "INSERT INTO emg_identity.identity_refresh_tokens "
+            "(token_hash, family_hash, status, expires_at) "
+            "VALUES ('token', 'family', 'active', clock_timestamp() + interval '1 hour')"
+        )
+        connection.execute(
+            "UPDATE emg_identity.identity_refresh_token_families "
+            "SET revoked_at = clock_timestamp() WHERE family_hash = 'family'"
+        )
+        connection.execute(
+            "UPDATE emg_identity.identity_refresh_tokens "
+            "SET status = 'rotated', rotated_at = clock_timestamp() WHERE token_hash = 'token'"
+        )
+        connection.commit()
+        for statement in (
+            "DELETE FROM emg_identity.identity_refresh_tokens",
+            "TRUNCATE emg_identity.identity_refresh_tokens",
+            "CREATE TABLE emg_identity.runtime_ddl_forbidden (id integer)",
+            "UPDATE emg_identity.identity_schema_migrations SET dirty = true",
+            "UPDATE emg_identity.identity_refresh_tokens SET expires_at = clock_timestamp()",
+        ):
+            with pytest.raises(InsufficientPrivilege):
+                connection.execute(statement)
+            connection.rollback()
+
+    with psycopg.connect(migrator_dsn) as connection:
+        connection.execute(
+            "UPDATE emg_identity.identity_refresh_token_families SET revoked_at = NULL"
+        )
+        connection.execute("UPDATE emg_identity.identity_refresh_tokens SET status = 'active'")
+    rotated = rotate_identity_recovery_generation(authority)
+    recovery_env = {
+        **os.environ,
+        "EMG_IDENTITY_RECOVERY_DSN": migrator_dsn,
+        "EMG_IDENTITY_RECOVERY_GENERATION": rotated.generation,
+        "EMG_IDENTITY_RECOVERY_AUTHORITY_REVISION": rotated.authority_revision,
+        "EMG_BACKUP_PYTHON": str(ROOT / ".venv/bin/python"),
+    }
+    script = ROOT / "tools/backup/invalidate-identity-refresh-state.sh"
+    subprocess.run([script], env=recovery_env, check=True)
+    subprocess.run([script], env=recovery_env, check=True)  # crash/retry: idempotent (A6, A7(F))
+    with psycopg.connect(migrator_dsn) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM emg_identity.identity_refresh_token_families "
+            "WHERE revoked_at IS NULL"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM emg_identity.identity_refresh_tokens " "WHERE status <> 'revoked'"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT reconciled_generation::text, reconciled_authority_revision "
+            "FROM emg_identity.identity_recovery_state"
+        ).fetchone() == (rotated.generation, rotated.authority_revision)
+        _validate_identity_database(connection)
+        connection.execute(
+            "GRANT DELETE ON emg_identity.identity_refresh_tokens TO emg_identity_app"
+        )
+        with pytest.raises(RuntimeError, match="unexpected table-level grantee or privilege"):
+            _validate_identity_database(connection)
+        connection.rollback()
+
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute("CREATE TABLE unrelated_identity_forbidden (id integer)")
+        connection.execute("GRANT SELECT ON unrelated_identity_forbidden TO emg_identity_app")
+    with (
+        psycopg.connect(migrator_dsn) as connection,
+        pytest.raises(RuntimeError, match="cross-schema"),
+    ):
+        _validate_identity_database(connection)
+
+
+@requires_postgres
+def test_identity_exact_legacy_adoption_preserves_rows_and_rejects_divergence(
+    provisioned_database: tuple[str, str, str, str],
+) -> None:  # pragma: no cover
+    admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn = provisioned_database
+    role_dsns = _bootstrap_role_dsns(admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn)
+    with psycopg.connect(admin_dsn) as connection:
+        connection.execute(
+            "CREATE TABLE identity_refresh_token_families ("
+            "family_hash TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL "
+            "DEFAULT clock_timestamp(), revoked_at TIMESTAMPTZ)"
+        )
+        connection.execute(
+            "CREATE TABLE identity_refresh_tokens (token_hash TEXT PRIMARY KEY, "
+            "family_hash TEXT NOT NULL REFERENCES identity_refresh_token_families(family_hash), "
+            "status TEXT NOT NULL CHECK (status IN ('active', 'rotated', 'revoked')), "
+            "expires_at TIMESTAMPTZ NOT NULL, rotated_at TIMESTAMPTZ)"
+        )
+        connection.execute(
+            "CREATE INDEX idx_identity_refresh_tokens_family "
+            "ON identity_refresh_tokens (family_hash)"
+        )
+        connection.execute(
+            "INSERT INTO identity_refresh_token_families (family_hash) VALUES ('legacy')"
+        )
+        connection.execute(
+            "INSERT INTO identity_refresh_tokens "
+            "(token_hash, family_hash, status, expires_at) VALUES "
+            "('legacy-token', 'legacy', 'active', clock_timestamp() + interval '1 hour')"
+        )
+
+    bootstrap_database_roles(admin_dsn, role_dsns)
+    run_identity_migrations(role_dsns["emg_identity_migrator"])
+    with psycopg.connect(role_dsns["emg_identity_migrator"]) as connection:
+        assert connection.execute(
+            "SELECT family_hash FROM emg_identity.identity_refresh_token_families"
+        ).fetchall() == [("legacy",)]
+        legacy_table = connection.execute(
+            "SELECT to_regclass('public.identity_refresh_tokens')"
+        ).fetchone()
+        assert legacy_table == (None,)
+
+
+@requires_postgres
+@pytest.mark.parametrize("state", ("partial", "divergent"))
+def test_identity_legacy_adoption_fails_closed(
+    provisioned_database: tuple[str, str, str, str], state: str
+) -> None:  # pragma: no cover
+    admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn = provisioned_database
+    role_dsns = _bootstrap_role_dsns(admin_dsn, audit_migrator_dsn, audit_app_dsn, projector_dsn)
+    with psycopg.connect(admin_dsn) as connection:
+        if state == "partial":
+            connection.execute(
+                "CREATE TABLE identity_refresh_token_families (family_hash TEXT PRIMARY KEY)"
+            )
+        else:
+            connection.execute(
+                "CREATE TABLE identity_refresh_token_families (family_hash TEXT PRIMARY KEY)"
+            )
+            connection.execute(
+                "CREATE TABLE identity_refresh_tokens (token_hash TEXT PRIMARY KEY, "
+                "family_hash TEXT NOT NULL REFERENCES identity_refresh_token_families(family_hash))"
+            )
+    with pytest.raises(RuntimeError, match="Identity"):
+        bootstrap_database_roles(admin_dsn, role_dsns)
+    with psycopg.connect(admin_dsn) as connection:
+        assert connection.execute(
+            "SELECT to_regclass('public.identity_refresh_token_families') IS NOT NULL"
+        ).fetchone() == (True,)
+
+
+@requires_postgres
 def test_fresh_colocated_streams_use_scoped_v005_compatibility(
     provisioned_database: tuple[str, str, str, str],
 ) -> None:  # pragma: no cover
@@ -374,12 +576,12 @@ def test_colocated_streams_recover_dirty_v005_without_cross_stream_mutation(
         connection.execute("CREATE TABLE identity_refresh_token_families (id text)")
         connection.execute("CREATE TABLE identity_refresh_tokens (id text)")
         audit_before = connection.execute(
-            "SELECT tableowner FROM pg_tables WHERE tablename IN "
+            "SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename IN "
             "('audit_events', 'audit_schema_migrations', 'evidence_custody_events') "
             "ORDER BY tablename"
         ).fetchall()
         identity_before = connection.execute(
-            "SELECT tableowner FROM pg_tables WHERE tablename IN "
+            "SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename IN "
             "('identity_refresh_token_families', 'identity_refresh_tokens') "
             "ORDER BY tablename"
         ).fetchall()
@@ -425,7 +627,10 @@ def test_colocated_streams_recover_dirty_v005_without_cross_stream_mutation(
         applied = run_knowledge_graph_migrations(PostgresMigrationExecutor(connection))
         assert [migration.version for migration in applied] == [6, 7, 8, 9, 10]
 
-    validate_provisioned_databases(audit_migrator_dsn, kg_migrator_dsn)
+    identity_migrator_dsn = role_dsns["emg_identity_migrator"]
+    run_identity_migrations(identity_migrator_dsn)
+    _reconcile_initial(identity_migrator_dsn)
+    validate_provisioned_databases(audit_migrator_dsn, kg_migrator_dsn, identity_migrator_dsn)
     with psycopg.connect(admin_dsn) as connection:
         assert (
             connection.execute(
@@ -437,7 +642,7 @@ def test_colocated_streams_recover_dirty_v005_without_cross_stream_mutation(
         )
         assert (
             connection.execute(
-                "SELECT tableowner FROM pg_tables WHERE tablename IN "
+                "SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename IN "
                 "('identity_refresh_token_families', 'identity_refresh_tokens') "
                 "ORDER BY tablename"
             ).fetchall()

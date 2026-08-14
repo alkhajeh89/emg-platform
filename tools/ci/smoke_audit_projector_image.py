@@ -13,6 +13,7 @@ def _run(command: str) -> None:
     calls: list[str] = []
     provisioning.bootstrap_database_roles = lambda *_args: calls.append("database-bootstrap")
     provisioning.run_audit_migrations = lambda *_args: calls.append("audit-migrate")
+    provisioning.run_identity_migrations = lambda *_args: calls.append("identity-migrate")
     provisioning.retry_dirty_audit_v001 = lambda *_args: calls.append("audit-retry-v001")
     provisioning.retry_dirty_knowledge_graph_v005 = lambda *_args: calls.append(
         "knowledge-graph-retry-v005"
@@ -26,6 +27,8 @@ def _run(command: str) -> None:
             "EMG_AUDIT_PROJECTOR_POSTGRES_DSN": "postgresql://smoke",
             "EMG_KNOWLEDGE_GRAPH_MIGRATION_POSTGRES_DSN": "postgresql://smoke",
             "EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN": "postgresql://smoke",
+            "EMG_IDENTITY_MIGRATION_POSTGRES_DSN": "postgresql://smoke",
+            "EMG_IDENTITY_REFRESH_TOKEN_POSTGRES_DSN": "postgresql://smoke",
         }
     )
     sys.argv = ["emg-persistence-provisioning", command]
@@ -38,6 +41,7 @@ for provisioning_command in (
     "database-bootstrap",
     "audit-migrate",
     "audit-retry-v001",
+    "identity-migrate",
     "knowledge-graph-retry-v005",
     "validate-database",
 ):
