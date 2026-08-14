@@ -46,12 +46,6 @@ def admin_dsn() -> Iterator[str]:
     database = f"session_fence_{uuid4().hex}"
     values = conninfo_to_dict(_PG_DSN)
     values["dbname"] = database
-    # terminate_and_prove_identity_app_sessions_excluded requires a
-    # non-blank credential on the admin DSN (production hygiene, matching
-    # every other governed-role DSN check in this codebase); local trust-auth
-    # Postgres ignores the password value but this exercises the real check.
-    values.setdefault("user", "mak")
-    values["password"] = "local-test-admin-credential"
     dsn = make_conninfo(**values)
     with psycopg.connect(_PG_DSN, autocommit=True) as connection:
         connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
