@@ -1,2 +1,10 @@
 # Synthetic idempotency test value; not a credential.
 67f12691970d10e7606085a6be8bf278c2b2d547:services/knowledge-graph/tests/api/test_schema_negotiation_phase2.py:generic-api-key:199
+
+# Current-tree equivalents of the four commit-scoped false positives reviewed
+# in .gitleaks.toml. Directory scans have no commit identity, so exact
+# file/rule/line fingerprints preserve those decisions without excluding paths.
+docs/architecture/IMPLEMENTATION_GAP_ANALYSIS.md:generic-api-key:258
+docs/architecture/PHASE3_ENTERPRISE_PLATFORM_ARCHITECTURE.md:generic-api-key:21
+libs/python/emg-knowledge-pipeline/tests/test_transactions.py:generic-api-key:140
+services/identity/tests/test_audit_pipeline.py:generic-api-key:94

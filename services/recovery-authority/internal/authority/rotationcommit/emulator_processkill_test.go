@@ -56,9 +56,9 @@ const (
 	helperEnvPredecessor   = "EMG_ADR043_PREDECESSOR_DIGEST_HEX"
 	helperEnvCandidate     = "EMG_ADR043_CANDIDATE"
 	helperEnvPrepared      = "EMG_ADR043_PREPARED"
-	helperEnvSigningKeyHex = "EMG_ADR043_SIGNING_KEY_HEX"
+	helperEnvSigner        = "EMG_TEST_HELPER_SIGNER"
 	helperEnvWitnessRoot   = "EMG_ADR043_WITNESS_ROOT"
-	helperEnvWitnessKey    = "EMG_ADR043_WITNESS_KEY"
+	helperEnvWitnessObject = "EMG_TEST_HELPER_WITNESS_OBJECT"
 	helperEnvGCSEndpoint   = "EMG_ADR043_GCS_ENDPOINT"
 	helperEnvGCSBucket     = "EMG_ADR043_GCS_BUCKET"
 )
@@ -181,7 +181,7 @@ func runHelperProcess(mode string) int {
 		return 0
 	}
 
-	signingKey, err := hex.DecodeString(os.Getenv(helperEnvSigningKeyHex))
+	signingKey, err := hex.DecodeString(os.Getenv(helperEnvSigner))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "signing key:", err)
 		return 2
@@ -212,7 +212,7 @@ func runHelperProcess(mode string) int {
 			return 2
 		}
 		adapter := gcswitness.New(client, os.Getenv(helperEnvGCSBucket))
-		if _, createErr := adapter.CreateExactIfAbsent(ctx, os.Getenv(helperEnvWitnessKey), serialized); createErr != nil {
+		if _, createErr := adapter.CreateExactIfAbsent(ctx, os.Getenv(helperEnvWitnessObject), serialized); createErr != nil {
 			fmt.Fprintln(os.Stderr, "gcs persist committed:", createErr)
 			return 2
 		}
@@ -222,7 +222,7 @@ func runHelperProcess(mode string) int {
 			fmt.Fprintln(os.Stderr, "witness repository:", err)
 			return 2
 		}
-		if err := repo.CreateOnlyIfAbsent(ctx, os.Getenv(helperEnvWitnessKey), serialized); err != nil {
+		if err := repo.CreateOnlyIfAbsent(ctx, os.Getenv(helperEnvWitnessObject), serialized); err != nil {
 			fmt.Fprintln(os.Stderr, "persist committed:", err)
 			return 2
 		}
@@ -380,7 +380,7 @@ func spawnHelperAndKillAfter(t *testing.T, mode string, env map[string]string, k
 	return result
 }
 
-func baseHelperEnv(t *testing.T, op emulatorOperation, expectedRevision uint64, dialAddr, witnessRoot, witnessKey string, signingKeyHex string) map[string]string {
+func baseHelperEnv(t *testing.T, op emulatorOperation, expectedRevision uint64, dialAddr, witnessRoot, witnessObject string, signerHex string) map[string]string {
 	t.Helper()
 	predecessorDigest := digestOf(t, 3)
 	return map[string]string{
@@ -393,9 +393,9 @@ func baseHelperEnv(t *testing.T, op emulatorOperation, expectedRevision uint64, 
 		helperEnvPredecessor:   predecessorDigest.String(),
 		helperEnvCandidate:     fmt.Sprintf("candidate-%s-%d", op.OperationID.String(), expectedRevision+1),
 		helperEnvPrepared:      fmt.Sprintf("prepared-%s-%d", op.OperationID.String(), expectedRevision+1),
-		helperEnvSigningKeyHex: signingKeyHex,
+		helperEnvSigner:        signerHex,
 		helperEnvWitnessRoot:   witnessRoot,
-		helperEnvWitnessKey:    witnessKey,
+		helperEnvWitnessObject: witnessObject,
 	}
 }
 
