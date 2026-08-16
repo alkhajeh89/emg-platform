@@ -1,0 +1,14 @@
+{
+  "stage": "Step 7 -- reduce the retention period of a locked policy",
+  "request": {
+    "method": "PATCH",
+    "target": "gs://emg-adr043-bucketlock-test-a09a5162/",
+    "attempted_change": "retentionPeriod 180 -> 10 (seconds)"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "forbidden",
+    "message": "Cannot reduce retention duration of a locked Retention Policy for bucket 'emg-adr043-bucketlock-test-a09a5162'."
+  },
+  "note": "DISCREPANCY FROM PRIOR DOCUMENTATION RESEARCH: the official Cloud Storage JSON API status-codes reference documents this scenario under HTTP 400 (reason badRequestException, message 'The retention period on a locked bucket cannot be reduced.'). The real, observed provider behavior is HTTP 403 (reason forbidden) with a differently-worded message. This file records the actual observed behavior, which is authoritative over the documentation for this specific case. Headers and client identity fields removed."
+}

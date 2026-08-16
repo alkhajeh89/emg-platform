@@ -1,0 +1,13 @@
+{
+  "stage": "Step 7 -- delete the bucket while it still contains a retained object",
+  "request": {
+    "method": "DELETE",
+    "target": "gs://emg-adr043-bucketlock-test-a09a5162/"
+  },
+  "response": {
+    "http_status": 409,
+    "reason": "conflict",
+    "message": "The bucket you tried to delete is not empty."
+  },
+  "note": "The recursive delete first attempted to remove the contained object, which independently returned the 403/retentionPolicyNotMet result recorded in 03-delete-retained-object-403.json; the bucket-delete call itself then returned this 409. The JSON API surface returns the generic 'conflict' reason here, not a distinct BucketNotEmpty-style reason (that specific reason string exists only on the XML API surface per prior documentation research) -- this is the empirical resolution of that documentation gap. Headers and client identity fields removed."
+}

@@ -1,0 +1,19 @@
+{
+  "stage": "Step 6 -- lock the bucket retention policy",
+  "request": {
+    "method": "POST",
+    "endpoint": "https://storage.googleapis.com/storage/v1/b/emg-adr043-bucketlock-test-a09a5162/lockRetentionPolicy?alt=json&ifMetagenerationMatch=4"
+  },
+  "response": {
+    "http_status": 200,
+    "body_excerpt": {
+      "metageneration": "5",
+      "retentionPolicy": {
+        "retentionPeriod": "180",
+        "effectiveTime": "2026-08-16T10:36:30.091Z",
+        "isLocked": true
+      }
+    }
+  },
+  "note": "ifMetagenerationMatch=4 matches the bucket's metageneration immediately before this call (see bucket-metadata-before-lock.json), proving the documented precondition mechanism was used. Full body preserved in ../bucket-metadata-after-lock.json. Headers, upload IDs, and client identity fields removed."
+}

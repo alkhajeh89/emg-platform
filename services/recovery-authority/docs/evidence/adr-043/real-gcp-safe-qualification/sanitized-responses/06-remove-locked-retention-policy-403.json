@@ -1,0 +1,14 @@
+{
+  "stage": "Step 7 -- remove the locked retention policy entirely",
+  "request": {
+    "method": "PATCH",
+    "target": "gs://emg-adr043-bucketlock-test-a09a5162/",
+    "attempted_change": "retentionPolicy: null (clear-retention-period)"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "retentionPolicyNotMet",
+    "message": "Bucket 'emg-adr043-bucketlock-test-a09a5162' has a locked Retention Policy which cannot be removed."
+  },
+  "note": "Headers and client identity fields removed."
+}

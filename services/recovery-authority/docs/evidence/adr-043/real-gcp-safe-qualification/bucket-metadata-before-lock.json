@@ -1,0 +1,26 @@
+{
+  "creation_time": "2026-08-16T10:33:12+0000",
+  "default_storage_class": "STANDARD",
+  "generation": 1786876391933550577,
+  "labels": {
+    "disposable": "true",
+    "owner": "adr043-engagement",
+    "purpose": "adr043-bucketlock-safe-test"
+  },
+  "location": "US-CENTRAL1",
+  "location_type": "region",
+  "metageneration": 4,
+  "name": "emg-adr043-bucketlock-test-a09a5162",
+  "public_access_prevention": "inherited",
+  "retention_policy": {
+    "effectiveTime": "2026-08-16T10:36:30.091000+00:00",
+    "retentionPeriod": "180"
+  },
+  "soft_delete_policy": {
+    "effectiveTime": "2026-08-16T10:33:12.052000+00:00",
+    "retentionDurationSeconds": "604800"
+  },
+  "storage_url": "gs://emg-adr043-bucketlock-test-a09a5162/",
+  "uniform_bucket_level_access": true,
+  "update_time": "2026-08-16T10:35:31+0000"
+}

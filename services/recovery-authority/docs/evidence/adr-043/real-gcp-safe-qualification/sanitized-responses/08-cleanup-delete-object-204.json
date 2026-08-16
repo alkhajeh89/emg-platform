@@ -1,0 +1,11 @@
+{
+  "stage": "Step 11/12 -- cleanup: delete the test object after its 180-second retention naturally expired (retention_expiration 2026-08-16T10:39:49Z)",
+  "request": {
+    "method": "DELETE",
+    "target": "gs://emg-adr043-bucketlock-test-a09a5162/witness/test-object-v1.txt"
+  },
+  "response": {
+    "http_status": 204
+  },
+  "note": "Performed only after natural retention expiry, not by removing or bypassing any protection. Headers and client identity fields removed."
+}

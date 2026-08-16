@@ -1,0 +1,17 @@
+{
+  "bucket": "emg-adr043-bucketlock-test-a09a5162",
+  "content_type": "text/plain",
+  "crc32c_hash": "Cb5f5A==",
+  "creation_time": "2026-08-16T10:36:49+0000",
+  "etag": "CJqg0Yz6pJYDEAE=",
+  "generation": "1786876609712154",
+  "md5_hash": "XsLgM+VIr14BI/3FFRqB7w==",
+  "metageneration": 1,
+  "name": "witness/test-object-v1.txt",
+  "retention_expiration": "2026-08-16T10:39:49+0000",
+  "size": 76,
+  "storage_class": "STANDARD",
+  "storage_class_update_time": "2026-08-16T10:36:49+0000",
+  "storage_url": "gs://emg-adr043-bucketlock-test-a09a5162/witness/test-object-v1.txt#1786876609712154",
+  "update_time": "2026-08-16T10:36:49+0000"
+}

@@ -1,0 +1,1 @@
+ADR-043 Bucket Lock safe conformance test object. Deterministic content v1.

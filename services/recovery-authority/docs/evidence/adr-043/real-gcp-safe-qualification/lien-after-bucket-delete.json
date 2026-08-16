@@ -1,0 +1,12 @@
+[
+  {
+    "createTime": "2026-08-16T10:38:22.106662Z",
+    "name": "liens/p617557656575-l97a51660-8e59-44f2-8874-9179539e3b12",
+    "origin": "storage.googleapis.com",
+    "parent": "projects/617557656575",
+    "reason": "A lien is put on project deletion because one or more Cloud Storage resources were put under retention.",
+    "restrictions": [
+      "resourcemanager.projects.delete"
+    ]
+  }
+]

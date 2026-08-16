@@ -1,0 +1,11 @@
+{
+  "stage": "Step 11/12 -- cleanup: delete the now-empty bucket",
+  "request": {
+    "method": "DELETE",
+    "target": "gs://emg-adr043-bucketlock-test-a09a5162/"
+  },
+  "response": {
+    "http_status": 204
+  },
+  "note": "The project-level lien (see lien-after-bucket-delete.json) persisted after this deletion and was left in place, untouched, per the standing hard prohibition on lien removal in this task. Headers and client identity fields removed."
+}

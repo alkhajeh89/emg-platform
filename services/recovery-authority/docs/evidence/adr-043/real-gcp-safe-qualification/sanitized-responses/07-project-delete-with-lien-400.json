@@ -1,0 +1,30 @@
+{
+  "stage": "Step 8/9 -- safe project-deletion check: request deletion of Project B while the Bucket-Lock-created lien is present",
+  "request": {
+    "method": "DELETE",
+    "target": "projects/emg-adr043-disposable-witness"
+  },
+  "response": {
+    "http_status": 400,
+    "status": "FAILED_PRECONDITION",
+    "message": "Precondition check failed.",
+    "details": [
+      {
+        "type": "google.rpc.PreconditionFailure",
+        "violations": [
+          {
+            "type": "LIEN",
+            "subject": "liens/p617557656575-l97a51660-8e59-44f2-8874-9179539e3b12",
+            "description": "A lien to prevent deletion was placed on the project by [storage.googleapis.com]. Remove the lien to allow deletion."
+          }
+        ]
+      },
+      {
+        "type": "google.rpc.ErrorInfo",
+        "reason": "PROJECT_DELETE_LIEN",
+        "domain": "cloudresourcemanager.googleapis.com"
+      }
+    ]
+  },
+  "note": "The deletion request was rejected outright; the project's lifecycleState was ACTIVE immediately before and immediately after this call (see project-state-before-delete-attempt.json and project-state-after-delete-attempt.json), confirming the project never entered DELETE_REQUESTED. This is the direct empirical confirmation that a Bucket-Lock-created lien blocks the projects.delete request itself, not merely a later stage of deletion. Headers and client identity fields removed."
+}

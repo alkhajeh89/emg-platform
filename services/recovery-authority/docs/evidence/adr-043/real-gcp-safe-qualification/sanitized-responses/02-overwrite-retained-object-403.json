@@ -1,0 +1,13 @@
+{
+  "stage": "Step 7 -- overwrite a retained object while retention is locked and active",
+  "request": {
+    "method": "PUT (resumable upload finalization)",
+    "target": "gs://emg-adr043-bucketlock-test-a09a5162/witness/test-object-v1.txt"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "retentionPolicyNotMet",
+    "message": "Object 'emg-adr043-bucketlock-test-a09a5162/witness/test-object-v1.txt' is subject to bucket's retention policy or object retention and cannot be deleted or overwritten until 2026-08-16T03:39:49.717743-07:00"
+  },
+  "note": "Resumable-upload session creation itself returns 200; the definitive 403 occurs at finalization. Object bytes/generation were unaffected (verified separately). Headers, upload IDs, and client identity fields removed."
+}
