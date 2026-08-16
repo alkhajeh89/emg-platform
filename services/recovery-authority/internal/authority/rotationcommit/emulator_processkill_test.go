@@ -249,10 +249,16 @@ type committedPayloadDTO struct {
 	StateDigest         string `json:"state_digest_hex"`
 	CommitTimestamp     string `json:"commit_timestamp"`
 	WriterSignature     string `json:"writer_signature_hex"`
+	// SigningKeyID is present (non-empty) for V2 payloads only (ADR-045).
+	// buildCommittedPayload always produces V2, so every genuine
+	// subprocess-persisted payload in this file's helper flow serializes
+	// with this field set; a few negative-test scenarios below deliberately
+	// construct V1-shaped payloads and omit it.
+	SigningKeyID string `json:"signing_key_id,omitempty"`
 }
 
 func serializeCommittedPayload(payload protocol.CommittedPayload) ([]byte, error) {
-	return json.Marshal(committedPayloadDTO{
+	dto := committedPayloadDTO{
 		EnvironmentID:       payload.EnvironmentID().String(),
 		AuthorityEpoch:      payload.AuthorityEpoch().String(),
 		ResourceIncarnation: payload.ResourceIncarnation().String(),
@@ -263,7 +269,11 @@ func serializeCommittedPayload(payload protocol.CommittedPayload) ([]byte, error
 		StateDigest:         payload.StateDigest().String(),
 		CommitTimestamp:     payload.CommitTimestamp().Format(time.RFC3339Nano),
 		WriterSignature:     hex.EncodeToString(payload.WriterSignature()),
-	})
+	}
+	if payload.IsV2() {
+		dto.SigningKeyID = payload.SigningKeyID().String()
+	}
+	return json.Marshal(dto)
 }
 
 func deserializeCommittedPayload(t *testing.T, data []byte) protocol.CommittedPayload {
@@ -303,6 +313,21 @@ func deserializeCommittedPayload(t *testing.T, data []byte) protocol.CommittedPa
 	signature, err := hex.DecodeString(dto.WriterSignature)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if dto.SigningKeyID != "" {
+		keyID, err := protocol.NewSigningKeyID(dto.SigningKeyID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := protocol.NewCommittedPayloadV2(
+			environment, authorityEpoch, resource, operationID,
+			protocol.NewRevisionNumber(dto.RevisionNumber), protocol.NewRevisionNumber(dto.PredecessorRevision),
+			predecessorDigest, stateDigest, commitTimestamp, keyID, signature,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return payload
 	}
 	return protocol.NewCommittedPayload(
 		environment, authorityEpoch, resource, operationID,
@@ -569,6 +594,9 @@ func TestProcessKillT10CommittedPersistedBeforeAckMayResume(t *testing.T) {
 		OperationID:         op.OperationID,
 		PredecessorRevision: protocol.NewRevisionNumber(0),
 		PredecessorDigest:   digestOf(t, 3),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool {
+			return keyID == keyPair.KeyID()
+		},
 	}
 	if err := recovery.VerifyPersistedCommitted(context.Background(), verifier, payload, expected); err != nil {
 		t.Fatalf("independent verification of the persisted COMMITTED failed: %v", err)
@@ -660,6 +688,9 @@ func TestProcessKillT10GCSCommittedPersistedBeforeAckMayResume(t *testing.T) {
 		OperationID:         op.OperationID,
 		PredecessorRevision: protocol.NewRevisionNumber(0),
 		PredecessorDigest:   digestOf(t, 3),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool {
+			return keyID == keyPair.KeyID()
+		},
 	}
 	if err := recovery.VerifyPersistedCommitted(context.Background(), verifier, payload, expected); err != nil {
 		t.Fatalf("independent verification of the GCS-persisted COMMITTED failed: %v", err)
@@ -718,14 +749,22 @@ func TestGCSWitnessUnsignedFabricatedWrongKeyTamperedNeverActivates(t *testing.T
 		OperationID:         op.OperationID,
 		PredecessorRevision: operation.ExpectedRevision(),
 		PredecessorDigest:   operation.PreparedDigest(),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool {
+			return keyID == genuineKeyPair.KeyID()
+		},
 	}
 
+	unsigned, err := protocol.NewCommittedPayloadV2(
+		genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
+		genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
+		genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(),
+		genuinePayload.SigningKeyID(), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	scenarios := map[string]protocol.CommittedPayload{
-		"unsigned": protocol.NewCommittedPayload(
-			genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
-			genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
-			genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(), nil,
-		),
+		"unsigned":   unsigned,
 		"fabricated": genuinePayload.WithSignature([]byte("not-a-real-signature-at-all")),
 	}
 	otherKeyPair, err := localsigner.GenerateKeyPair()
@@ -736,19 +775,26 @@ func TestGCSWitnessUnsignedFabricatedWrongKeyTamperedNeverActivates(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrongKeySig, err := otherKeyPair.Signer().SignCommittedDigest(context.Background(), wrongKeyDigest)
+	wrongKeySig, _, err := otherKeyPair.Signer().SignCommittedDigest(context.Background(), wrongKeyDigest)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The claimed key ID stays the genuine one -- only the bytes are signed
+	// by a different key -- so this scenario isolates a pure cryptographic
+	// verification failure from the independent key-authorization gate.
 	scenarios["wrong-key"] = genuinePayload.WithSignature(wrongKeySig)
 
 	tamperedStateDigest := digestOf(t, 200)
-	tampered := protocol.NewCommittedPayload(
+	tampered, err := protocol.NewCommittedPayloadV2(
 		genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
 		genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
 		genuinePayload.PredecessorDigest(), tamperedStateDigest, genuinePayload.CommitTimestamp(),
+		genuinePayload.SigningKeyID(),
 		genuinePayload.WriterSignature(), // reuse the genuine signature over the ORIGINAL content
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	scenarios["tampered-content-original-signature"] = tampered
 
 	for name, payload := range scenarios {

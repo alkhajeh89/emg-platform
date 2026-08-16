@@ -228,7 +228,7 @@ func TestSuccessThenWitnessCompletionReachesActive(t *testing.T) {
 		t.Fatal("StateRecoveryFrozenPendingWitness must permit no authority-dependent action")
 	}
 
-	signer := &fakeSigner{key: []byte("writer-key")}
+	signer := newFakeSigner(t, []byte("writer-key"), "projects/p/locations/l/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1")
 	payload, err := buildCommittedPayload(context.Background(), signer, accepted)
 	if err != nil {
 		t.Fatal(err)

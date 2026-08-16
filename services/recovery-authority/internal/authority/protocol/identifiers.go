@@ -16,7 +16,49 @@ var (
 	ErrInvalidUUIDv7        = errors.New("invalid canonical UUIDv7")
 	ErrInvalidRevision      = errors.New("invalid canonical revision number")
 	ErrInvalidDigest        = errors.New("invalid digest")
+	ErrInvalidSigningKeyID  = errors.New("invalid signing key ID")
 )
+
+// maxSigningKeyIDLength bounds SigningKeyID (ADR-045 §6: "validated, opaque,
+// non-empty, bounded-length string"). 512 bytes is generous headroom over
+// any real Cloud KMS CryptoKeyVersion resource name
+// (projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/N)
+// while still being a concrete, enforced bound.
+const maxSigningKeyIDLength = 512
+
+// SigningKeyID is a validated, opaque, non-empty, bounded-length identifier
+// for the exact signing key version that produced (or will produce) one
+// COMMITTED V2 signature (ADR-045 §6, §8). It deliberately encodes no
+// provider-specific parsing semantics -- a future non-GCP signing
+// realization remains representable without a protocol change. Possession
+// of a syntactically valid SigningKeyID never by itself establishes that the
+// identified key is authorized to represent the Recovery Authority; that is
+// the independent key-authorization check the recovery package performs
+// (ADR-045 §7A).
+type SigningKeyID struct{ value string }
+
+// NewSigningKeyID validates and constructs a SigningKeyID. Every byte must
+// be printable, non-whitespace ASCII (0x21-0x7e) -- broad enough to hold any
+// GCP resource name or a future provider's own identifier syntax, narrow
+// enough to keep the value safely, unambiguously serializable in the
+// deterministic canonical encoding.
+func NewSigningKeyID(value string) (SigningKeyID, error) {
+	if value == "" || len(value) > maxSigningKeyIDLength {
+		return SigningKeyID{}, ErrInvalidSigningKeyID
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < 0x21 || value[i] > 0x7e {
+			return SigningKeyID{}, ErrInvalidSigningKeyID
+		}
+	}
+	return SigningKeyID{value: value}, nil
+}
+
+func (id SigningKeyID) String() string { return id.value }
+
+// IsZero reports whether id is the unset zero value -- never a valid,
+// constructed SigningKeyID, since NewSigningKeyID rejects the empty string.
+func (id SigningKeyID) IsZero() bool { return id.value == "" }
 
 // EnvironmentID is a validated, canonical deployment-environment identifier.
 type EnvironmentID struct{ value string }

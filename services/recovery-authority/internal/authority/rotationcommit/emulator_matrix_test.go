@@ -70,6 +70,7 @@ func TestT1NormalSuccessReachesActiveOnlyAfterWitness(t *testing.T) {
 	expected := recovery.ExpectedBinding{
 		EnvironmentID: op.Environment, AuthorityEpoch: op.Epoch, ResourceIncarnation: op.ResourceIncarnation,
 		OperationID: op.OperationID, PredecessorRevision: operation.ExpectedRevision(), PredecessorDigest: operation.PreparedDigest(),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool { return keyID == keyPair.KeyID() },
 	}
 	if err := recovery.VerifyPersistedCommitted(context.Background(), keyPair.Verifier(), payload, expected); err != nil {
 		t.Fatal(err)
@@ -610,42 +611,49 @@ func TestNegativeProvenanceContentMatchAloneNeverVerifies(t *testing.T) {
 	}
 
 	// An attacker (or a confused later process) builds a payload with
-	// IDENTICAL content -- copied field for field from the genuine one --
-	// but signs it with a DIFFERENT key (modeling "an admin who can write
-	// any bytes but does not hold the writer's private key").
+	// IDENTICAL content -- copied field for field, including the same
+	// claimed signing_key_id, from the genuine one -- but signs it with a
+	// DIFFERENT key (modeling "an admin who can write any bytes but does
+	// not hold the writer's private key").
 	forgerKeyPair, err := localsigner.GenerateKeyPair()
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest, err := protocol.NewCommittedPayload(
+	unsignedForContentDigest, err := protocol.NewCommittedPayloadV2(
 		genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
 		genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
-		genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(), nil,
-	).CanonicalDigest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	forgedSignature, err := forgerKeyPair.Signer().SignCommittedDigest(context.Background(), digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	forgedPayload := protocol.NewCommittedPayload(
-		genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
-		genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
-		genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(), forgedSignature,
+		genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(),
+		genuinePayload.SigningKeyID(), nil,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := unsignedForContentDigest.CanonicalDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedSignature, _, err := forgerKeyPair.Signer().SignCommittedDigest(context.Background(), digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedPayload, err := protocol.NewCommittedPayloadV2(
+		genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
+		genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
+		genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(),
+		genuinePayload.SigningKeyID(), forgedSignature,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Content is byte-for-byte identical to the genuine payload (verified
-	// via the shared canonical digest, which hashes every content field).
+	// via the shared canonical digest, which hashes every content field,
+	// including signing_key_id).
 	genuineDigest, err := genuinePayload.CanonicalDigest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	forgedContentDigest, err := protocol.NewCommittedPayload(
-		forgedPayload.EnvironmentID(), forgedPayload.AuthorityEpoch(), forgedPayload.ResourceIncarnation(),
-		forgedPayload.OperationID(), forgedPayload.RevisionNumber(), forgedPayload.PredecessorRevision(),
-		forgedPayload.PredecessorDigest(), forgedPayload.StateDigest(), forgedPayload.CommitTimestamp(), nil,
-	).CanonicalDigest()
+	forgedContentDigest, err := unsignedForContentDigest.CanonicalDigest()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -656,6 +664,7 @@ func TestNegativeProvenanceContentMatchAloneNeverVerifies(t *testing.T) {
 	expected := recovery.ExpectedBinding{
 		EnvironmentID: op.Environment, AuthorityEpoch: op.Epoch, ResourceIncarnation: op.ResourceIncarnation,
 		OperationID: op.OperationID, PredecessorRevision: operation.ExpectedRevision(), PredecessorDigest: operation.PreparedDigest(),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool { return keyID == genuinePayload.SigningKeyID() },
 	}
 	// The genuine, correctly-signed payload verifies.
 	if err := recovery.VerifyPersistedCommitted(context.Background(), genuineKeyPair.Verifier(), genuinePayload, expected); err != nil {

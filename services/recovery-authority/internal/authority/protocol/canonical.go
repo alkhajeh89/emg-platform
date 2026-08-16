@@ -20,6 +20,13 @@ const (
 	DomainNewEpochGenesis    DomainSeparator = "EMG-ADR043-NEW-EPOCH-GENESIS-V1"
 	DomainAuthorityState     DomainSeparator = "EMG-ADR043-AUTHORITY-STATE-V1"
 	DomainRotationCandidate  DomainSeparator = "EMG-ADR043-ROTATION-CANDIDATE-V1"
+
+	// DomainCommittedV2 is the additive V2 COMMITTED domain separator
+	// (ADR-045 §9): a new, disjoint digest namespace binding signing_key_id
+	// into the canonical record. It never replaces, and is never confused
+	// with, DomainCommitted (V1) above -- V1 records remain byte-for-byte
+	// governed by DomainCommitted forever.
+	DomainCommittedV2 DomainSeparator = "EMG-ADR044-COMMITTED-V2"
 )
 
 var ErrUnsupportedCanonicalValue = errors.New("unsupported deterministic CBOR value")

@@ -99,6 +99,9 @@ func TestT1GCSNormalSuccessReachesActiveOnlyAfterGCSVerification(t *testing.T) {
 		OperationID:         op.OperationID,
 		PredecessorRevision: operation.ExpectedRevision(),
 		PredecessorDigest:   operation.PreparedDigest(),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool {
+			return keyID == keyPair.KeyID()
+		},
 	}
 	if err := recovery.VerifyPersistedCommitted(context.Background(), keyPair.Verifier(), roundTripped, expected); err != nil {
 		t.Fatalf("independent verification of the GCS-persisted COMMITTED failed: %v", err)
@@ -186,6 +189,9 @@ func TestT9GCSSameProcessRetryAfterAmbiguousWitnessWriteIsSafe(t *testing.T) {
 		OperationID:         op.OperationID,
 		PredecessorRevision: operation.ExpectedRevision(),
 		PredecessorDigest:   operation.PreparedDigest(),
+		ApprovedSigningLineage: func(keyID protocol.SigningKeyID) bool {
+			return keyID == keyPair.KeyID()
+		},
 	}
 	if err := recovery.VerifyPersistedCommitted(context.Background(), keyPair.Verifier(), roundTripped, expected); err != nil {
 		t.Fatalf("independent verification of the GCS-persisted COMMITTED failed: %v", err)

@@ -12,14 +12,25 @@
 // mirror the production boundary exactly: harness code wiring
 // rotationcommit must hold only a Signer, harness code wiring recovery must
 // hold only a Verifier, and neither type exposes the other's key material.
+//
+// Each KeyPair carries a SigningKeyID (ADR-045) derived deterministically
+// from its own public key material -- a test-only stand-in for a real
+// provider's immutable key-version identifier (e.g. a Cloud KMS
+// CryptoKeyVersion resource name). It is not a production key-identifier
+// scheme; it exists only so emulator-tier tests can exercise ActiveKeyID,
+// key confirmation, key-authorization, and cross-key-mismatch behavior
+// against two or more distinct, distinguishable test keys.
 package localsigner
 
 import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/protocol"
 )
@@ -31,6 +42,7 @@ import (
 type KeyPair struct {
 	public  ed25519.PublicKey
 	private ed25519.PrivateKey
+	keyID   protocol.SigningKeyID
 }
 
 // GenerateKeyPair creates a fresh, random keypair. Keys are generated only
@@ -40,11 +52,33 @@ func GenerateKeyPair() (KeyPair, error) {
 	if err != nil {
 		return KeyPair{}, fmt.Errorf("generate ed25519 keypair: %w", err)
 	}
-	return KeyPair{public: public, private: private}, nil
+	return newKeyPair(public, private)
 }
 
-func (k KeyPair) Signer() Signer     { return Signer{private: k.private} }
-func (k KeyPair) Verifier() Verifier { return Verifier{public: k.public} }
+func newKeyPair(public ed25519.PublicKey, private ed25519.PrivateKey) (KeyPair, error) {
+	keyID, err := keyIDForPublicKey(public)
+	if err != nil {
+		return KeyPair{}, err
+	}
+	return KeyPair{public: public, private: private, keyID: keyID}, nil
+}
+
+// keyIDForPublicKey derives a deterministic, test-only SigningKeyID from
+// public key material -- two KeyPair values built from the same underlying
+// key (e.g. via PrivateKeyBytes/PublicKeyBytes across a process boundary)
+// always report the same SigningKeyID, exactly as a real provider's
+// immutable per-version identifier would remain the same regardless of
+// which process retrieved it.
+func keyIDForPublicKey(public ed25519.PublicKey) (protocol.SigningKeyID, error) {
+	sum := sha256.Sum256(public)
+	return protocol.NewSigningKeyID("localsigner-test-key/" + hex.EncodeToString(sum[:]))
+}
+
+func (k KeyPair) Signer() Signer     { return Signer{private: k.private, keyID: k.keyID} }
+func (k KeyPair) Verifier() Verifier { return Verifier{public: k.public, keyID: k.keyID} }
+
+// KeyID returns this keypair's deterministic, test-only SigningKeyID.
+func (k KeyPair) KeyID() protocol.SigningKeyID { return k.keyID }
 
 // PrivateKeyBytes and PublicKeyBytes exist only so a keypair generated in
 // one OS process (the test harness parent) can be handed, via an
@@ -59,45 +93,98 @@ func SignerFromPrivateKeyBytes(raw []byte) (Signer, error) {
 	if len(raw) != ed25519.PrivateKeySize {
 		return Signer{}, fmt.Errorf("localsigner: private key must be %d bytes, got %d", ed25519.PrivateKeySize, len(raw))
 	}
-	return Signer{private: ed25519.PrivateKey(raw)}, nil
+	private := ed25519.PrivateKey(raw)
+	public, ok := private.Public().(ed25519.PublicKey)
+	if !ok {
+		return Signer{}, errors.New("localsigner: could not derive public key from private key")
+	}
+	keyID, err := keyIDForPublicKey(public)
+	if err != nil {
+		return Signer{}, err
+	}
+	return Signer{private: private, keyID: keyID}, nil
 }
 
 func VerifierFromPublicKeyBytes(raw []byte) (Verifier, error) {
 	if len(raw) != ed25519.PublicKeySize {
 		return Verifier{}, fmt.Errorf("localsigner: public key must be %d bytes, got %d", ed25519.PublicKeySize, len(raw))
 	}
-	return Verifier{public: ed25519.PublicKey(raw)}, nil
+	public := ed25519.PublicKey(raw)
+	keyID, err := keyIDForPublicKey(public)
+	if err != nil {
+		return Verifier{}, err
+	}
+	return Verifier{public: public, keyID: keyID}, nil
 }
 
 // Signer implements the shape rotationcommit.Signer requires
-// (SignCommittedDigest(ctx, digest) ([]byte, error)) structurally, without
-// importing that package. It holds private key material and is handed only
-// to rotationcommit-side harness wiring.
+// (ActiveKeyID, SignCommittedDigest) structurally, without importing that
+// package. It holds private key material and is handed only to
+// rotationcommit-side harness wiring.
 type Signer struct {
 	private ed25519.PrivateKey
+	keyID   protocol.SigningKeyID
 }
 
-func (s Signer) SignCommittedDigest(_ context.Context, digest protocol.Digest32) ([]byte, error) {
+// ActiveKeyID reports this Signer's own deterministic test key identifier.
+// It performs no signing and has no side effects.
+func (s Signer) ActiveKeyID(_ context.Context) (protocol.SigningKeyID, error) {
 	if len(s.private) == 0 {
-		return nil, errors.New("localsigner: signer has no key material")
+		return protocol.SigningKeyID{}, errors.New("localsigner: signer has no key material")
 	}
-	return ed25519.Sign(s.private, digest.Bytes()), nil
+	return s.keyID, nil
+}
+
+// SignCommittedDigest signs digest and reports the same key identifier
+// ActiveKeyID already reported -- this test signer never signs with a key
+// other than its own, so the confirmation always matches by construction;
+// production adapters must derive this confirmation from the actual signing
+// operation, not assume it (ADR-045 §10).
+func (s Signer) SignCommittedDigest(_ context.Context, digest protocol.Digest32) ([]byte, protocol.SigningKeyID, error) {
+	if len(s.private) == 0 {
+		return nil, protocol.SigningKeyID{}, errors.New("localsigner: signer has no key material")
+	}
+	return ed25519.Sign(s.private, digest.Bytes()), s.keyID, nil
 }
 
 // Verifier implements the shape recovery.CommittedSignatureVerifier
-// requires (VerifyCommittedSignature(ctx, digest, signature) error)
-// structurally, without importing that package. It holds only public key
-// material and is handed only to recovery-side harness wiring -- it can
-// never produce a signature.
+// requires structurally, without importing that package. It holds only
+// public key material and is handed only to recovery-side harness wiring
+// -- it can never produce a signature.
 type Verifier struct {
 	public ed25519.PublicKey
+	keyID  protocol.SigningKeyID
 }
 
-var ErrSignatureInvalid = errors.New("localsigner: signature does not verify")
+var (
+	ErrSignatureInvalid = errors.New("localsigner: signature does not verify")
 
-func (v Verifier) VerifyCommittedSignature(_ context.Context, digest protocol.Digest32, signature []byte) error {
+	// ErrUnknownKeyID means the verifier was asked to verify a signature
+	// claiming a SigningKeyID other than its own single held key -- this
+	// test verifier holds exactly one public key and cannot resolve any
+	// other identifier, mirroring the fail-closed "unknown key ID" case a
+	// real multi-key verifier must also implement (ADR-045 §7A).
+	ErrUnknownKeyID = errors.New("localsigner: verifier does not recognize this key ID")
+)
+
+// VerifyCommittedSignature verifies signature against digest using this
+// Verifier's own public key, first requiring keyID to match the key this
+// Verifier actually holds -- a single-key test stand-in for the historical
+// key resolution a real, multi-key production verifier performs (ADR-045
+// §7C). signedAt is accepted for interface-shape conformance but unused:
+// this test verifier implements no compromise-ledger policy.
+func (v Verifier) VerifyCommittedSignature(
+	_ context.Context,
+	keyID protocol.SigningKeyID,
+	_ time.Time,
+	digest protocol.Digest32,
+	signature []byte,
+) error {
 	if len(v.public) == 0 {
 		return errors.New("localsigner: verifier has no key material")
+	}
+	if keyID != v.keyID {
+		return ErrUnknownKeyID
 	}
 	if !ed25519.Verify(v.public, digest.Bytes(), signature) {
 		return ErrSignatureInvalid
