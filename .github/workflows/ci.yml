@@ -119,6 +119,74 @@ jobs:
         run: make typecheck
 
 
+  recovery-authority:
+    name: Recovery authority (Go 1.25.0)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/recovery-authority
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Go 1.25.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.0"
+
+      - name: Go version
+        run: go version
+
+      - name: Build (no provider adapters exist yet; foundation only)
+        run: go build ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Resolve full module dependency graph (fingerprint verification input)
+        run: go list -m all
+
+      - name: gofmt (must be clean; job fails on any reported file)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt reports unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Forbidden Spanner API scan (defense-in-depth only)
+        # This is a secondary, coarse grep-based check. It is NOT the
+        # authoritative security boundary: TestAuthorityImportBoundary and
+        # TestAcceptedContextHasNoExportedTypeOrConstructor (run above via
+        # `go test`) are the authoritative, AST-based checks against actual
+        # non-test source. This step exists only to catch an obvious
+        # regression quickly, in CI output, without waiting on Go test
+        # failure detail.
+        run: |
+          set -eu
+          violations=0
+          while IFS= read -r -d '' file; do
+            if grep -nE 'ReadWriteTransaction(WithOptions)?\(|\bgax\.Invoke\(|\bunsafe\.' "$file"; then
+              echo "::error file=$file::forbidden API pattern found"
+              violations=1
+            fi
+            if grep -nE '"cloud\.google\.com/go/spanner"$|"cloud\.google\.com/go/spanner/apiv1"$' "$file"; then
+              echo "::error file=$file::forbidden high-level Spanner client import found"
+              violations=1
+            fi
+          done < <(find . -name '*.go' ! -name '*_test.go' -print0)
+          if [ "$violations" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: git diff --check
+        working-directory: .
+        run: git diff --check
+
   studio:
     name: Studio (Node 22)
     runs-on: ubuntu-latest
