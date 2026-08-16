@@ -90,6 +90,8 @@ services:
       EMG_KEYCLOAK_REALM: emg
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin_local_dev_only
+      EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET: emg_identity_local_dev_secret_do_not_use_in_prod
+      EMG_IDENTITY_SERVICE_CLIENT_SECRET: emg_svc_identity_local_dev_secret_do_not_use_in_prod
     command: ["python", "/provision-keycloak-realm.py"]
 
   neo4j:

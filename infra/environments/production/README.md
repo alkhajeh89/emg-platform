@@ -79,10 +79,21 @@ complete successfully before continuing:
    `emg_audit_migrator`. A mismatch fails the stage without changing ownership.
 3. Run `emg-audit-migration`, `emg-knowledge-graph-migration`, and
    `emg-identity-migration` (`20-postgresql-migrations`) after database bootstrap succeeds.
-4. Run `emg-keycloak-provision` (`30-keycloak-projector-clients`).
+4. Run `emg-keycloak-provision` (`30-keycloak-clients`). The Job converges the
+   repository-governed Identity clients (`emg-identity-service` and
+   `emg-svc-identity`) from the same `emg-identity-secrets` keys consumed by
+   the runtime, then provisions tenant-scoped Audit Projector clients. It may
+   create an absent client, repair descriptive metadata, required scopes,
+   required roles, or secret material, but fails closed on authentication-mode,
+   unexpected governed-scope, or unexpected governed-role drift. Its final
+   JSON record contains client IDs and outcomes only; it never contains secret
+   values.
 5. Confirm External Secrets has synchronized the final workload material.
 6. Run `emg-provisioning-validate` (`50-consistency-validation`). Both its
-   database and identity containers must succeed. The Identity migration uses the
+   database and identity containers must succeed. The identity container
+   independently verifies both Identity client contracts and secret equality;
+   it performs no convergence in `--validate-only` mode. Preserve its redacted
+   JSON output as release evidence. The Identity migration uses the
    separately delivered `emg_identity_migrator` DSN and the runtime Deployment receives
    only the `emg_identity_app` refresh-state DSN.
 7. Roll out `emg-identity` (`60-identity-service`) and `emg-audit`

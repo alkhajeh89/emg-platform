@@ -197,7 +197,7 @@ def test_adr_041_provisioning_contract_is_complete_and_ordered() -> None:
     assert stages["emg-database-bootstrap"] == "10-database-roles"
     assert stages["emg-audit-migration"] == "20-postgresql-migrations"
     assert stages["emg-identity-migration"] == "20-postgresql-migrations"
-    assert stages["emg-keycloak-provision"] == "30-keycloak-projector-clients"
+    assert stages["emg-keycloak-provision"] == "30-keycloak-clients"
     assert stages["emg-provisioning-validate"] == "50-consistency-validation"
     assert stages["emg-identity"] == "60-identity-service"
     assert stages["emg-audit"] == "60-audit-service"
@@ -256,6 +256,29 @@ def test_provisioning_validation_rejects_wrong_kg_bootstrap_secret_key() -> None
     env["EMG_KNOWLEDGE_GRAPH_API_POSTGRES_DSN"]["valueFrom"]["secretKeyRef"][
         "key"
     ] = "migration-postgres-dsn"
+
+    with pytest.raises(ProvisioningValidationError, match="credential wiring is invalid"):
+        validate_provisioning(objects)
+
+
+@pytest.mark.parametrize(
+    "job_name,container_index",
+    (("emg-keycloak-provision", 0), ("emg-provisioning-validate", 1)),
+)
+def test_provisioning_validation_rejects_wrong_identity_keycloak_secret_wiring(
+    job_name: str, container_index: int
+) -> None:
+    objects = _objects()
+    job = next(
+        obj for obj in objects if obj["kind"] == "Job" and obj["metadata"]["name"] == job_name
+    )
+    env = {
+        entry["name"]: entry
+        for entry in job["spec"]["template"]["spec"]["containers"][container_index]["env"]
+    }
+    env["EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET"]["valueFrom"]["secretKeyRef"][
+        "key"
+    ] = "service-client-secret"
 
     with pytest.raises(ProvisioningValidationError, match="credential wiring is invalid"):
         validate_provisioning(objects)
