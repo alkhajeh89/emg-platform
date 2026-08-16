@@ -1,18 +1,29 @@
 # EMG ADR-044 — Recovery Authority: Spanner Transition Authority and GCS Bucket-Locked Immutable Witness
 
-**Status:** Proposed — pending independent architecture/security review
+**Status:** Accepted
 **Owner:** EMG Founder
 **Architect:** EMG Founder
 **Decision Authority:** Project Architect
-**Decision Date:** Not yet accepted
+**Decision Date:** 2026-08-16
 **Baseline:** `develop` at `8d66fc6442f6f2b49af9a8bc8cb1546f4fb4aeae`
 **Related:** ADR-039 (Backup, PITR and Recovery Governance), ADR-040 (Runtime Image Supply
 Chain), ADR-041 (Production Provisioning Ownership & Bootstrap Contract), ADR-043
 (Identity Durable Refresh State Database and Migration Authority — a separate, disjoint
 decision; see §16).
 
-> **This ADR authorizes architecture only after acceptance.** It ratifies a design and a
-> body of implementation and provider-qualification evidence that already exist in the
+> **Acceptance note (2026-08-16).** This ADR was first independently reviewed as drafted,
+> which found one P0 and two P1 findings in its threat-model and evidence-disclosure
+> language (organization-administrator signing-trust-domain claim; undisclosed
+> qualification billing-account sharing with `emg-platform-staging`; missing KMS
+> key-lifecycle prerequisite) and two P2 wording findings. All five were corrected in the
+> document text itself — no architecture, protocol, cryptographic domain separator, or
+> evidence artifact was changed to obtain this result. A second, focused independent
+> review of the corrected text found zero remaining P0/P1/P2 findings and confirmed the
+> corrected threat-model language survives adversarial re-testing. This ADR is accepted
+> on that basis.
+
+> **This ADR authorizes architecture only.** It ratifies a design and a body of
+> implementation and provider-qualification evidence that already exist in the
 > repository; it does not itself grant production approval, does not authorize
 > production deployment, does not create or modify any GCP resource, and does not
 > unblock any Identity/RC.11 qualification path. See §22 (Production approval boundary)
