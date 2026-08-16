@@ -1,0 +1,12 @@
+{
+  "stage": "Immediately after project restoration (lifecycleState: ACTIVE), before any billing action -- first attempt to read the original object",
+  "request": {
+    "method": "GET (objects.describe)",
+    "target": "gs://emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt"
+  },
+  "response": {
+    "http_status": 403,
+    "message": "The billing account for the owning project is disabled in state absent."
+  },
+  "note": "This is the key operational finding: project.lifecycleState returned to ACTIVE, but the Cloud Billing association was not automatically restored by projects.undelete. Cloud Storage object-level reads fail closed without an enabled billing account, distinct from any retention-related error. Cross-referenced by ../billing-disabled-after-restore.json (billingEnabled: false at this same point in time). The original gcloud diagnostic text included the authenticated account's email in a client-identity sentence ('This command is authenticated as ...'); that sentence has been removed here as unnecessary account identity information -- the substantive error (billing account disabled) is preserved verbatim."
+}

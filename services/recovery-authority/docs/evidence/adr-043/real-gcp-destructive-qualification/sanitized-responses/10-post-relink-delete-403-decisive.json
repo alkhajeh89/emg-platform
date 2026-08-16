@@ -1,0 +1,13 @@
+{
+  "stage": "DECISIVE CHECK -- after billing re-link (billingEnabled: true) and after independently re-verifying byte/generation/hash identity of the restored object, one final delete attempt against the restored object",
+  "request": {
+    "method": "DELETE",
+    "target": "gs://emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "retentionPolicyNotMet",
+    "message": "Object 'emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt' is subject to bucket's retention policy or object retention and cannot be deleted or overwritten until 2026-08-17T10:33:47.969215-07:00"
+  },
+  "note": "Identical expiration timestamp and reason to every prior enforcement check in this experiment (pre-lien-removal, post-lien-removal-pre-deletion, and now post-project-delete-and-restore). This is the final proof point for BLOCKER_A_EXPERIMENT_RESULT = SURVIVED_PROJECT_DELETE_RESTORE: the object survived byte-identically AND remains under active, enforced retention after the complete delete-restore-relink cycle. Headers and client identity fields removed."
+}

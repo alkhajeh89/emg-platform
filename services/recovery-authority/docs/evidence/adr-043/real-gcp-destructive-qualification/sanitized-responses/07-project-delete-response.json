@@ -1,0 +1,14 @@
+{
+  "stage": "Phase 3 -- request deletion of emg-adr043-disposable-witness after the project-deletion lien was removed",
+  "request": {
+    "method": "DELETE",
+    "endpoint": "https://cloudresourcemanager.googleapis.com/v1/projects/emg-adr043-disposable-witness?alt=json"
+  },
+  "response": {
+    "http_status": 200,
+    "body": {}
+  },
+  "confirmation": "gcloud reported: 'Deleted [https://cloudresourcemanager.googleapis.com/v1/projects/emg-adr043-disposable-witness].' See ../project-state-delete-requested.json for the immediately-following lifecycleState read.",
+  "timestamp_utc": "2026-08-16T17:58:55Z",
+  "note": "Headers and client identity fields removed."
+}

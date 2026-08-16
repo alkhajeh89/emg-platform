@@ -1,0 +1,14 @@
+{
+  "stage": "Phase 1 -- remove the locked retention policy entirely (pre-lien-removal negative test)",
+  "request": {
+    "method": "PATCH",
+    "target": "gs://emg-adr043-blockera-destructive-08657059/",
+    "attempted_change": "retentionPolicy: null (clear-retention-period)"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "retentionPolicyNotMet",
+    "message": "Bucket 'emg-adr043-blockera-destructive-08657059' has a locked Retention Policy which cannot be removed."
+  },
+  "note": "Headers and client identity fields removed."
+}

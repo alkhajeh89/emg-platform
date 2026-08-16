@@ -1,0 +1,17 @@
+{
+  "bucket": "emg-adr043-blockera-destructive-08657059",
+  "content_type": "text/plain",
+  "crc32c_hash": "3UsnGQ==",
+  "creation_time": "2026-08-16T17:33:47+0000",
+  "etag": "CPuWoqbXpZYDEAE=",
+  "generation": "1786901627964283",
+  "md5_hash": "Vwg9TkRDjriAbYhV7IJGLQ==",
+  "metageneration": 1,
+  "name": "witness/destructive-test-object-v1.txt",
+  "retention_expiration": "2026-08-17T17:33:47+0000",
+  "size": 87,
+  "storage_class": "STANDARD",
+  "storage_class_update_time": "2026-08-16T17:33:47+0000",
+  "storage_url": "gs://emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt#1786901627964283",
+  "update_time": "2026-08-16T17:33:47+0000"
+}

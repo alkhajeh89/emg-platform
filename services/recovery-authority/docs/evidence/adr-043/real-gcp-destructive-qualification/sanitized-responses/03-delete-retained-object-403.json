@@ -1,0 +1,13 @@
+{
+  "stage": "Phase 1 -- delete the retained object while retention is locked and active (pre-lien-removal negative test)",
+  "request": {
+    "method": "DELETE",
+    "target": "gs://emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "retentionPolicyNotMet",
+    "message": "Object 'emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt' is subject to bucket's retention policy or object retention and cannot be deleted or overwritten until 2026-08-17T10:33:47.969215-07:00"
+  },
+  "note": "Headers and client identity fields removed."
+}

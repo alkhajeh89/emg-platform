@@ -1,0 +1,15 @@
+{
+  "stage": "Phase 4 -- request restoration of emg-adr043-disposable-witness, issued immediately after confirming DELETE_REQUESTED",
+  "request": {
+    "method": "POST",
+    "endpoint": "https://cloudresourcemanager.googleapis.com/v1/projects/emg-adr043-disposable-witness:undelete?alt=json"
+  },
+  "response": {
+    "http_status": 200,
+    "body": {}
+  },
+  "confirmation": "gcloud reported: 'Restored project [https://cloudresourcemanager.googleapis.com/v1/projects/emg-adr043-disposable-witness].' See ../project-state-active-after-restore.json for the immediately-following lifecycleState read.",
+  "timestamp_utc": "2026-08-16T17:59:30Z",
+  "elapsed_since_delete_request": "approximately 35 seconds",
+  "note": "Headers and client identity fields removed."
+}

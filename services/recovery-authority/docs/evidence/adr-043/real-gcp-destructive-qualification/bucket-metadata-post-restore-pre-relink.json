@@ -1,0 +1,27 @@
+{
+  "creation_time": "2026-08-16T17:31:38+0000",
+  "default_storage_class": "STANDARD",
+  "generation": 1786901498375586962,
+  "labels": {
+    "disposable": "true",
+    "owner": "adr043-engagement",
+    "purpose": "adr043-blockera-destructive-test"
+  },
+  "location": "US-CENTRAL1",
+  "location_type": "region",
+  "metageneration": 4,
+  "name": "emg-adr043-blockera-destructive-08657059",
+  "public_access_prevention": "inherited",
+  "retention_policy": {
+    "effectiveTime": "2026-08-16T17:32:52.791000+00:00",
+    "isLocked": true,
+    "retentionPeriod": "86400"
+  },
+  "soft_delete_policy": {
+    "effectiveTime": "2026-08-16T17:31:38.460000+00:00",
+    "retentionDurationSeconds": "604800"
+  },
+  "storage_url": "gs://emg-adr043-blockera-destructive-08657059/",
+  "uniform_bucket_level_access": true,
+  "update_time": "2026-08-16T17:34:12+0000"
+}

@@ -1,0 +1,13 @@
+{
+  "stage": "Post-lien-removal verification -- the project-deletion lien was removed manually (outside this tool, per explicit user action, verified via a 0-item lien listing); this is the immediate re-attempt at deleting the retained object to confirm lien removal did not itself weaken Bucket Lock enforcement",
+  "request": {
+    "method": "DELETE",
+    "target": "gs://emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt"
+  },
+  "response": {
+    "http_status": 403,
+    "reason": "retentionPolicyNotMet",
+    "message": "Object 'emg-adr043-blockera-destructive-08657059/witness/destructive-test-object-v1.txt' is subject to bucket's retention policy or object retention and cannot be deleted or overwritten until 2026-08-17T10:33:47.969215-07:00"
+  },
+  "note": "This is the P0_CRITICAL check: if deletion had succeeded here, it would have proven lien removal bypasses Bucket Lock enforcement. It did not. Headers and client identity fields removed."
+}
