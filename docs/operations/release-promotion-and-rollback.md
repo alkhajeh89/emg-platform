@@ -67,7 +67,7 @@ For the exact retained release set:
    bundle with Kubernetes server-side dry-run in the intended cluster/context.
 3. Apply staging prerequisites and wait for External Secrets and external dependencies.
 4. Execute ADR-041 stages in order, waiting for success before continuing:
-   `10-database-roles`; both `20-postgresql-migrations` Jobs; `30-keycloak-projector-clients`;
+   `10-database-roles`; both `20-postgresql-migrations` Jobs; `30-keycloak-clients`;
    `50-consistency-validation`; Identity and Audit stage 60; Audit Projector stage 70.
    The PostgreSQL migration stage includes the isolated Audit, Knowledge Graph, and
    ADR-043 Identity migration Jobs; all must complete before Stage 50.

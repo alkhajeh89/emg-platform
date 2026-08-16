@@ -32,7 +32,7 @@ REQUIRED_JOBS = {
     "emg-audit-migration": "20-postgresql-migrations",
     "emg-knowledge-graph-migration": "20-postgresql-migrations",
     "emg-identity-migration": "20-postgresql-migrations",
-    "emg-keycloak-provision": "30-keycloak-projector-clients",
+    "emg-keycloak-provision": "30-keycloak-clients",
     "emg-provisioning-validate": "50-consistency-validation",
 }
 
@@ -173,7 +173,12 @@ def validate(objects: list[dict] | None = None) -> None:
     required_secret_keys = {
         "emg-database-bootstrap-secrets": {"admin-postgres-dsn"},
         "emg-audit-secrets": {"postgres-dsn", "migration-postgres-dsn"},
-        "emg-identity-secrets": {"refresh-postgres-dsn", "migration-postgres-dsn"},
+        "emg-identity-secrets": {
+            "keycloak-client-secret",
+            "service-client-secret",
+            "refresh-postgres-dsn",
+            "migration-postgres-dsn",
+        },
         "emg-audit-projector-secrets": {
             "postgres-dsn",
             "identity-inventory-json",
@@ -229,6 +234,12 @@ def validate(objects: list[dict] | None = None) -> None:
         "EMG_AUDIT_PROJECTOR_TENANT_CREDENTIALS_JSON",
     }.issubset(keycloak_env):
         raise ProvisioningValidationError("Keycloak projector identity wiring is incomplete")
+    _validate_identity_keycloak_wiring(keycloak_env)
+
+    identity_validation_env = _container_env(
+        jobs["emg-provisioning-validate"]["spec"]["template"]["spec"]["containers"][1]
+    )
+    _validate_identity_keycloak_wiring(identity_validation_env)
 
     example = (ROOT / "infra/provisioning/projector-identities.example.json").read_text(
         encoding="utf-8"
@@ -241,6 +252,27 @@ def validate(objects: list[dict] | None = None) -> None:
         raise ProvisioningValidationError("projector identity schema does not fail closed")
 
     _validate_identity_recovery_fence(objects)
+
+
+def _validate_identity_keycloak_wiring(environment: dict[str, dict]) -> None:
+    expected = {
+        "EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET": (
+            "emg-identity-secrets",
+            "keycloak-client-secret",
+        ),
+        "EMG_IDENTITY_SERVICE_CLIENT_SECRET": (
+            "emg-identity-secrets",
+            "service-client-secret",
+        ),
+    }
+    for name, (secret_name, secret_key) in expected.items():
+        if environment.get(name) != {
+            "name": name,
+            "valueFrom": {"secretKeyRef": {"name": secret_name, "key": secret_key}},
+        }:
+            raise ProvisioningValidationError(
+                f"Identity Keycloak credential wiring is invalid: {name}"
+            )
 
 
 def _validate_identity_recovery_fence(objects: list[dict]) -> None:

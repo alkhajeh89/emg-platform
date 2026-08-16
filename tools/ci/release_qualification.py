@@ -156,7 +156,7 @@ def repository_qualification(
         "emg-audit-migration": "20-postgresql-migrations",
         "emg-knowledge-graph-migration": "20-postgresql-migrations",
         "emg-identity-migration": "20-postgresql-migrations",
-        "emg-keycloak-provision": "30-keycloak-projector-clients",
+        "emg-keycloak-provision": "30-keycloak-clients",
         "emg-provisioning-validate": "50-consistency-validation",
         "emg-audit": "60-audit-service",
         "emg-identity": "60-identity-service",
