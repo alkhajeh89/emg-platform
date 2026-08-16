@@ -31,6 +31,8 @@ spec:
             - {name: EMG_KEYCLOAK_REALM, value: emg}
             - {name: KEYCLOAK_ADMIN, valueFrom: {secretKeyRef: {name: emg-keycloak-provision-secrets, key: admin-username}}}
             - {name: KEYCLOAK_ADMIN_PASSWORD, valueFrom: {secretKeyRef: {name: emg-keycloak-provision-secrets, key: admin-password}}}
+            - {name: EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: keycloak-client-secret}}}
+            - {name: EMG_IDENTITY_SERVICE_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: emg-identity-secrets, key: service-client-secret}}}
             - {name: EMG_PROJECTOR_IDENTITY_INVENTORY_JSON, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: identity-inventory-json}}}
             - {name: EMG_AUDIT_PROJECTOR_TENANT_CREDENTIALS_JSON, valueFrom: {secretKeyRef: {name: emg-audit-projector-secrets, key: tenant-credentials-json}}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}

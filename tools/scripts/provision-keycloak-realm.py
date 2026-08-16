@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hmac
 import json
 import os
 import sys
@@ -35,6 +36,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import NamedTuple
 
 from emg_common_types import (
     ProjectorIdentity,
@@ -56,6 +58,69 @@ PROJECTOR_DEFAULT_SCOPES = (
     "emg-service-security-claims",
 )
 PROJECTOR_TENANT_MAPPER = "emg-projector-tenant-id"
+KEYCLOAK_BUILTIN_DEFAULT_SCOPES = frozenset(
+    {"acr", "basic", "email", "profile", "roles", "web-origins"}
+)
+KEYCLOAK_BUILTIN_OPTIONAL_SCOPES = frozenset(
+    {"address", "microprofile-jwt", "offline_access", "organization", "phone"}
+)
+
+
+class IdentityClientContract(NamedTuple):
+    """Repository-owned, non-secret contract for an Identity Keycloak client."""
+
+    client_id: str
+    name: str
+    description: str
+    direct_access_grants: bool
+    service_accounts: bool
+    full_scope_allowed: bool
+    default_scopes: tuple[str, ...]
+    realm_roles: tuple[str, ...] = ()
+
+
+class IdentityClientEvidence(NamedTuple):
+    """Redacted, deterministic release evidence for one converged client."""
+
+    client_id: str
+    existence: str
+    configuration: str
+    secret_material: str
+    validation: str = "passed"
+
+
+IDENTITY_CLIENT_CONTRACTS = (
+    IdentityClientContract(
+        client_id="emg-identity-service",
+        name="EMG Identity Service",
+        description=(
+            "Confidential client used by services/identity to exchange user credentials "
+            "for tokens (FEAT-02-1). Not exposed to browsers."
+        ),
+        direct_access_grants=True,
+        service_accounts=True,
+        full_scope_allowed=True,
+        default_scopes=(
+            "emg-human-classification-attributes",
+            "emg-human-tenant-claim",
+        ),
+    ),
+    IdentityClientContract(
+        client_id="emg-svc-identity",
+        name="EMG Service Principal — Identity Service",
+        description=(
+            "Sprint 3 FEAT-02-3: Identity service account client for M2M OAuth2 " "authentication."
+        ),
+        direct_access_grants=False,
+        service_accounts=True,
+        full_scope_allowed=False,
+        default_scopes=(
+            "emg-internal-services-audience",
+            "emg-service-security-claims",
+        ),
+        realm_roles=("service-account", "svc-identity"),
+    ),
+)
 
 
 def _http(method: str, path: str, token: str | None = None, body: dict | None = None):
@@ -233,6 +298,367 @@ def _client(token: str, client_id: str) -> dict | None:
     if status != 200:
         raise RuntimeError(f"client read failed for {client_id}: {status}")
     return full
+
+
+def _identity_client_secrets() -> dict[str, str]:
+    secrets = {
+        "emg-identity-service": os.environ.get("EMG_IDENTITY_KEYCLOAK_CLIENT_SECRET", ""),
+        "emg-svc-identity": os.environ.get("EMG_IDENTITY_SERVICE_CLIENT_SECRET", ""),
+    }
+    missing = sorted(client_id for client_id, secret in secrets.items() if not secret)
+    if missing:
+        raise RuntimeError(f"Identity client secret material is missing for: {missing}")
+    return secrets
+
+
+def _identity_client_representation(contract: IdentityClientContract, secret: str) -> dict:
+    return {
+        "clientId": contract.client_id,
+        "name": contract.name,
+        "description": contract.description,
+        "enabled": True,
+        "protocol": "openid-connect",
+        "publicClient": False,
+        "bearerOnly": False,
+        "standardFlowEnabled": False,
+        "implicitFlowEnabled": False,
+        "directAccessGrantsEnabled": contract.direct_access_grants,
+        "serviceAccountsEnabled": contract.service_accounts,
+        "clientAuthenticatorType": "client-secret",
+        "secret": secret,
+        "redirectUris": [],
+        "webOrigins": [],
+        "fullScopeAllowed": contract.full_scope_allowed,
+        "attributes": {"access.token.lifespan": "300"},
+    }
+
+
+def _reject_identity_security_drift(client: dict, contract: IdentityClientContract) -> None:
+    expected = _identity_client_representation(contract, "redacted")
+    security_fields = (
+        "clientId",
+        "enabled",
+        "protocol",
+        "publicClient",
+        "bearerOnly",
+        "standardFlowEnabled",
+        "implicitFlowEnabled",
+        "directAccessGrantsEnabled",
+        "serviceAccountsEnabled",
+        "clientAuthenticatorType",
+        "redirectUris",
+        "webOrigins",
+        "fullScopeAllowed",
+    )
+    drift = sorted(field for field in security_fields if client.get(field) != expected[field])
+    if drift:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has security-sensitive drift: {drift}"
+        )
+
+
+def _client_secret_matches(token: str, client_uuid: str, expected: str) -> bool:
+    status, body = _http("GET", f"/admin/realms/{REALM}/clients/{client_uuid}/client-secret", token)
+    if status != 200 or not isinstance(body, dict) or not isinstance(body.get("value"), str):
+        raise RuntimeError("Identity client secret material cannot be inspected")
+    return hmac.compare_digest(body["value"], expected)
+
+
+def _identity_scope_state(
+    token: str, client_uuid: str, contract: IdentityClientContract
+) -> tuple[dict[str, dict], set[str]]:
+    status, scopes = _http("GET", f"/admin/realms/{REALM}/client-scopes", token)
+    if status != 200 or not isinstance(scopes, list):
+        raise RuntimeError("Identity client-scope inventory lookup failed")
+    by_name = {item["name"]: item for item in scopes}
+    missing_inventory = sorted(set(contract.default_scopes) - set(by_name))
+    if missing_inventory:
+        raise RuntimeError(f"required Identity client scopes are absent: {missing_inventory}")
+    status, assigned = _http(
+        "GET", f"/admin/realms/{REALM}/clients/{client_uuid}/default-client-scopes", token
+    )
+    if status != 200 or not isinstance(assigned, list):
+        raise RuntimeError("Identity default-client-scope lookup failed")
+    assigned_names = {item["name"] for item in assigned}
+    allowed_scopes = set(contract.default_scopes) | KEYCLOAK_BUILTIN_DEFAULT_SCOPES
+    unexpected = sorted(assigned_names - allowed_scopes)
+    if unexpected:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has unexpected governed scopes: {unexpected}"
+        )
+    status, optional = _http(
+        "GET", f"/admin/realms/{REALM}/clients/{client_uuid}/optional-client-scopes", token
+    )
+    if status != 200 or not isinstance(optional, list):
+        raise RuntimeError("Identity optional-client-scope lookup failed")
+    optional_names = {item["name"] for item in optional}
+    unexpected_optional = sorted(optional_names - KEYCLOAK_BUILTIN_OPTIONAL_SCOPES)
+    if unexpected_optional:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has unexpected optional scopes: "
+            f"{unexpected_optional}"
+        )
+    return by_name, assigned_names
+
+
+def _ensure_identity_scopes(token: str, client_uuid: str, contract: IdentityClientContract) -> bool:
+    scopes, assigned_names = _identity_scope_state(token, client_uuid, contract)
+    changed = False
+    for scope_name in contract.default_scopes:
+        if scope_name in assigned_names:
+            continue
+        status, _ = _http(
+            "PUT",
+            f"/admin/realms/{REALM}/clients/{client_uuid}/default-client-scopes/"
+            f"{scopes[scope_name]['id']}",
+            token,
+        )
+        if status != 204:
+            raise RuntimeError(f"assigning Identity client scope {scope_name} failed")
+        changed = True
+    return changed
+
+
+def _reject_identity_protocol_mapper_drift(
+    token: str, client_uuid: str, contract: IdentityClientContract
+) -> None:
+    status, mappers = _http(
+        "GET", f"/admin/realms/{REALM}/clients/{client_uuid}/protocol-mappers/models", token
+    )
+    if status != 200 or not isinstance(mappers, list):
+        raise RuntimeError("Identity protocol-mapper lookup failed")
+    if mappers:
+        names = sorted(str(mapper.get("name", "<unnamed>")) for mapper in mappers)
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has unexpected direct protocol mappers: "
+            f"{names}"
+        )
+
+
+def _identity_role_state(
+    token: str, client_uuid: str, contract: IdentityClientContract
+) -> tuple[dict, set[str], set[str]]:
+    status, user = _http(
+        "GET", f"/admin/realms/{REALM}/clients/{client_uuid}/service-account-user", token
+    )
+    if status != 200 or not isinstance(user, dict) or "id" not in user:
+        raise RuntimeError(f"Identity client {contract.client_id} service account is absent")
+    status, roles = _http(
+        "GET", f"/admin/realms/{REALM}/users/{user['id']}/role-mappings/realm", token
+    )
+    if status != 200 or not isinstance(roles, list):
+        raise RuntimeError("Identity service-account role lookup failed")
+    role_names = {role["name"] for role in roles}
+    allowed_roles = set(contract.realm_roles) | {f"default-roles-{REALM}"}
+    unexpected = sorted(role_names - allowed_roles)
+    if unexpected:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has unexpected governed roles: {unexpected}"
+        )
+    status, all_mappings = _http(
+        "GET", f"/admin/realms/{REALM}/users/{user['id']}/role-mappings", token
+    )
+    if status != 200 or not isinstance(all_mappings, dict):
+        raise RuntimeError("Identity service-account aggregate role lookup failed")
+    client_mappings = all_mappings.get("clientMappings") or {}
+    if not isinstance(client_mappings, dict):
+        raise RuntimeError("Identity service-account client-role state is malformed")
+    unexpected_client_roles = sorted(
+        f"{client_name}:{role.get('name', '<unnamed>')}"
+        for client_name, mapping in client_mappings.items()
+        for role in mapping.get("mappings", ())
+    )
+    if unexpected_client_roles:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has unexpected client roles: "
+            f"{unexpected_client_roles}"
+        )
+    status, scoped_roles = _http(
+        "GET", f"/admin/realms/{REALM}/clients/{client_uuid}/scope-mappings/realm", token
+    )
+    if status != 200 or not isinstance(scoped_roles, list):
+        raise RuntimeError("Identity client role-scope lookup failed")
+    scoped_names = {role["name"] for role in scoped_roles}
+    unexpected_scoped = sorted(scoped_names - set(contract.realm_roles))
+    if unexpected_scoped:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has unexpected governed role scopes: "
+            f"{unexpected_scoped}"
+        )
+    return user, role_names, scoped_names
+
+
+def _ensure_identity_roles(token: str, client_uuid: str, contract: IdentityClientContract) -> bool:
+    user, role_names, scoped_names = _identity_role_state(token, client_uuid, contract)
+    missing_names = [name for name in contract.realm_roles if name not in role_names]
+    missing_scoped_names = [name for name in contract.realm_roles if name not in scoped_names]
+    roles = {
+        name: _realm_role(token, name, create=False)
+        for name in dict.fromkeys((*missing_names, *missing_scoped_names))
+    }
+    if missing_names:
+        status, _ = _http(
+            "POST",
+            f"/admin/realms/{REALM}/users/{user['id']}/role-mappings/realm",
+            token,
+            [roles[name] for name in missing_names],
+        )
+        if status != 204:
+            raise RuntimeError("assigning Identity service-account roles failed")
+    if missing_scoped_names:
+        status, _ = _http(
+            "POST",
+            f"/admin/realms/{REALM}/clients/{client_uuid}/scope-mappings/realm",
+            token,
+            [roles[name] for name in missing_scoped_names],
+        )
+        if status != 204:
+            raise RuntimeError("assigning Identity client role scopes failed")
+    return bool(missing_names or missing_scoped_names)
+
+
+def validate_identity_client(
+    token: str, contract: IdentityClientContract, secret: str
+) -> IdentityClientEvidence:
+    client = _client(token, contract.client_id)
+    if client is None:
+        raise RuntimeError(f"Identity client {contract.client_id} is absent")
+    _reject_identity_security_drift(client, contract)
+    desired = _identity_client_representation(contract, secret)
+    metadata_fields = ("name", "description")
+    metadata_drift = sorted(
+        field for field in metadata_fields if client.get(field) != desired[field]
+    )
+    if client.get("attributes", {}).get("access.token.lifespan") != "300":
+        metadata_drift.append("attributes.access.token.lifespan")
+    if metadata_drift:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} has configuration drift: {metadata_drift}"
+        )
+    _, assigned_scopes = _identity_scope_state(token, client["id"], contract)
+    missing_scopes = sorted(set(contract.default_scopes) - assigned_scopes)
+    if missing_scopes:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} is missing governed scopes: {missing_scopes}"
+        )
+    _reject_identity_protocol_mapper_drift(token, client["id"], contract)
+    _, assigned_roles, assigned_role_scopes = _identity_role_state(token, client["id"], contract)
+    missing_roles = sorted(set(contract.realm_roles) - assigned_roles)
+    if missing_roles:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} is missing governed roles: {missing_roles}"
+        )
+    missing_role_scopes = sorted(set(contract.realm_roles) - assigned_role_scopes)
+    if missing_role_scopes:
+        raise RuntimeError(
+            f"Identity client {contract.client_id} is missing governed role scopes: "
+            f"{missing_role_scopes}"
+        )
+    if not _client_secret_matches(token, client["id"], secret):
+        raise RuntimeError(f"Identity client {contract.client_id} secret material is inconsistent")
+    return IdentityClientEvidence(
+        client_id=contract.client_id,
+        existence="existing",
+        configuration="verified",
+        secret_material="verified",
+    )
+
+
+def ensure_identity_client(
+    token: str, contract: IdentityClientContract, secret: str
+) -> IdentityClientEvidence:
+    existing = _client(token, contract.client_id)
+    desired = _identity_client_representation(contract, secret)
+    existence = "existing"
+    configuration = "verified"
+    secret_material = "verified"
+    if existing is None:
+        status, _ = _http("POST", f"/admin/realms/{REALM}/clients", token, desired)
+        if status != 201:
+            raise RuntimeError(f"creating Identity client {contract.client_id} failed: {status}")
+        existence = "created"
+        configuration = "converged"
+        secret_material = "converged"
+        existing = _client(token, contract.client_id)
+        if existing is None:
+            raise RuntimeError(f"created Identity client {contract.client_id} cannot be read")
+    else:
+        _reject_identity_security_drift(existing, contract)
+        metadata_fields = ("name", "description")
+        metadata_drift = (
+            any(existing.get(field) != desired[field] for field in metadata_fields)
+            or existing.get("attributes", {}).get("access.token.lifespan") != "300"
+        )
+        secret_drift = not _client_secret_matches(token, existing["id"], secret)
+        if metadata_drift or secret_drift:
+            updated = dict(existing)
+            for field in metadata_fields:
+                updated[field] = desired[field]
+            updated["attributes"] = {
+                **existing.get("attributes", {}),
+                "access.token.lifespan": "300",
+            }
+            if secret_drift:
+                updated["secret"] = secret
+                secret_material = "converged"
+            status, _ = _http(
+                "PUT", f"/admin/realms/{REALM}/clients/{existing['id']}", token, updated
+            )
+            if status != 204:
+                raise RuntimeError(
+                    f"updating Identity client {contract.client_id} failed: {status}"
+                )
+            configuration = "converged" if metadata_drift else configuration
+
+    client_uuid = existing["id"]
+    if _ensure_identity_scopes(token, client_uuid, contract):
+        configuration = "converged"
+    _reject_identity_protocol_mapper_drift(token, client_uuid, contract)
+    if _ensure_identity_roles(token, client_uuid, contract):
+        configuration = "converged"
+    validate_identity_client(token, contract, secret)
+    return IdentityClientEvidence(
+        client_id=contract.client_id,
+        existence=existence,
+        configuration=configuration,
+        secret_material=secret_material,
+    )
+
+
+def converge_identity_clients(
+    token: str, secrets: dict[str, str]
+) -> tuple[IdentityClientEvidence, ...]:
+    return tuple(
+        ensure_identity_client(token, contract, secrets[contract.client_id])
+        for contract in IDENTITY_CLIENT_CONTRACTS
+    )
+
+
+def validate_identity_clients(
+    token: str, secrets: dict[str, str]
+) -> tuple[IdentityClientEvidence, ...]:
+    return tuple(
+        validate_identity_client(token, contract, secrets[contract.client_id])
+        for contract in IDENTITY_CLIENT_CONTRACTS
+    )
+
+
+def _structured_evidence(
+    evidence: tuple[IdentityClientEvidence, ...],
+    *,
+    projector_count: int,
+    validate_only: bool,
+) -> str:
+    payload: dict[str, object] = {
+        "identity_clients": [item._asdict() for item in evidence],
+        "result": "passed",
+    }
+    if validate_only:
+        payload["projector_clients_validated"] = projector_count
+    else:
+        payload["projector_clients_provisioned"] = projector_count
+        payload["token_exchange"] = "configured"
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 def _projector_client_representation(identity: ProjectorIdentity, secret: str) -> dict:
@@ -524,11 +950,13 @@ def main() -> None:
     token = admin_token()
 
     identities, secrets = _projector_configuration()
+    identity_secrets = _identity_client_secrets()
     if args.validate_only:
         if not identities:
             raise RuntimeError("projector identity inventory is required for validation")
         validate_projector_clients(token, identities, secrets)
-        print(f"validated {len(identities)} tenant-scoped projector client(s)")
+        evidence = validate_identity_clients(token, identity_secrets)
+        print(_structured_evidence(evidence, projector_count=len(identities), validate_only=True))
         return
 
     print(
@@ -551,10 +979,9 @@ def main() -> None:
     if identities:
         provision_projector_clients(token, identities, secrets)
 
-    print(
-        "done — token exchange configured and tenant-scoped projector clients provisioned:",
-        len(identities),
-    )
+    evidence = converge_identity_clients(token, identity_secrets)
+
+    print(_structured_evidence(evidence, projector_count=len(identities), validate_only=False))
 
 
 if __name__ == "__main__":
