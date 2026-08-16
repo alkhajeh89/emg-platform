@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -37,9 +38,11 @@ import (
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/conformance/spanneradapter"
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/conformance/witness"
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/epoch"
+	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/gcswitness"
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/protocol"
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/recovery"
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/rotation"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -56,6 +59,8 @@ const (
 	helperEnvSigningKeyHex = "EMG_ADR043_SIGNING_KEY_HEX"
 	helperEnvWitnessRoot   = "EMG_ADR043_WITNESS_ROOT"
 	helperEnvWitnessKey    = "EMG_ADR043_WITNESS_KEY"
+	helperEnvGCSEndpoint   = "EMG_ADR043_GCS_ENDPOINT"
+	helperEnvGCSBucket     = "EMG_ADR043_GCS_BUCKET"
 )
 
 func TestMain(m *testing.M) {
@@ -196,14 +201,31 @@ func runHelperProcess(mode string) int {
 		fmt.Fprintln(os.Stderr, "serialize:", err)
 		return 2
 	}
-	repo, err := witness.NewRepository(os.Getenv(helperEnvWitnessRoot))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "witness repository:", err)
-		return 2
-	}
-	if err := repo.CreateOnlyIfAbsent(ctx, os.Getenv(helperEnvWitnessKey), serialized); err != nil {
-		fmt.Fprintln(os.Stderr, "persist committed:", err)
-		return 2
+	if mode == "t10gcs" {
+		client, gcsErr := gcswitness.NewClient(ctx,
+			option.WithEndpoint(os.Getenv(helperEnvGCSEndpoint)),
+			option.WithoutAuthentication(),
+			option.WithHTTPClient(&http.Client{}),
+		)
+		if gcsErr != nil {
+			fmt.Fprintln(os.Stderr, "gcs client:", gcsErr)
+			return 2
+		}
+		adapter := gcswitness.New(client, os.Getenv(helperEnvGCSBucket))
+		if _, createErr := adapter.CreateExactIfAbsent(ctx, os.Getenv(helperEnvWitnessKey), serialized); createErr != nil {
+			fmt.Fprintln(os.Stderr, "gcs persist committed:", createErr)
+			return 2
+		}
+	} else {
+		repo, err := witness.NewRepository(os.Getenv(helperEnvWitnessRoot))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "witness repository:", err)
+			return 2
+		}
+		if err := repo.CreateOnlyIfAbsent(ctx, os.Getenv(helperEnvWitnessKey), serialized); err != nil {
+			fmt.Fprintln(os.Stderr, "persist committed:", err)
+			return 2
+		}
 	}
 	stdout("COMMITTED_PERSISTED")
 
@@ -582,5 +604,276 @@ func TestProcessKillT10CommittedPersistedBeforeAckMayResume(t *testing.T) {
 	}
 	if !found || row.RevisionNumber != payload.RevisionNumber().Uint64() {
 		t.Fatalf("ground truth revision mismatch: found=%v row=%+v payload_revision=%d", found, row, payload.RevisionNumber().Uint64())
+	}
+}
+
+// TestProcessKillT10GCSCommittedPersistedBeforeAckMayResume is
+// TestProcessKillT10CommittedPersistedBeforeAckMayResume with the GCS
+// witness adapter substituted for the local filesystem witness -- the
+// bounded ADR-043 GCS adapter, exercised against fake-gcs-server, in the
+// exact same process-kill shape as the already-proven local/Spanner-only
+// T10. Only the witness storage backend differs; the signing boundary,
+// verification logic, and epoch decision are byte-for-byte the same frozen
+// code.
+func TestProcessKillT10GCSCommittedPersistedBeforeAckMayResume(t *testing.T) {
+	op := newEmulatorOperation(t)
+	keyPair, err := localsigner.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	witnessKey := "committed/" + op.OperationID.String()
+	env := baseHelperEnv(t, op, 0, emulatorAddr, t.TempDir(), witnessKey, hex.EncodeToString(keyPair.PrivateKeyBytes()))
+	env[helperEnvGCSEndpoint] = fakeGCSEndpointForTest
+	env[helperEnvGCSBucket] = fakeGCSBucketForTest
+	result := spawnHelperAndKillAfter(t, "t10gcs", env, "COMMITTED_PERSISTED")
+	defer rollbackBestEffort(t, emulatorAddr, result.Session, result.TxnID)
+
+	if !result.sawLine("COMMITTED_PERSISTED") {
+		t.Fatal("expected to observe COMMITTED_PERSISTED before the kill")
+	}
+	if result.sawLine("ACKED") {
+		t.Fatal("T10 requires the kill to land before the child could acknowledge completion")
+	}
+
+	client, err := gcswitness.NewClient(context.Background(),
+		option.WithEndpoint(fakeGCSEndpointForTest),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(&http.Client{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	adapter := gcswitness.New(client, fakeGCSBucketForTest)
+
+	raw, err := adapter.ReadExact(context.Background(), witnessKey)
+	if err != nil {
+		t.Fatalf("expected a persisted COMMITTED witness object in GCS: %v", err)
+	}
+	payload := deserializeCommittedPayload(t, raw)
+
+	verifier := keyPair.Verifier()
+	expected := recovery.ExpectedBinding{
+		EnvironmentID:       op.Environment,
+		AuthorityEpoch:      op.Epoch,
+		ResourceIncarnation: op.ResourceIncarnation,
+		OperationID:         op.OperationID,
+		PredecessorRevision: protocol.NewRevisionNumber(0),
+		PredecessorDigest:   digestOf(t, 3),
+	}
+	if err := recovery.VerifyPersistedCommitted(context.Background(), verifier, payload, expected); err != nil {
+		t.Fatalf("independent verification of the GCS-persisted COMMITTED failed: %v", err)
+	}
+
+	resumed := epoch.TransitionOnWitnessOutcome(true)
+	if resumed != epoch.StateActive {
+		t.Fatalf("resumed state = %v, want StateActive", resumed)
+	}
+	if resumed.NewEpochRequired() {
+		t.Fatal("a verified, resumed epoch must not require a new epoch")
+	}
+}
+
+// TestGCSWitnessUnsignedFabricatedWrongKeyTamperedNeverActivates proves,
+// against the real GCS-emulator-backed adapter, that no forged variant of a
+// persisted COMMITTED can ever activate: absent signature, fabricated
+// signature, wrong signing key, and content-tampered-but-originally-signed
+// are all independently rejected by the same frozen recovery.VerifyPersistedCommitted
+// logic already proven against the local witness -- this test exists to
+// confirm the GCS storage substitution changes nothing about that outcome.
+func TestGCSWitnessUnsignedFabricatedWrongKeyTamperedNeverActivates(t *testing.T) {
+	op := newEmulatorOperation(t)
+	operation := op.buildFixedOperation(t, 0)
+	client := dialEmulator(t, emulatorAddr)
+	request, _, _ := commitRequestFor(t, client, operation)
+	accepted, classification, err := completeRawCommit(context.Background(), client.Raw(), request, operation, nil)
+	if err != nil || classification.Outcome != protocol.UnambiguousSuccess {
+		t.Fatalf("setup: classification=%v err=%v", classification, err)
+	}
+
+	genuineKeyPair, err := localsigner.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	genuinePayload, err := buildCommittedPayload(context.Background(), genuineKeyPair.Signer(), accepted)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gcsClient, err := gcswitness.NewClient(context.Background(),
+		option.WithEndpoint(fakeGCSEndpointForTest),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(&http.Client{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gcsClient.Close()
+	adapter := gcswitness.New(gcsClient, fakeGCSBucketForTest)
+
+	expected := recovery.ExpectedBinding{
+		EnvironmentID:       op.Environment,
+		AuthorityEpoch:      op.Epoch,
+		ResourceIncarnation: op.ResourceIncarnation,
+		OperationID:         op.OperationID,
+		PredecessorRevision: operation.ExpectedRevision(),
+		PredecessorDigest:   operation.PreparedDigest(),
+	}
+
+	scenarios := map[string]protocol.CommittedPayload{
+		"unsigned": protocol.NewCommittedPayload(
+			genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
+			genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
+			genuinePayload.PredecessorDigest(), genuinePayload.StateDigest(), genuinePayload.CommitTimestamp(), nil,
+		),
+		"fabricated": genuinePayload.WithSignature([]byte("not-a-real-signature-at-all")),
+	}
+	otherKeyPair, err := localsigner.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongKeyDigest, err := genuinePayload.CanonicalDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongKeySig, err := otherKeyPair.Signer().SignCommittedDigest(context.Background(), wrongKeyDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarios["wrong-key"] = genuinePayload.WithSignature(wrongKeySig)
+
+	tamperedStateDigest := digestOf(t, 200)
+	tampered := protocol.NewCommittedPayload(
+		genuinePayload.EnvironmentID(), genuinePayload.AuthorityEpoch(), genuinePayload.ResourceIncarnation(),
+		genuinePayload.OperationID(), genuinePayload.RevisionNumber(), genuinePayload.PredecessorRevision(),
+		genuinePayload.PredecessorDigest(), tamperedStateDigest, genuinePayload.CommitTimestamp(),
+		genuinePayload.WriterSignature(), // reuse the genuine signature over the ORIGINAL content
+	)
+	scenarios["tampered-content-original-signature"] = tampered
+
+	for name, payload := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			serialized, err := serializeCommittedPayload(payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := "forged/" + op.OperationID.String() + "-" + name
+			if _, err := adapter.CreateExactIfAbsent(context.Background(), key, serialized); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := adapter.ReadExact(context.Background(), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roundTripped := deserializeCommittedPayload(t, raw)
+			err = recovery.VerifyPersistedCommitted(context.Background(), genuineKeyPair.Verifier(), roundTripped, expected)
+			if err == nil {
+				t.Fatalf("%s: expected verification to fail, activation must never occur", name)
+			}
+		})
+	}
+}
+
+const (
+	fakeGCSEndpointForTest = "http://localhost:4443/storage/v1/"
+	fakeGCSBucketForTest   = "adr043-witness-test"
+)
+
+// TestGCSWitnessBindingMismatchNeverActivates proves a genuinely,
+// correctly signed COMMITTED persisted in GCS still fails verification if
+// the caller's expected binding (environment/epoch/resource/operation/
+// predecessor) does not match -- a correct signature over the WRONG
+// expectation must never activate.
+func TestGCSWitnessBindingMismatchNeverActivates(t *testing.T) {
+	op := newEmulatorOperation(t)
+	operation := op.buildFixedOperation(t, 0)
+	client := dialEmulator(t, emulatorAddr)
+	request, _, _ := commitRequestFor(t, client, operation)
+	accepted, classification, err := completeRawCommit(context.Background(), client.Raw(), request, operation, nil)
+	if err != nil || classification.Outcome != protocol.UnambiguousSuccess {
+		t.Fatalf("setup: classification=%v err=%v", classification, err)
+	}
+	keyPair, err := localsigner.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	genuinePayload, err := buildCommittedPayload(context.Background(), keyPair.Signer(), accepted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized, err := serializeCommittedPayload(genuinePayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gcsClient, err := gcswitness.NewClient(context.Background(),
+		option.WithEndpoint(fakeGCSEndpointForTest),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(&http.Client{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gcsClient.Close()
+	adapter := gcswitness.New(gcsClient, fakeGCSBucketForTest)
+	key := "binding-mismatch/" + op.OperationID.String()
+	if _, err := adapter.CreateExactIfAbsent(context.Background(), key, serialized); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := adapter.ReadExact(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundTripped := deserializeCommittedPayload(t, raw)
+
+	// A DIFFERENT, unrelated operation's expected binding.
+	otherOp := newEmulatorOperation(t)
+	wrongExpected := recovery.ExpectedBinding{
+		EnvironmentID:       otherOp.Environment,
+		AuthorityEpoch:      otherOp.Epoch,
+		ResourceIncarnation: otherOp.ResourceIncarnation,
+		OperationID:         otherOp.OperationID,
+		PredecessorRevision: operation.ExpectedRevision(),
+		PredecessorDigest:   operation.PreparedDigest(),
+	}
+	err = recovery.VerifyPersistedCommitted(context.Background(), keyPair.Verifier(), roundTripped, wrongExpected)
+	if err == nil {
+		t.Fatal("a genuinely signed COMMITTED must not verify against a mismatched expected binding")
+	}
+}
+
+// TestGCSMalformedObjectFailsClosed proves an object at the deterministic
+// key that is not even well-formed COMMITTED JSON (corrupted bytes, never a
+// product of this codebase's own serialization) is rejected during
+// deserialization rather than silently accepted or partially trusted.
+func TestGCSMalformedObjectFailsClosed(t *testing.T) {
+	gcsClient, err := gcswitness.NewClient(context.Background(),
+		option.WithEndpoint(fakeGCSEndpointForTest),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(&http.Client{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gcsClient.Close()
+	adapter := gcswitness.New(gcsClient, fakeGCSBucketForTest)
+
+	key := "malformed/" + t.Name()
+	malformed := []byte(`{"environment_id": "staging", "this is not valid COMMITTED JSON at all`)
+	if _, err := adapter.CreateExactIfAbsent(context.Background(), key, malformed); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := adapter.ReadExact(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(malformed) {
+		t.Fatal("ReadExact must return the raw bytes unmodified even when they are malformed -- deserialization is the caller's responsibility, not the storage layer's")
+	}
+	// Deserialization must fail closed rather than panic or silently
+	// produce a zero-value payload that could be mistaken for a genuine one.
+	var dto committedPayloadDTO
+	if err := json.Unmarshal(raw, &dto); err == nil {
+		t.Fatal("expected deserialization of malformed bytes to fail")
 	}
 }
