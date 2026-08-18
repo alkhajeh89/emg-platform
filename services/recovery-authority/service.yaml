@@ -1,0 +1,7 @@
+name: recovery-authority
+module: "Recovery Authority — ADR-044 / ADR-045"
+owner: "EMG Founder"
+steward: "Recovery Authority Platform Team"
+status: active
+feature: "S5 — Deployable Recovery Authority runtime"
+sprint: S5

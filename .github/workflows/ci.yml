@@ -137,7 +137,7 @@ jobs:
       - name: Go version
         run: go version
 
-      - name: Build (no provider adapters exist yet; foundation only)
+      - name: Build (includes cmd/recovery-authority, cmd/recovery-signer)
         run: go build ./...
 
       - name: Test
