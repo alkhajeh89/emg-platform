@@ -131,28 +131,6 @@ services:
       - emg-audit-client
 
 
-  recovery-authority:
-    type: service
-    path: services/recovery-authority
-    dockerfile: services/recovery-authority/Dockerfile
-
-    # Go module; governed by services/recovery-authority/go.mod and
-    # go.sum, not by any internal Python distribution.
-    dependencies: []
-
-  recovery-signer:
-    type: service
-    path: services/recovery-authority/cmd/recovery-signer
-    dockerfile: services/recovery-authority/recovery-signer.Dockerfile
-
-    # Same Go module as recovery-authority (ADR-045 S5): a separate,
-    # independently deployed binary/image built from
-    # services/recovery-authority/cmd/recovery-signer, so it is registered
-    # under its own service key and image, not folded into the
-    # recovery-authority entry above.
-    dependencies: []
-
-
   entity-resolution:
     type: library
     path: libs/python/emg-entity-resolution

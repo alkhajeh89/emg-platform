@@ -36,8 +36,6 @@ def test_container_security_matrix_covers_every_production_service() -> None:
         "studio-bff",
         "keycloak-provisioner",
         "recovery-tool",
-        "recovery-authority",
-        "recovery-signer",
     }
 
 
