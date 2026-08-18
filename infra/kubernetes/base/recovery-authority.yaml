@@ -1,0 +1,91 @@
+# ADR-044/ADR-045/S4/S5/S6: the Recovery Authority authority/witness
+# runtime. Distinct ServiceAccount and (via the iam.gke.io/gcp-service-account
+# annotation) distinct Workload Identity Federation binding from
+# emg-recovery-signer -- this deployment holds no Cloud KMS credential and
+# the recovery-authority container image itself contains no KMS import at
+# all (services/recovery-authority/cmd/recovery-authority's own boundary
+# test enforces this at the source level). The GCP service-account email
+# below is an illustrative placeholder (S4 manifest convention: no real
+# project ID is named here) -- an environment binds the real one via its
+# own Workload Identity Federation configuration, outside this repository.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emg-recovery-authority
+  annotations: {emg.platform/bootstrap-stage: "80-recovery-authority"}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: emg-recovery-authority}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: emg-recovery-authority, app.kubernetes.io/part-of: emg-platform}}
+    spec:
+      serviceAccountName: emg-recovery-authority
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 25
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: recovery-authority
+          image: registry.invalid/emg/recovery-authority@sha256:0000000000000000000000000000000000000000000000000000000000000009
+          ports: [{name: http, containerPort: 8080}]
+          envFrom: [{configMapRef: {name: emg-recovery-authority-config}}]
+          # No secretKeyRef anywhere in this container: Spanner, GCS, and
+          # the signer RPC are all authenticated via Workload Identity
+          # Federation / ADC (ADR-044 §15, ADR-045 §5) -- there is no
+          # static credential for this deployment to inject.
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: pinned-keys, mountPath: /var/lib/recovery-authority/pinned-keys}
+            - {name: compromise-ledger, mountPath: /var/lib/recovery-authority/compromise-ledger}
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 2}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+        # RC-note: keypinning.FileStore / compromiseledger.FileLedger are
+        # the qualification-grade implementations (S3); a real deployment
+        # needs these backed by durable, replicated storage meeting
+        # ADR-045 §7/§7C's governance properties, provisioned and governed
+        # separately (S4 README, "boundary_only_not_yet_implemented").
+        # emptyDir here is explicitly NOT durable and is a placeholder for
+        # that not-yet-selected mechanism, not a production claim.
+        - {name: pinned-keys, emptyDir: {sizeLimit: 16Mi}}
+        - {name: compromise-ledger, emptyDir: {sizeLimit: 16Mi}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: emg-recovery-authority-config}
+data:
+  RECOVERY_AUTHORITY_LISTEN_ADDR: ":8080"
+  RECOVERY_AUTHORITY_ENVIRONMENT_ID: production
+  # Resource-pattern placeholders (S4 manifest convention) -- an
+  # environment supplies its real Spanner/GCS/KMS resource names via its
+  # own overlay, never a literal ID committed here.
+  RECOVERY_AUTHORITY_SPANNER_DATABASE: "projects/example-authority-project/instances/example-instance/databases/example-database"
+  RECOVERY_AUTHORITY_WITNESS_BUCKET: "example-witness-bucket"
+  # https:// is required by signerrpc.NewClient outside allowInsecure mode
+  # (S5). This assumes the cluster's own mTLS mechanism (e.g. a service
+  # mesh sidecar) terminates TLS transparently to this application, or
+  # that TLS support is added to internal/authority/lifecycle before this
+  # manifest is used for a real deployment -- this repository does not
+  # select or provision that mechanism (S6 does not perform S7
+  # qualification).
+  RECOVERY_AUTHORITY_SIGNER_ENDPOINT: "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
+  RECOVERY_AUTHORITY_SIGNER_AUDIENCE: "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
+  RECOVERY_AUTHORITY_APPROVED_SIGNING_CRYPTO_KEY: "projects/example-signing-project/locations/example-location/keyRings/example-key-ring/cryptoKeys/example-key"
+  RECOVERY_AUTHORITY_PINNED_KEY_STORE_DIR: "/var/lib/recovery-authority/pinned-keys"
+  RECOVERY_AUTHORITY_COMPROMISE_LEDGER_FILE: "/var/lib/recovery-authority/compromise-ledger/ledger.jsonl"
+  RECOVERY_AUTHORITY_ALLOW_INSECURE: "false"
+---
+apiVersion: v1
+kind: Service
+metadata: {name: emg-recovery-authority}
+spec:
+  # ClusterIP (the type: field's default) -- never a LoadBalancer or
+  # NodePort. Combined with the absence of any Ingress resource for this
+  # service anywhere in this repository, emg-recovery-authority is not
+  # reachable from outside the cluster through Kubernetes networking.
+  selector: {app.kubernetes.io/name: emg-recovery-authority}
+  ports: [{name: http, port: 8080, targetPort: http}]

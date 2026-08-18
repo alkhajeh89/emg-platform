@@ -40,6 +40,8 @@ EXPECTED_APPLICATION_IMAGES = {
     "audit-projector",
     "knowledge-graph",
     "studio-bff",
+    "recovery-authority",
+    "recovery-signer",
 }
 EXPECTED_RELEASE_IMAGES = EXPECTED_APPLICATION_IMAGES | {"keycloak-provisioner", "recovery-tool"}
 

@@ -132,3 +132,33 @@ spec:
         - namespaceSelector:
             matchLabels: {networking.emg.io/observability-access: "true"}
       ports: [{protocol: TCP, port: 9464}]
+---
+# ADR-045 §4/§5, S6 ATTACK_S: the signer RPC must never be reachable by
+# any workload other than the authority/witness runtime. This is the
+# primary, structurally-enforced exposure boundary (the Service itself is
+# also ClusterIP-only with no Ingress resource); TLS is a separate,
+# additive hardening layer, not a substitute for this restriction.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-recovery-signer-ingress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-recovery-signer}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-recovery-authority}}
+      ports: [{protocol: TCP, port: 8443}]
+---
+# The authority/witness runtime's own egress is scoped to exactly the
+# signer RPC port -- it has no need to reach any other in-cluster
+# workload, and this rule does not grant it any.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-recovery-authority-to-signer-egress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-recovery-authority}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: emg-recovery-signer}}
+      ports: [{protocol: TCP, port: 8443}]

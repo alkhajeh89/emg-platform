@@ -55,6 +55,8 @@ def test_deployments_are_single_replica_hardened_and_digest_pinned() -> None:
         "emg-studio",
         "emg-studio-bff",
         "emg-identity-recovery-qualify",
+        "emg-recovery-authority",
+        "emg-recovery-signer",
     }
     digest = re.compile(r"^[^:]+(?:/[^:]+)+@sha256:[0-9a-f]{64}$")
     for deployment in deployments:

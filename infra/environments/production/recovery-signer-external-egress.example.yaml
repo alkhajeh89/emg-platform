@@ -1,0 +1,19 @@
+# ADR-045 §4/§5, S6: workload-scoped external (Cloud KMS API) egress for
+# the Recovery Authority signing service only. NOT included by
+# kustomization.yaml -- copy, fill in the environment-resolved ipBlock/port
+# for the real cloudkms.googleapis.com endpoint, and apply separately,
+# following the same convention as external-egress.example.yaml and the
+# workload-scoped *-db-egress.example.yaml files in this directory.
+#
+# Deliberately workload-scoped (emg-recovery-signer only) -- this is the
+# ONLY external egress this workload should ever need: recovery-signer has
+# no Spanner/GCS reachability requirement at all (its own boundary test,
+# cmd/recovery-signer's TestRecoverySignerHasNoAuthorityWitnessCapability,
+# enforces that it imports neither).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-recovery-signer-external-egress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-recovery-signer}}
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entry for cloudkms.googleapis.com.

@@ -1,0 +1,23 @@
+# ADR-044/ADR-045, S6: workload-scoped external (Spanner/GCS API) egress
+# for the Recovery Authority runtime only. NOT included by
+# kustomization.yaml -- copy, fill in the environment-resolved ipBlock/port
+# for the real spanner.googleapis.com / storage.googleapis.com endpoints,
+# and apply separately, following the same convention as
+# external-egress.example.yaml and the workload-scoped *-db-egress.example.yaml
+# files in this directory. Standard Kubernetes NetworkPolicy cannot
+# restrict arbitrary external FQDNs (see external-egress.example.yaml's own
+# note) -- these entries necessarily use resolved IP ranges, which are
+# environment-operational data, not something this repository pins.
+#
+# Deliberately workload-scoped (emg-recovery-authority only), never the
+# broad app.kubernetes.io/part-of: emg-platform selector
+# external-egress.example.yaml uses for platform-wide dependencies --
+# Spanner/GCS reachability must never be granted to any other workload
+# through this file.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: emg-recovery-authority-external-egress}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: emg-recovery-authority}}
+  policyTypes: [Egress]
+  egress: [] # REQUIRED: environment-specific ipBlock/port entries for spanner.googleapis.com and storage.googleapis.com.

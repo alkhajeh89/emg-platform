@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://emg.local/schemas/recovery-authority-iam.schema.json",
   "title": "EMG Recovery Authority Production IAM Principal Inventory (ADR-044/ADR-045 S4)",
-  "description": "The single authoritative, declarative source of the production GCP IAM principals authorized to interact with the Recovery Authority's Spanner authority database, GCS witness bucket, and signing-domain Cloud KMS resources. Contains no project ID, billing ID, service-account email, credential, token, or private key -- only resource-pattern placeholders and permission lists. Actual provisioning of these principals against real GCP resources is out of this manifest's scope (ADR-044 §17 items 4-5; S6, not yet authorized).",
+  "description": "The single authoritative, declarative source of the production GCP IAM principals authorized to interact with the Recovery Authority's Spanner authority database, GCS witness bucket, and signing-domain Cloud KMS resources. Contains no project ID, billing ID, service-account email, credential, token, or private key -- only resource-pattern placeholders and permission lists. Actual provisioning of these principals against real GCP resources remains out of this manifest's scope (ADR-044 §17 items 4-5): S6 designs and cross-references this inventory (see provisioning/contract.json) but performs no real IAM binding, and real-cloud qualification remains a separate, later-authorized step.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "principals"],

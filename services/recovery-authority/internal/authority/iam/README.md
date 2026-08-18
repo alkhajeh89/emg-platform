@@ -6,9 +6,17 @@ signing administrative independence, concretized against the actual APIs
 S1–S3 landed. **It creates, modifies, binds, enables, disables, or
 provisions no real GCP resource or IAM policy.** `manifest.json` is data;
 `manifest.go` parses and validates it entirely offline; the `_test.go`
-files prove structural security properties against that data. Actually
-provisioning real principals from this design is S6 (governed
-bootstrap/provisioning, ADR-044 §17 item 5) — not begun here.
+files prove structural security properties against that data.
+
+S6 (governed bootstrap/provisioning, ADR-044 §17 item 5) has since designed
+and landed `recovery-bootstrap-deployment`'s full permission set (previously
+a placeholder exclusion boundary only) and the `internal/authority/bootstrap`
+package that grounds it, plus a separate `internal/authority/provisioning`
+package that cross-references every principal ID here in its declarative
+execution ordering. Actually provisioning any of these principals against a
+real GCP resource remains out of scope for both packages — that is a later,
+explicitly authorized real-cloud qualification step (see
+`provisioning/README.md`).
 
 ## Why this is JSON, not Terraform
 
@@ -25,14 +33,17 @@ package follows that same shape — `manifest.schema.json` +
 IAM design is self-contained to one Go service module and Go's `embed`
 requires the data to live inside the module's own directory tree.
 
-**Recommendation for the eventual S6 implementation**: when governed
-bootstrap/provisioning is authorized, the natural execution form is
-Terraform `google_kms_crypto_key_iam_member` / `google_spanner_database_iam_member`
-/ `google_storage_bucket_iam_member` resources (or an equivalent
-declarative GCP IAM tool), generated or cross-checked from this same
-`manifest.json` rather than hand-duplicated — so the reviewed design and
-the applied policy never drift apart. This package does not implement
-that generation step; S6 does.
+**S6 decision**: this recommendation was re-examined once governed
+bootstrap/provisioning was actually authorized. No `.tf` file, IaC engine,
+or new framework was introduced (S6 Phase 8's explicit STOP-before-inventing
+rule): `internal/authority/provisioning/contract.json` cross-references
+`manifest.json`'s principal IDs by name in the same JSON-manifest +
+Go-validator shape this package already established, rather than
+generating Terraform resources from it. If a real executable IaC engine
+becomes genuinely necessary for actual GCP application (as opposed to
+declaring the intended bindings, which this manifest already does), that
+remains a distinct, separately-scoped, explicitly-authorized decision —
+not one this manifest or `provisioning/contract.json` makes on its own.
 
 ## Principals (Phase 1)
 
@@ -46,7 +57,7 @@ convenience:
 | `recovery-pin-capture` | `signing` | administrative | `keypinning.CaptureFromKMS` |
 | `compromise-ledger-writer` | `compromise_ledger` | administrative | not yet implemented (boundary only) |
 | `recovery-verification-read` | `authority_witness` | runtime | S8 runbook §5/§11 (no dedicated Go entry point yet) |
-| `recovery-bootstrap-deployment` | `bootstrap` | administrative | exclusion boundary only — S6 |
+| `recovery-bootstrap-deployment` | `bootstrap` | administrative | `bootstrap.GenesisSpannerClient` (CreateSession + Commit) and `bootstrap.Dependencies.Witness` (S6) |
 
 Every field required by Phase 1 (purpose, required/forbidden permissions,
 resource scope, trust domain, runtime-vs-administrative, credential

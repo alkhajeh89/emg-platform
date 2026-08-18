@@ -20,4 +20,6 @@ resources:
   - provisioning-validation.yaml
   - provisioning-validation-recovery.yaml
   - postgresql-backup.yaml
+  - recovery-authority.yaml
+  - recovery-signer.yaml
   - network-policies.yaml

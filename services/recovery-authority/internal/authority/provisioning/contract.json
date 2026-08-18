@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "resource_requirements": [
+    {
+      "id": "authority-spanner-instance",
+      "resource_type": "spanner_instance",
+      "domain": "authority_witness",
+      "description": "The Cloud Spanner instance hosting the authority database. Genesis never creates a Spanner instance -- spannercommit's own package doc is explicit that it 'never touches, and never needs to know, any instance/database resource path.'",
+      "pattern": "projects/{authority_project}/instances/{spanner_instance}",
+      "must_exist_before_genesis": true
+    },
+    {
+      "id": "authority-spanner-database",
+      "resource_type": "spanner_database",
+      "domain": "authority_witness",
+      "description": "The Cloud Spanner database holding authority_head and authority_transition_history, with schema equivalent to scripts/emulator/schema.sql. No production DDL/migration for this schema exists in this repository yet (S4's finding, re-confirmed by S6: zero executable GCP IaC framework) -- see manual_steps.apply-authority-schema.",
+      "pattern": "projects/{authority_project}/instances/{spanner_instance}/databases/{authority_database}",
+      "must_exist_before_genesis": true,
+      "notes": "bootstrap.GenesisMutations issues Mutation_Insert against exactly these two tables and no others; it never issues DDL and cannot create this schema itself."
+    },
+    {
+      "id": "witness-gcs-bucket",
+      "resource_type": "gcs_bucket",
+      "domain": "authority_witness",
+      "description": "The GCS bucket bootstrap.Dependencies.Witness (gcswitness.Adapter) writes the genesis COMMITTED witness object to, and every later rotation writes to thereafter. Must have Bucket Lock retention configured per ADR-044 §6/§11 BEFORE genesis -- gcswitness's own ADR-043 boundary (boundary_test.go, TestNoForbiddenStorageMethods) structurally forbids this package from calling Retention/SetRetention/LockRetention itself, so this configuration is never something bootstrap or gcswitness performs.",
+      "pattern": "projects/{authority_project}/buckets/{witness_bucket}",
+      "must_exist_before_genesis": true,
+      "notes": "bootstrap.CheckWitnessPreconditions can verify only object-level existence at the deterministic genesis witness key, never bucket-level retention/Bucket-Lock configuration -- see bootstrap/preconditions.go's ErrWitnessRetentionUnverifiable and manual_steps.lock-witness-bucket-retention."
+    },
+    {
+      "id": "signing-kms-key-ring",
+      "resource_type": "kms_key_ring",
+      "domain": "signing",
+      "description": "The Cloud KMS key ring in the independently administered signing project (ADR-045 §4).",
+      "pattern": "projects/{signing_project}/locations/{location}/keyRings/{key_ring}",
+      "must_exist_before_genesis": true
+    },
+    {
+      "id": "signing-kms-crypto-key",
+      "resource_type": "kms_crypto_key",
+      "domain": "signing",
+      "description": "The approved CryptoKey recovery.ApprovedSigningLineage (keypinning.CryptoKeyLineage) is configured against. Must use one of keypinning.Algorithm's supported SHA-256-digest algorithms.",
+      "pattern": "projects/{signing_project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}",
+      "must_exist_before_genesis": true
+    },
+    {
+      "id": "signing-kms-crypto-key-version",
+      "resource_type": "kms_crypto_key_version",
+      "domain": "signing",
+      "description": "The exact, single, ENABLED CryptoKeyVersion bootstrap.GenesisRequest.SigningKeyID names. Must be ENABLED and captured/pinned via keypinning.CaptureFromKMS BEFORE genesis (ADR-045 §7C, S6 Phase 5) -- bootstrap.CheckSigningPreconditions refuses genesis if no durable pin already exists.",
+      "pattern": "projects/{signing_project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{version}",
+      "must_exist_before_genesis": true
+    }
+  ],
+  "principal_bindings": [
+    {
+      "principal_id": "recovery-authority-runtime",
+      "kubernetes_service_account": "emg-recovery-authority",
+      "gcp_service_account_placeholder": "recovery-authority-runtime@{authority_project}.iam.gserviceaccount.com",
+      "standing_grant": true
+    },
+    {
+      "principal_id": "recovery-signing",
+      "kubernetes_service_account": "emg-recovery-signer",
+      "gcp_service_account_placeholder": "recovery-signer@{signing_project}.iam.gserviceaccount.com",
+      "standing_grant": true
+    },
+    {
+      "principal_id": "recovery-bootstrap-deployment",
+      "kubernetes_service_account": "none",
+      "gcp_service_account_placeholder": "recovery-bootstrap-deployment@{authority_project}.iam.gserviceaccount.com",
+      "standing_grant": false
+    }
+  ],
+  "deployment_manifests": [
+    {
+      "workload_id": "recovery-authority",
+      "kubernetes_manifest_path": "infra/kubernetes/base/recovery-authority.yaml",
+      "principal_id": "recovery-authority-runtime"
+    },
+    {
+      "workload_id": "recovery-signer",
+      "kubernetes_manifest_path": "infra/kubernetes/base/recovery-signer.yaml",
+      "principal_id": "recovery-signing"
+    }
+  ],
+  "execution_order": [
+    {
+      "id": "apply-authority-schema",
+      "description": "Provision the Spanner instance/database and apply the authority_head/authority_transition_history schema.",
+      "automated": false,
+      "owner": "authority-witness-domain-administrator",
+      "depends_on": [],
+      "manual_step_ref": "apply-authority-schema"
+    },
+    {
+      "id": "lock-witness-bucket-retention",
+      "description": "Create the witness GCS bucket and lock its retention policy (ADR-044 §11).",
+      "automated": false,
+      "owner": "authority-witness-domain-administrator",
+      "depends_on": [],
+      "manual_step_ref": "lock-witness-bucket-retention"
+    },
+    {
+      "id": "provision-signing-key",
+      "description": "Create the KMS key ring, CryptoKey, and initial ENABLED CryptoKeyVersion in the independently administered signing project.",
+      "automated": false,
+      "owner": "signing-domain-administrator",
+      "depends_on": [],
+      "manual_step_ref": "provision-signing-key"
+    },
+    {
+      "id": "bind-standing-principals",
+      "description": "Bind recovery-authority-runtime and recovery-signing's Workload Identity Federation identities per iam/manifest.json (standing_grant=true bindings only).",
+      "automated": false,
+      "owner": "authority-witness-domain-administrator",
+      "depends_on": ["apply-authority-schema", "lock-witness-bucket-retention", "provision-signing-key"],
+      "manual_step_ref": "bind-iam-principals"
+    },
+    {
+      "id": "deploy-standing-workloads",
+      "description": "Apply infra/kubernetes/base/recovery-authority.yaml and recovery-signer.yaml (deployment_manifests above). Not performed by this contract or any code in this repository -- no kubectl apply is issued by S6.",
+      "automated": false,
+      "owner": "authority-witness-domain-administrator",
+      "depends_on": ["bind-standing-principals"],
+      "manual_step_ref": "apply-kubernetes-manifests"
+    },
+    {
+      "id": "capture-and-pin-signing-key",
+      "description": "Run keypinning.CaptureFromKMS against the CryptoKeyVersion from provision-signing-key while it is ENABLED, and durably store the resulting PinnedKey (ADR-045 §7C steps b-c).",
+      "automated": true,
+      "owner": "recovery-pin-capture",
+      "depends_on": ["provision-signing-key"]
+    },
+    {
+      "id": "bind-bootstrap-principal",
+      "description": "Bind recovery-bootstrap-deployment's temporary Workload Identity Federation identity (standing_grant=false) -- distinct from every standing principal, revocable, scoped to this one genesis window.",
+      "automated": false,
+      "owner": "authority-witness-domain-administrator",
+      "depends_on": ["apply-authority-schema", "lock-witness-bucket-retention"],
+      "manual_step_ref": "bind-bootstrap-principal"
+    },
+    {
+      "id": "obtain-dual-control-approvals",
+      "description": "Obtain two independent bootstrap.Approval records (ApprovalRoleAuthority and ApprovalRoleSigning, distinct approvers, each bound to the exact GenesisRequest digest) per S6 Phase 2.",
+      "automated": false,
+      "owner": "dual-control-approval",
+      "depends_on": ["capture-and-pin-signing-key"],
+      "manual_step_ref": "obtain-dual-control-approvals"
+    },
+    {
+      "id": "execute-genesis",
+      "description": "Invoke bootstrap.ExecuteGenesis with a validated GenesisRequest (bootstrap.NewGenesisRequest) and the dependencies bound in bind-bootstrap-principal.",
+      "automated": true,
+      "owner": "recovery-bootstrap-deployment",
+      "depends_on": ["bind-bootstrap-principal", "obtain-dual-control-approvals", "deploy-standing-workloads"]
+    },
+    {
+      "id": "revoke-bootstrap-principal",
+      "description": "Revoke recovery-bootstrap-deployment's Workload Identity Federation binding immediately after a genesis Outcome of COMPLETED or ALREADY_COMPLETED is confirmed (S6 Phase 2: no permanent bootstrap privilege retained by runtime identities).",
+      "automated": false,
+      "owner": "authority-witness-domain-administrator",
+      "depends_on": ["execute-genesis"],
+      "manual_step_ref": "revoke-bootstrap-principal"
+    }
+  ],
+  "manual_steps": [
+    {
+      "id": "apply-authority-schema",
+      "description": "Provision a real Cloud Spanner instance and database and apply DDL equivalent to scripts/emulator/schema.sql.",
+      "why_not_automated": "No executable GCP IaC framework exists anywhere in this repository (S4's finding, re-confirmed by S6): zero .tf files, no infra/ module referencing a cloud provider. Inventing one now would be a new, unreviewed framework -- explicitly out of S6 Phase 8's authorization (STOP-before-inventing rule)."
+    },
+    {
+      "id": "lock-witness-bucket-retention",
+      "description": "Create the witness GCS bucket and lock its Bucket Lock retention policy (ADR-044 §11's qualified procedure).",
+      "why_not_automated": "gcswitness's own already-reviewed ADR-043 boundary (gcswitness/boundary_test.go, TestNoForbiddenStorageMethods) structurally forbids calling Retention/SetRetention/LockRetention/Lifecycle from this codebase at all -- expanding that boundary would itself require a separate, explicitly-reviewed decision, not a side effect of S6."
+    },
+    {
+      "id": "provision-signing-key",
+      "description": "Create the KMS key ring, CryptoKey, and initial ENABLED CryptoKeyVersion in the independently administered signing project.",
+      "why_not_automated": "Same IaC-framework gap as apply-authority-schema, and additionally an administrative-independence requirement (ADR-045 §4): the signing-project resource lifecycle is owned by signing-domain administrators, never by authority/witness-domain automation."
+    },
+    {
+      "id": "bind-iam-principals",
+      "description": "Bind the standing (standing_grant=true) principal_bindings entries above to their real Workload Identity Federation identities, granting exactly iam/manifest.json's required_permissions and no more.",
+      "why_not_automated": "Same IaC-framework gap; iam/manifest.json is the reviewed design this binding must match, not a substitute for actually applying it."
+    },
+    {
+      "id": "apply-kubernetes-manifests",
+      "description": "kubectl apply (or an equivalent governed deployment pipeline) infra/kubernetes/base/recovery-authority.yaml and recovery-signer.yaml.",
+      "why_not_automated": "S6 explicitly builds these manifests (Phase 7) but performs no kubectl apply or real cluster mutation -- deployment execution is a separate, later-authorized step."
+    },
+    {
+      "id": "bind-bootstrap-principal",
+      "description": "Bind recovery-bootstrap-deployment's temporary Workload Identity Federation identity, distinct from every standing principal.",
+      "why_not_automated": "Same IaC-framework gap, plus S6 Phase 2's requirement that this specific binding be a distinct, temporary, human-governed action -- never something automation performs unattended."
+    },
+    {
+      "id": "obtain-dual-control-approvals",
+      "description": "Two independent, named approvers (ApprovalRoleAuthority and ApprovalRoleSigning) review and approve the exact GenesisRequest before execute-genesis runs.",
+      "why_not_automated": "Dual control is a governance property by definition -- an automated system cannot generate its own independent second approval without defeating the property it exists to provide."
+    },
+    {
+      "id": "revoke-bootstrap-principal",
+      "description": "Revoke recovery-bootstrap-deployment's Workload Identity Federation binding.",
+      "why_not_automated": "Same IaC-framework gap as bind-bootstrap-principal; revocation is the same kind of real-IAM-mutation action provisioning is."
+    }
+  ]
+}

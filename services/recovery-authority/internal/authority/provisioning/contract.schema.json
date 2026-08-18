@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://emg.local/schemas/recovery-authority-provisioning.schema.json",
+  "title": "EMG Recovery Authority Governed Provisioning Contract (ADR-044/ADR-045 S6)",
+  "description": "The single authoritative, declarative source of what must exist, be bound, be deployed, and be executed -- and in what order -- before a Recovery Authority environment's first legitimate genesis can run (bootstrap.ExecuteGenesis). Contains no project ID, credential, or literal resource identifier -- only placeholder patterns, IDs cross-referencing iam/manifest.json's principals, and paths to already-committed repository files (infra/kubernetes/base/*.yaml). This is NOT an executable provisioning tool: it creates, applies, or binds no real GCP resource, IAM policy, or Kubernetes object. See README.md for why this is JSON, not Terraform.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "resource_requirements", "principal_bindings", "deployment_manifests", "execution_order", "manual_steps"],
+  "properties": {
+    "version": { "const": 1 },
+    "resource_requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/resource_requirement" }
+    },
+    "principal_bindings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/principal_binding" }
+    },
+    "deployment_manifests": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/deployment_manifest" }
+    },
+    "execution_order": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/execution_step" }
+    },
+    "manual_steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/manual_step" }
+    }
+  },
+  "$defs": {
+    "resource_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "resource_type", "domain", "description", "pattern", "must_exist_before_genesis"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$" },
+        "resource_type": {
+          "type": "string",
+          "enum": ["spanner_instance", "spanner_database", "gcs_bucket", "kms_key_ring", "kms_crypto_key", "kms_crypto_key_version"]
+        },
+        "domain": { "type": "string", "enum": ["authority_witness", "signing"] },
+        "description": { "type": "string", "minLength": 1 },
+        "pattern": { "type": "string", "minLength": 1, "description": "A GCP resource-name PATTERN with {placeholder} segments only, matching iam/manifest.json's own convention." },
+        "must_exist_before_genesis": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+    "principal_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal_id", "kubernetes_service_account", "gcp_service_account_placeholder", "standing_grant"],
+      "properties": {
+        "principal_id": { "type": "string", "description": "Must match a principal id in iam/manifest.json -- validated by contract.go's cross-reference check, not merely by convention." },
+        "kubernetes_service_account": { "type": "string", "description": "The Kubernetes ServiceAccount name this principal's Workload Identity Federation binding attaches to (infra/kubernetes/base/service-accounts.yaml), or 'none' for a principal with no standing Kubernetes workload (e.g. the bootstrap principal, which is never deployed as a long-running pod)." },
+        "gcp_service_account_placeholder": { "type": "string", "minLength": 1, "description": "The {placeholder}-form GCP service-account identity this binding targets -- never a literal email." },
+        "standing_grant": { "type": "boolean", "description": "false for recovery-bootstrap-deployment (temporary, revoked after genesis, S6 Phase 2); true for every ordinary runtime principal." }
+      }
+    },
+    "deployment_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workload_id", "kubernetes_manifest_path", "principal_id"],
+      "properties": {
+        "workload_id": { "type": "string", "minLength": 1 },
+        "kubernetes_manifest_path": { "type": "string", "minLength": 1, "description": "Repository-relative path to an already-committed infra/kubernetes/base/*.yaml file (S6 Phase 7). This contract never embeds manifest content -- it only points at it, so the manifest and this contract cannot drift into two competing copies." },
+        "principal_id": { "type": "string", "description": "Must match a principal id in iam/manifest.json." }
+      }
+    },
+    "execution_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "automated", "owner", "depends_on"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$" },
+        "description": { "type": "string", "minLength": 1 },
+        "automated": { "type": "boolean", "description": "true if a committed Go entry point performs this step (e.g. bootstrap.ExecuteGenesis); false if it is a manual_steps entry (cross-referenced by id)." },
+        "owner": { "type": "string", "minLength": 1, "description": "The principal id, human role, or 'dual-control-approval' responsible for this step." },
+        "depends_on": { "type": "array", "items": { "type": "string" }, "description": "IDs of execution_step entries that must complete first. An empty array means this step has no in-contract prerequisite." },
+        "manual_step_ref": { "type": "string", "description": "For automated=false steps, the corresponding manual_steps id." }
+      }
+    },
+    "manual_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "description", "why_not_automated"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,62}$" },
+        "description": { "type": "string", "minLength": 1 },
+        "why_not_automated": { "type": "string", "minLength": 1, "description": "Why this step is genuinely external rather than a repository-automatable gap (e.g. 'no executable GCP IaC framework exists in this repository -- S4 finding' or 'gcswitness's ADR-043 boundary structurally forbids bucket-attribute mutation')." }
+      }
+    }
+  }
+}

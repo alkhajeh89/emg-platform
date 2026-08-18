@@ -8,9 +8,13 @@
 // any real GCP IAM policy, resource, or credential -- it parses and
 // validates a committed JSON manifest (manifest.json, embedded at build
 // time) entirely offline. No network call, no cloud SDK import, and no
-// credential of any kind exists anywhere in this package. Provisioning
-// real GCP principals from this manifest is explicitly out of scope (S6,
-// not authorized).
+// credential of any kind exists anywhere in this package. Actually
+// provisioning real GCP principals from this manifest remains out of
+// scope for this package -- S6's provisioning package
+// (internal/authority/provisioning) cross-references these principal IDs
+// in its own declarative execution ordering, but performs no real IAM
+// binding either; that step requires a later, explicitly authorized
+// real-cloud qualification (see provisioning/README.md).
 package iam
 
 import (
