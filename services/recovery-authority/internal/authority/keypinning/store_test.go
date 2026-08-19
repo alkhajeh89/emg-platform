@@ -1,12 +1,61 @@
 package keypinning
 
 import (
+	"bytes"
 	"context"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/gcswitness"
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/protocol"
 )
+
+// fakeWitness is an in-memory gcswitness.ImmutableWitness with the same
+// create-if-absent/no-overwrite semantics as the real adapter -- used only
+// to exercise GCSStore's own logic against a real ImmutableWitness
+// implementation, without any network or GCP dependency. It never asserts
+// anything about GCS itself; that is gcswitness's own, already-qualified
+// responsibility.
+type fakeWitness struct {
+	mu      sync.Mutex
+	objects map[string][]byte
+}
+
+func newFakeWitness() *fakeWitness { return &fakeWitness{objects: make(map[string][]byte)} }
+
+func (f *fakeWitness) Exists(_ context.Context, key string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.objects[key]
+	return ok, nil
+}
+
+func (f *fakeWitness) ReadExact(_ context.Context, key string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	value, ok := f.objects[key]
+	if !ok {
+		return nil, gcswitness.ErrNotFound
+	}
+	return append([]byte(nil), value...), nil
+}
+
+func (f *fakeWitness) CreateExactIfAbsent(_ context.Context, key string, payload []byte) (gcswitness.CreateOutcome, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	existing, ok := f.objects[key]
+	if ok {
+		if bytes.Equal(existing, payload) {
+			return gcswitness.AlreadyExistsIdentical, nil
+		}
+		return gcswitness.AlreadyExistsConflict, gcswitness.ErrConflict
+	}
+	f.objects[key] = append([]byte(nil), payload...)
+	return gcswitness.CreateSuccess, nil
+}
+
+var _ gcswitness.ImmutableWitness = (*fakeWitness)(nil)
 
 func testSigningKeyID(t *testing.T, suffix string) protocol.SigningKeyID {
 	t.Helper()
@@ -37,6 +86,13 @@ func storeImplementations(t *testing.T) map[string]Store {
 		"MemoryStore": NewMemoryStore(),
 		"FileStore": func() Store {
 			s, err := NewFileStore(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return s
+		}(),
+		"GCSStore": func() Store {
+			s, err := NewGCSStore(newFakeWitness())
 			if err != nil {
 				t.Fatal(err)
 			}

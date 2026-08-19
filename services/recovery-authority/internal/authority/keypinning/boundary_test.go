@@ -77,6 +77,46 @@ func TestKeyPinningHasNoSigningCapability(t *testing.T) {
 	}
 }
 
+// TestKeyPinningHasNoMutationMethod is the direct ATTACK_P regression test
+// (P1 remediation, this task), mirroring compromiseledger's
+// TestCompromiseLedgerHasNoMutationMethod exactly: no method in this
+// package's own source, on any receiver, has a name suggesting it could
+// edit, delete, or overwrite an existing pin -- Store's doc comment
+// ("there is deliberately no Delete or Update method") is a structural,
+// executable property here, not merely a documentation promise.
+func TestKeyPinningHasNoMutationMethod(t *testing.T) {
+	t.Parallel()
+	forbiddenMethodSubstrings := []string{"Delete", "Update", "Edit", "Remove", "Overwrite", "Truncate"}
+	files, err := filepath.Glob(filepath.Join(".", "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil {
+				continue
+			}
+			for _, forbidden := range forbiddenMethodSubstrings {
+				if strings.Contains(fn.Name.Name, forbidden) {
+					t.Errorf("method %s in %s suggests mutation capability -- pin storage must be create-if-absent/read-only after write", fn.Name.Name, path)
+				}
+			}
+		}
+	}
+}
+
 // TestKeyPinningNeverHandlesPrivateKeyMaterial proves no source file in this
 // package references Go's private-key types or a "PRIVATE KEY" PEM literal
 // -- this package pins public verification material only (ADR-045 §7C).

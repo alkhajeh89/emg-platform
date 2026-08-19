@@ -156,3 +156,56 @@ be revisited once S3 (concrete signing-domain realization) and S6 (bootstrap/
 provisioning, including actual billing-account selection) exist, to confirm the
 concrete implementation actually satisfies §4 and §5 above rather than merely citing
 this document.
+
+## 9. Tiered placement decision (post-S6 review)
+
+This section is the revisit §8 anticipated, performed after S6 (bootstrap/provisioning)
+landed and a dedicated read-only signing-domain placement review was conducted against
+the real, current GCP resource hierarchy visible to this project's credentials. **It
+records a decision within the scope §4 already reserved to "a separate, subsequent
+implementation-review decision" — it does not reopen, amend, or weaken ADR-044 or
+ADR-045, and it selects among options §4 already authorizes (Option A), never a new
+one.** No GCP project, organization, folder, or billing account was created by this
+review or by recording this decision.
+
+**Disposable qualification.** A separate, standalone GCP project may be used under the
+currently available billing account for mechanism qualification only (proving Cloud KMS
+sign/pin/WIF mechanics work) — never as evidence that ADR-045 §15A's administrative
+independence property is satisfied. This mirrors how `emg-adr043-disposable-witness` was
+already used for the ADR-044 real-GCP Bucket Lock qualification.
+
+**Staging.** A separate, non-production signing project may exist under the current
+administrative environment (same organization, same billing account permitted) for
+staging rehearsal. This explicitly does **not** prove ADR-045 production administrative
+independence, exactly as `infra/environments/staging`'s own README already declines to
+claim production-equivalent security guarantees for anything it renders.
+
+**Production.** The signing trust domain must ultimately reside under a genuinely
+independent Cloud Identity/Workspace administrative domain — not merely a second
+`organizations` resource under the current Workspace — with non-overlapping human
+administrators from the authority/witness domain. §4's own reasoning is the basis for
+this: a genuine Cloud Identity organization-level administrator retains the ability to
+modify org policies and IAM-Deny constraints that any same-organization folder/project
+separation depends on, so only a genuinely separate administrative domain (or Option B,
+external to GCP entirely) closes ADR-044 §14 row G's organization-administrator threat
+as modeled. This was independently re-confirmed against current official Google Cloud
+IAM/Resource Manager documentation during the review this section records, per §4's own
+verification requirement.
+
+**Billing.** A separate billing account is **not** cryptographically or
+administratively necessary for signing-domain independence — independently verified
+against current official Google Cloud Billing documentation: Cloud Billing accounts are
+not IAM parents of the projects linked to them, and a Billing Account Administrator role
+grants no permission over a linked project's own IAM, Cloud KMS, or storage resources.
+This confirms and extends §5.1's own finding (that shared billing caused only an
+availability coupling, never an integrity/IAM-reach one) to the signing-domain placement
+question specifically. The production default therefore remains isolated billing per
+§5.2, unless an explicit, separately recorded risk-acceptance decision states otherwise
+— never required for administrative independence itself, but still the recommended
+default for availability/blast-radius isolation.
+
+**What this section does not do.** It does not select, provision, or name any specific
+project, organization, or billing account for any tier. It does not close ADR-044 §17
+item 9 — that remains open until a concrete signing trust domain is actually
+provisioned and independently qualified against §15A's five properties, which is real-
+cloud qualification work explicitly not performed or authorized here.

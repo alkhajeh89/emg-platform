@@ -1,6 +1,7 @@
 package provisioning
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/iam"
@@ -31,6 +32,84 @@ func TestExecutionOrderIsAcyclicAndFullyResolved(t *testing.T) {
 			}
 		}
 		seenBefore[step.ID] = true
+	}
+}
+
+// TestExecuteGenesisTransitivelyRequiresPinStoreAndLedgerProvisioning is the
+// direct Phase 6 regression test (P1 remediation, this task): genesis
+// cannot proceed unless the pin-store and compromise-ledger durable
+// providers exist and their administrative owners are established --
+// proven here as a real, transitive dependency-graph property, not merely
+// an assertion in prose.
+func TestExecuteGenesisTransitivelyRequiresPinStoreAndLedgerProvisioning(t *testing.T) {
+	t.Parallel()
+	contract := mustLoad(t)
+	ordered, err := contract.OrderedSteps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := make(map[string]int, len(ordered))
+	for i, step := range ordered {
+		index[step.ID] = i
+	}
+	genesisIdx, ok := index["execute-genesis"]
+	if !ok {
+		t.Fatal("execute-genesis step not found")
+	}
+	for _, prerequisite := range []string{
+		"provision-pin-store-bucket",
+		"provision-compromise-ledger-bucket",
+		"bind-pin-capture-principal",
+		"bind-ledger-writer-principal",
+		"capture-and-pin-signing-key",
+	} {
+		idx, ok := index[prerequisite]
+		if !ok {
+			t.Fatalf("prerequisite step %s not found", prerequisite)
+		}
+		if idx >= genesisIdx {
+			t.Fatalf("execute-genesis must be transitively ordered after %s", prerequisite)
+		}
+	}
+}
+
+// TestPinStoreAndLedgerBucketsAreDistinctThreeWayIsolated proves the three
+// GCS-backed resource_requirements (witness, pin-store, compromise-ledger)
+// all live under distinct project placeholders -- the same three-domain
+// isolation iam/manifest.json's own TestAttackCD proves at the IAM layer,
+// re-proven here at the provisioning-contract layer so the two documents
+// cannot silently drift apart.
+func TestPinStoreAndLedgerBucketsAreDistinctThreeWayIsolated(t *testing.T) {
+	t.Parallel()
+	contract := mustLoad(t)
+	expectedPlaceholder := map[string]string{
+		"witness-gcs-bucket":       "{authority_project}",
+		"pin-store-bucket":         "{signing_project}",
+		"compromise-ledger-bucket": "{compromise_ledger_project}",
+	}
+	found := make(map[string]bool, 3)
+	for _, req := range contract.ResourceRequirements {
+		want, ok := expectedPlaceholder[req.ID]
+		if !ok {
+			continue
+		}
+		found[req.ID] = true
+		if !strings.Contains(req.Pattern, want) {
+			t.Errorf("%s pattern %q does not contain expected placeholder %q", req.ID, req.Pattern, want)
+		}
+		for otherID, otherPlaceholder := range expectedPlaceholder {
+			if otherID == req.ID {
+				continue
+			}
+			if strings.Contains(req.Pattern, otherPlaceholder) {
+				t.Errorf("%s pattern %q unexpectedly contains %s's placeholder %q", req.ID, req.Pattern, otherID, otherPlaceholder)
+			}
+		}
+	}
+	for id := range expectedPlaceholder {
+		if !found[id] {
+			t.Errorf("resource_requirement %s not found", id)
+		}
 	}
 }
 

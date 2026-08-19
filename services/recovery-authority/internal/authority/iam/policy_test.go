@@ -238,37 +238,163 @@ func TestPolicy15_NoWildcardOrBroadRoleDefeatsSeparation(t *testing.T) {
 // -- Attack C / D: cross-domain resource-scope separation -----------------
 
 // TestAttackCD_CrossDomainResourceScopesUseDistinctProjectPlaceholders
-// proves the manifest itself models the signing domain and the
-// authority/witness domain as living under DIFFERENT project-placeholder
-// namespaces ({signing_project} vs {authority_project}) -- so an
-// administrator whose IAM reach is scoped to one domain's resource
-// pattern has no resource in the OTHER domain's pattern to bind against,
-// as modeled here. This is a structural property of the DESIGN, not a
-// live-cloud proof: whether the two placeholders resolve to genuinely
-// IAM-unreachable projects in a real deployment is an S9/organizational
-// governance fact this manifest cannot establish on its own (see README).
+// proves the manifest itself models the signing domain, the
+// authority/witness domain, and (P1 remediation, this task) the
+// compromise-ledger domain as living under three DIFFERENT
+// project-placeholder namespaces -- so an administrator whose IAM reach is
+// scoped to one domain's home resource pattern has no resource in another
+// domain's home pattern to bind against, as modeled here. This is a
+// structural property of the DESIGN, not a live-cloud proof (see README).
+//
+// Each domain's "home" placeholder is now anchored to the resource_type it
+// structurally owns (spanner_database for authority_witness, kms_crypto_key
+// for signing, gcs_bucket for compromise_ledger) rather than to "whichever
+// placeholder was seen for this domain," because authority_witness-domain
+// principals now legitimately hold EXPLICIT, DISCLOSED, read-only
+// gcs_bucket resource_scope entries reaching into both other domains
+// (recovery-authority-runtime and recovery-verification-read's own pin/
+// ledger read access, ADR-045 §5 "verification capability is deliberately
+// unprivileged") -- a real, intentional exception to same-domain-only
+// resource_scope, not an accidental placeholder collision. That exception
+// is itself independently proven read-only by
+// TestPinStoreAndLedgerCrossDomainReadIsReadOnly below, so this test's
+// narrower, resource-type-anchored form loses no coverage.
 func TestAttackCD_CrossDomainResourceScopesUseDistinctProjectPlaceholders(t *testing.T) {
 	manifest := mustLoad(t)
-	domainProjectPlaceholder := map[string]string{}
-	for _, p := range manifest.Principals {
-		for _, scope := range p.ResourceScope {
-			placeholder := placeholderSegment.FindString(scope.Pattern)
-			if placeholder == "" {
+	homePlaceholder := func(domain, wantResourceType string) string {
+		t.Helper()
+		for _, p := range manifest.Principals {
+			if p.Domain != domain {
 				continue
 			}
-			if existing, ok := domainProjectPlaceholder[p.Domain]; ok && existing != placeholder {
-				t.Errorf("domain %s uses inconsistent project placeholders: %q and %q", p.Domain, existing, placeholder)
+			for _, scope := range p.ResourceScope {
+				if scope.ResourceType != wantResourceType {
+					continue
+				}
+				placeholder := placeholderSegment.FindString(scope.Pattern)
+				if placeholder != "" {
+					return placeholder
+				}
 			}
-			domainProjectPlaceholder[p.Domain] = placeholder
+		}
+		t.Fatalf("no principal in domain %q declares a %q resource_scope entry", domain, wantResourceType)
+		return ""
+	}
+	authority := homePlaceholder("authority_witness", "spanner_database")
+	signing := homePlaceholder("signing", "kms_crypto_key")
+	ledger := homePlaceholder("compromise_ledger", "gcs_bucket")
+
+	if authority == signing || authority == ledger || signing == ledger {
+		t.Fatalf("authority_witness (%q), signing (%q), and compromise_ledger (%q) domains must all use mutually distinct project placeholders", authority, signing, ledger)
+	}
+}
+
+// TestPinStoreAndLedgerCrossDomainReadIsReadOnly is the direct Phase 5
+// regression test ("verifier is read-only"): every principal whose
+// resource_scope reaches into the signing domain's pin bucket or the
+// compromise-ledger domain's bucket, from OUTSIDE that domain, must hold
+// storage.objects.get and must never hold storage.objects.update/delete
+// anywhere (update/delete are never legitimate for ANY principal against
+// ANY of these create-if-absent-only buckets, cross-domain or not -- see
+// TestNoStorageUpdateOrDeletePermissionAnywhere below for the unconditional
+// form of that check). storage.objects.create is deliberately NOT checked
+// here: this manifest's flat, unpaired required_permissions schema cannot
+// distinguish "create on the home bucket" from "create on the cross-domain
+// bucket" for a principal that legitimately needs create on ITS OWN
+// domain's bucket (recovery-authority-runtime, recovery-bootstrap-deployment)
+// -- that disclosed limitation is recorded in both principals' own notes
+// fields, not silently assumed here. recovery-verification-read, which has
+// no home bucket needing create at all, provides the clean, unambiguous
+// positive case this test can fully verify.
+func TestPinStoreAndLedgerCrossDomainReadIsReadOnly(t *testing.T) {
+	manifest := mustLoad(t)
+	crossDomainBucket := func(p Principal) bool {
+		for _, scope := range p.ResourceScope {
+			if scope.ResourceType != "gcs_bucket" {
+				continue
+			}
+			placeholder := placeholderSegment.FindString(scope.Pattern)
+			if (placeholder == "{signing_project}" || placeholder == "{compromise_ledger_project}") && p.Domain != "signing" && p.Domain != "compromise_ledger" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range manifest.Principals {
+		if !crossDomainBucket(p) {
+			continue
+		}
+		if !p.HasPermission("storage.objects.get") {
+			t.Errorf("principal %s reaches a cross-domain pin/ledger bucket but does not hold storage.objects.get", p.ID)
+		}
+		for _, forbidden := range []string{"storage.objects.update", "storage.objects.delete"} {
+			if p.HasPermission(forbidden) {
+				t.Errorf("principal %s reaches a cross-domain pin/ledger bucket but holds %s", p.ID, forbidden)
+			}
 		}
 	}
-	signing, hasSigning := domainProjectPlaceholder["signing"]
-	authority, hasAuthority := domainProjectPlaceholder["authority_witness"]
-	if !hasSigning || !hasAuthority {
-		t.Fatal("expected both signing and authority_witness domains to declare a resource scope")
+	// The one principal with no legitimate reason to hold create at all --
+	// the clean, fully-verifiable case the comment above describes.
+	reader := principal(t, manifest, "recovery-verification-read")
+	if reader.HasPermission("storage.objects.create") {
+		t.Error("recovery-verification-read must never hold storage.objects.create -- it is read-only by design")
 	}
-	if signing == authority {
-		t.Fatalf("signing domain and authority_witness domain must use distinct project placeholders, both use %q", signing)
+}
+
+// TestNoStorageUpdateOrDeletePermissionAnywhere proves, across every
+// principal in the manifest regardless of domain, that storage.objects.update
+// and storage.objects.delete are never required -- every GCS-backed store
+// in this architecture (witness, pin, ledger) is create-if-absent-only, so
+// no legitimate principal ever needs to modify or remove an existing
+// object.
+func TestNoStorageUpdateOrDeletePermissionAnywhere(t *testing.T) {
+	for _, p := range mustLoad(t).Principals {
+		for _, forbidden := range []string{"storage.objects.update", "storage.objects.delete"} {
+			if p.HasPermission(forbidden) {
+				t.Errorf("principal %s must not hold %s -- every GCS-backed store in this architecture is create-if-absent-only", p.ID, forbidden)
+			}
+		}
+	}
+}
+
+// TestPinCaptureAndLedgerWriterCannotSign is the direct Phase 5 regression
+// test ("pin-capture principal cannot overwrite/delete existing pins" +
+// "compromise writer cannot sign"): neither the pin-store nor the
+// compromise-ledger write principal holds any cloudkms.cryptoKeyVersions.useToSign
+// or storage.objects.update/delete permission.
+func TestPinCaptureAndLedgerWriterCannotSign(t *testing.T) {
+	for _, id := range []string{"recovery-pin-capture", "compromise-ledger-writer"} {
+		p := principal(t, mustLoad(t), id)
+		if p.HasPermission("cloudkms.cryptoKeyVersions.useToSign") {
+			t.Errorf("%s must not hold cloudkms.cryptoKeyVersions.useToSign", id)
+		}
+		for _, forbidden := range []string{"storage.objects.update", "storage.objects.delete"} {
+			if p.HasPermission(forbidden) {
+				t.Errorf("%s must not hold %s -- pin/ledger write principals are create-if-absent only", id, forbidden)
+			}
+		}
+	}
+}
+
+// TestPinCaptureCannotWriteLedgerAndLedgerWriterCannotCapturePins proves
+// the two write principals this task adds cannot reach each other's
+// resource: pin-capture (signing domain) has no compromise_ledger-domain
+// resource_scope entry, and compromise-ledger-writer (compromise_ledger
+// domain) has no signing-domain resource_scope entry.
+func TestPinCaptureCannotWriteLedgerAndLedgerWriterCannotCapturePins(t *testing.T) {
+	manifest := mustLoad(t)
+	pinCapture := principal(t, manifest, "recovery-pin-capture")
+	for _, scope := range pinCapture.ResourceScope {
+		if placeholderSegment.FindString(scope.Pattern) == "{compromise_ledger_project}" {
+			t.Fatal("recovery-pin-capture must not reach the compromise-ledger domain's resources")
+		}
+	}
+	ledgerWriter := principal(t, manifest, "compromise-ledger-writer")
+	for _, scope := range ledgerWriter.ResourceScope {
+		placeholder := placeholderSegment.FindString(scope.Pattern)
+		if placeholder == "{signing_project}" {
+			t.Fatal("compromise-ledger-writer must not reach the signing domain's resources")
+		}
 	}
 }
 

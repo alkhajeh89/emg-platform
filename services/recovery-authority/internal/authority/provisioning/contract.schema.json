@@ -45,7 +45,7 @@
           "type": "string",
           "enum": ["spanner_instance", "spanner_database", "gcs_bucket", "kms_key_ring", "kms_crypto_key", "kms_crypto_key_version"]
         },
-        "domain": { "type": "string", "enum": ["authority_witness", "signing"] },
+        "domain": { "type": "string", "enum": ["authority_witness", "signing", "compromise_ledger"] },
         "description": { "type": "string", "minLength": 1 },
         "pattern": { "type": "string", "minLength": 1, "description": "A GCP resource-name PATTERN with {placeholder} segments only, matching iam/manifest.json's own convention." },
         "must_exist_before_genesis": { "type": "boolean" },

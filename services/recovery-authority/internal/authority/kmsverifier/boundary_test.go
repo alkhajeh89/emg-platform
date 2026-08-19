@@ -30,6 +30,13 @@ func TestKMSVerifierHasNoSigningCapability(t *testing.T) {
 		"AsymmetricSign": true,
 		"SetIamPolicy":   true,
 		"IAM":            true,
+		// ATTACK_C / ATTACK_M (P1 remediation, this task): the verifier
+		// must never write to the pin store or the compromise ledger --
+		// keypinning.Store.Pin and compromiseledger.Ledger.Declare are the
+		// ONLY write paths either interface exposes, and this package must
+		// only ever call their read methods (Get, Status).
+		"Pin":     true,
+		"Declare": true,
 	}
 
 	files, err := filepath.Glob(filepath.Join(".", "*.go"))

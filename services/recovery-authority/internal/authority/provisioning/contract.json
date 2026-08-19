@@ -50,6 +50,24 @@
       "description": "The exact, single, ENABLED CryptoKeyVersion bootstrap.GenesisRequest.SigningKeyID names. Must be ENABLED and captured/pinned via keypinning.CaptureFromKMS BEFORE genesis (ADR-045 §7C, S6 Phase 5) -- bootstrap.CheckSigningPreconditions refuses genesis if no durable pin already exists.",
       "pattern": "projects/{signing_project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}/cryptoKeyVersions/{version}",
       "must_exist_before_genesis": true
+    },
+    {
+      "id": "pin-store-bucket",
+      "resource_type": "gcs_bucket",
+      "domain": "signing",
+      "description": "The GCS bucket keypinning.GCSStore writes to (P1 remediation: administrative-independence for ADR-045 §7C). Lives in the signing project, administered by signing-domain administrators -- never the authority/witness domain -- so an authority/witness administrator has no path to fabricate or replace pinned signing trust material (ADR-045 §5; see recovery-pin-capture in iam/manifest.json). recovery-authority-runtime and recovery-verification-read are granted cross-domain storage.objects.get only.",
+      "pattern": "projects/{signing_project}/buckets/{pin_store_bucket}",
+      "must_exist_before_genesis": true,
+      "notes": "Like witness-gcs-bucket, this should carry Bucket Lock retention for the full evidence-retention horizon (ADR-045 §7C: pinned material must remain available for as long as any COMMITTED record it verifies is retained) -- not yet qualified against real GCS (see the S6 real-cloud qualification report's REAL_GCS_WITNESS_QUALIFICATION_REQUIRED, which this bucket now also falls under)."
+    },
+    {
+      "id": "compromise-ledger-bucket",
+      "resource_type": "gcs_bucket",
+      "domain": "compromise_ledger",
+      "description": "The GCS bucket compromiseledger.GCSLedger writes to (P1 remediation: administrative-independence for ADR-045 §7 property 2). Lives in a THIRD project, distinct from BOTH {authority_project} and {signing_project} -- administratively independent of, and unreachable by, ordinary signing-domain administration, and symmetrically unreachable by authority/witness-domain administration (see compromise-ledger-writer in iam/manifest.json). recovery-authority-runtime and recovery-verification-read are granted cross-domain storage.objects.get only.",
+      "pattern": "projects/{compromise_ledger_project}/buckets/{compromise_ledger_bucket}",
+      "must_exist_before_genesis": true,
+      "notes": "One immutable record per subject, create-if-absent only (compromiseledger.GCSLedger's design) -- no LIST capability required, no Bucket Lock strictly required for the append-only property to hold (GCS object immutability plus the create-if-absent write path already provide it), though Bucket Lock remains available as additional defense-in-depth if the compromise-ledger domain administrators choose to apply it, exactly like the witness and pin-store buckets."
     }
   ],
   "principal_bindings": [
@@ -69,6 +87,18 @@
       "principal_id": "recovery-bootstrap-deployment",
       "kubernetes_service_account": "none",
       "gcp_service_account_placeholder": "recovery-bootstrap-deployment@{authority_project}.iam.gserviceaccount.com",
+      "standing_grant": false
+    },
+    {
+      "principal_id": "recovery-pin-capture",
+      "kubernetes_service_account": "none",
+      "gcp_service_account_placeholder": "recovery-pin-capture@{signing_project}.iam.gserviceaccount.com",
+      "standing_grant": false
+    },
+    {
+      "principal_id": "compromise-ledger-writer",
+      "kubernetes_service_account": "none",
+      "gcp_service_account_placeholder": "compromise-ledger-writer@{compromise_ledger_project}.iam.gserviceaccount.com",
       "standing_grant": false
     }
   ],
@@ -110,11 +140,43 @@
       "manual_step_ref": "provision-signing-key"
     },
     {
+      "id": "provision-pin-store-bucket",
+      "description": "Create the pin-store GCS bucket in the signing project (P1 remediation, keypinning.GCSStore's target).",
+      "automated": false,
+      "owner": "signing-domain-administrator",
+      "depends_on": [],
+      "manual_step_ref": "provision-pin-store-bucket"
+    },
+    {
+      "id": "provision-compromise-ledger-bucket",
+      "description": "Create the compromise-ledger GCS bucket in the compromise-ledger project (P1 remediation, compromiseledger.GCSLedger's target) -- a THIRD project, distinct from both the authority and signing projects.",
+      "automated": false,
+      "owner": "compromise-ledger-domain-administrator",
+      "depends_on": [],
+      "manual_step_ref": "provision-compromise-ledger-bucket"
+    },
+    {
+      "id": "bind-pin-capture-principal",
+      "description": "Bind recovery-pin-capture's Workload Identity Federation identity per iam/manifest.json (cloudkms.cryptoKeyVersions.get/viewPublicKey on the signing key, storage.objects.create/get on the pin-store bucket only).",
+      "automated": false,
+      "owner": "signing-domain-administrator",
+      "depends_on": ["provision-signing-key", "provision-pin-store-bucket"],
+      "manual_step_ref": "bind-pin-capture-principal"
+    },
+    {
+      "id": "bind-ledger-writer-principal",
+      "description": "Bind compromise-ledger-writer's Workload Identity Federation identity per iam/manifest.json (storage.objects.create/get on the compromise-ledger bucket only) -- by a compromise-ledger-domain administrator, never a signing- or authority-domain one (ADR-045 §7 property 2).",
+      "automated": false,
+      "owner": "compromise-ledger-domain-administrator",
+      "depends_on": ["provision-compromise-ledger-bucket"],
+      "manual_step_ref": "bind-ledger-writer-principal"
+    },
+    {
       "id": "bind-standing-principals",
-      "description": "Bind recovery-authority-runtime and recovery-signing's Workload Identity Federation identities per iam/manifest.json (standing_grant=true bindings only).",
+      "description": "Bind recovery-authority-runtime and recovery-signing's Workload Identity Federation identities per iam/manifest.json (standing_grant=true bindings only), including recovery-authority-runtime's cross-domain storage.objects.get on the pin-store and compromise-ledger buckets (never create -- see iam/manifest.json's disclosed flat-schema note).",
       "automated": false,
       "owner": "authority-witness-domain-administrator",
-      "depends_on": ["apply-authority-schema", "lock-witness-bucket-retention", "provision-signing-key"],
+      "depends_on": ["apply-authority-schema", "lock-witness-bucket-retention", "provision-signing-key", "provision-pin-store-bucket", "provision-compromise-ledger-bucket"],
       "manual_step_ref": "bind-iam-principals"
     },
     {
@@ -127,17 +189,17 @@
     },
     {
       "id": "capture-and-pin-signing-key",
-      "description": "Run keypinning.CaptureFromKMS against the CryptoKeyVersion from provision-signing-key while it is ENABLED, and durably store the resulting PinnedKey (ADR-045 §7C steps b-c).",
+      "description": "Run keypinning.CaptureFromKMS against the CryptoKeyVersion from provision-signing-key while it is ENABLED, and durably store the resulting PinnedKey in keypinning.GCSStore (ADR-045 §7C steps b-c; P1 remediation).",
       "automated": true,
       "owner": "recovery-pin-capture",
-      "depends_on": ["provision-signing-key"]
+      "depends_on": ["provision-signing-key", "bind-pin-capture-principal"]
     },
     {
       "id": "bind-bootstrap-principal",
-      "description": "Bind recovery-bootstrap-deployment's temporary Workload Identity Federation identity (standing_grant=false) -- distinct from every standing principal, revocable, scoped to this one genesis window.",
+      "description": "Bind recovery-bootstrap-deployment's temporary Workload Identity Federation identity (standing_grant=false) -- distinct from every standing principal, revocable, scoped to this one genesis window. Includes read-only access to the pin-store and compromise-ledger buckets so bootstrap.CheckSigningPreconditions can independently confirm the signing key is pinned and not distrusted before attempting genesis (P1 remediation).",
       "automated": false,
       "owner": "authority-witness-domain-administrator",
-      "depends_on": ["apply-authority-schema", "lock-witness-bucket-retention"],
+      "depends_on": ["apply-authority-schema", "lock-witness-bucket-retention", "provision-pin-store-bucket", "provision-compromise-ledger-bucket"],
       "manual_step_ref": "bind-bootstrap-principal"
     },
     {
@@ -145,7 +207,7 @@
       "description": "Obtain two independent bootstrap.Approval records (ApprovalRoleAuthority and ApprovalRoleSigning, distinct approvers, each bound to the exact GenesisRequest digest) per S6 Phase 2.",
       "automated": false,
       "owner": "dual-control-approval",
-      "depends_on": ["capture-and-pin-signing-key"],
+      "depends_on": ["capture-and-pin-signing-key", "bind-ledger-writer-principal"],
       "manual_step_ref": "obtain-dual-control-approvals"
     },
     {
@@ -184,6 +246,26 @@
       "id": "bind-iam-principals",
       "description": "Bind the standing (standing_grant=true) principal_bindings entries above to their real Workload Identity Federation identities, granting exactly iam/manifest.json's required_permissions and no more.",
       "why_not_automated": "Same IaC-framework gap; iam/manifest.json is the reviewed design this binding must match, not a substitute for actually applying it."
+    },
+    {
+      "id": "provision-pin-store-bucket",
+      "description": "Create the pin-store GCS bucket in the signing project (P1 remediation).",
+      "why_not_automated": "Same IaC-framework gap as apply-authority-schema."
+    },
+    {
+      "id": "provision-compromise-ledger-bucket",
+      "description": "Create the compromise-ledger GCS bucket in a THIRD project, distinct from both the authority and signing projects (P1 remediation, ADR-045 §7 property 2).",
+      "why_not_automated": "Same IaC-framework gap, and additionally an administrative-independence requirement: this project's resource lifecycle must be owned by compromise-ledger-domain administrators, a third set of approvers non-overlapping with both other domains -- never something either other domain's automation performs."
+    },
+    {
+      "id": "bind-pin-capture-principal",
+      "description": "Bind recovery-pin-capture's Workload Identity Federation identity, granting exactly iam/manifest.json's required_permissions for this principal and no more.",
+      "why_not_automated": "Same IaC-framework gap as bind-iam-principals; this specific binding is signing-domain-owned, never authority/witness-domain automation."
+    },
+    {
+      "id": "bind-ledger-writer-principal",
+      "description": "Bind compromise-ledger-writer's Workload Identity Federation identity, granting exactly iam/manifest.json's required_permissions for this principal and no more.",
+      "why_not_automated": "Same IaC-framework gap as bind-iam-principals; this specific binding is compromise-ledger-domain-owned, never signing- or authority-domain automation (ADR-045 §7 property 2)."
     },
     {
       "id": "apply-kubernetes-manifests",

@@ -1,12 +1,67 @@
 package compromiseledger
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/gcswitness"
 )
+
+// fakeWitness is an in-memory gcswitness.ImmutableWitness with the same
+// create-if-absent/no-overwrite semantics as the real adapter -- used only
+// to exercise GCSLedger's own logic against a real ImmutableWitness
+// implementation, without any network or GCP dependency.
+type fakeWitness struct {
+	mu        sync.Mutex
+	objects   map[string][]byte
+	existsErr error
+}
+
+func newFakeWitness() *fakeWitness { return &fakeWitness{objects: make(map[string][]byte)} }
+
+var errInjected = errors.New("compromiseledger_test: injected provider failure")
+
+func (f *fakeWitness) Exists(_ context.Context, key string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.existsErr != nil {
+		return false, f.existsErr
+	}
+	_, ok := f.objects[key]
+	return ok, nil
+}
+
+func (f *fakeWitness) ReadExact(_ context.Context, key string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	value, ok := f.objects[key]
+	if !ok {
+		return nil, gcswitness.ErrNotFound
+	}
+	return append([]byte(nil), value...), nil
+}
+
+func (f *fakeWitness) CreateExactIfAbsent(_ context.Context, key string, payload []byte) (gcswitness.CreateOutcome, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	existing, ok := f.objects[key]
+	if ok {
+		if bytes.Equal(existing, payload) {
+			return gcswitness.AlreadyExistsIdentical, nil
+		}
+		return gcswitness.AlreadyExistsConflict, gcswitness.ErrConflict
+	}
+	f.objects[key] = append([]byte(nil), payload...)
+	return gcswitness.CreateSuccess, nil
+}
+
+var _ gcswitness.ImmutableWitness = (*fakeWitness)(nil)
 
 func ledgerImplementations(t *testing.T) map[string]Ledger {
 	t.Helper()
@@ -14,9 +69,14 @@ func ledgerImplementations(t *testing.T) map[string]Ledger {
 	if err != nil {
 		t.Fatal(err)
 	}
+	gcsLedger, err := NewGCSLedger(newFakeWitness())
+	if err != nil {
+		t.Fatal(err)
+	}
 	return map[string]Ledger{
 		"MemoryLedger": NewMemoryLedger(),
 		"FileLedger":   fileLedger,
+		"GCSLedger":    gcsLedger,
 	}
 }
 

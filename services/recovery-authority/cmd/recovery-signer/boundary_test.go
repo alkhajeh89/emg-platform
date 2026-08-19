@@ -65,6 +65,14 @@ func TestRecoverySignerHasNoAuthorityWitnessCapability(t *testing.T) {
 			if ident.Name == "LocalSigner" || ident.Name == "GenerateKeyPair" {
 				t.Errorf("forbidden reference to test-only signer construct %q in %s", ident.Name, path)
 			}
+			// ATTACK_N (P1 remediation, this task): this binary imports
+			// keypinning only for the Algorithm type (config parsing) and
+			// must never call the pin-store or compromise-ledger write
+			// paths -- it holds neither a keypinning.Store nor a
+			// compromiseledger.Ledger value anywhere.
+			if ident.Name == "Pin" || ident.Name == "Declare" {
+				t.Errorf("forbidden reference to pin-store/compromise-ledger write method %q in %s -- recovery-signer must never write to either governance store", ident.Name, path)
+			}
 			return true
 		})
 	}
