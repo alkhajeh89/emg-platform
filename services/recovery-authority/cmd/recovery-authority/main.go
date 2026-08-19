@@ -39,6 +39,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -67,6 +69,7 @@ type config struct {
 	witnessBucket            string
 	signerEndpoint           string
 	signerAudience           string
+	signerCAFile             string
 	approvedSigningCryptoKey string
 	pinnedKeyStoreDir        string
 	compromiseLedgerFile     string
@@ -100,6 +103,15 @@ func loadConfig() (config, error) {
 	if cfg.signerAudience, err = runtimeconfig.RequireString("RECOVERY_AUTHORITY_SIGNER_AUDIENCE"); err != nil {
 		return config{}, err
 	}
+	// Optional: an explicit CA certificate file to trust for the signer
+	// TLS connection, for deployments whose signer certificate is not
+	// issued by a publicly-trusted CA already in the platform's default
+	// trust store. Empty (the default) means: trust only the platform's
+	// own default CA pool, exactly as any ordinary Go HTTPS client would.
+	// This is never a security-critical value in the RequireString sense
+	// -- its absence does not weaken verification, it only narrows which
+	// already-legitimate certificate authorities are accepted.
+	cfg.signerCAFile = runtimeconfig.OptionalString("RECOVERY_AUTHORITY_SIGNER_CA_FILE", "")
 	if cfg.approvedSigningCryptoKey, err = runtimeconfig.RequireStringMatching(
 		"RECOVERY_AUTHORITY_APPROVED_SIGNING_CRYPTO_KEY", runtimeconfig.CryptoKeyPattern, "Cloud KMS CryptoKey resource name",
 	); err != nil {
@@ -196,7 +208,11 @@ func compose(ctx context.Context, cfg config, logger *slog.Logger) (*runtime, er
 	if err != nil {
 		return nil, fmt.Errorf("construct signer ID token source: %w", err)
 	}
-	remoteSigner, err := signerrpc.NewClient(&http.Client{Timeout: 10 * time.Second}, cfg.signerEndpoint, tokenSource, cfg.allowInsecure)
+	signerHTTPClient, err := newSignerHTTPClient(cfg.signerCAFile)
+	if err != nil {
+		return nil, fmt.Errorf("construct signer TLS trust configuration (fail-closed): %w", err)
+	}
+	remoteSigner, err := signerrpc.NewClient(signerHTTPClient, cfg.signerEndpoint, tokenSource, cfg.allowInsecure)
 	if err != nil {
 		return nil, fmt.Errorf("construct remote signer client: %w", err)
 	}
@@ -303,6 +319,55 @@ func (rt *runtime) buildExpectedBinding(req verifyRequest) (recovery.ExpectedBin
 		PredecessorRevision:    protocol.NewRevisionNumber(req.PredecessorRevision),
 		PredecessorDigest:      predecessorDigest,
 		ApprovedSigningLineage: rt.lineage,
+	}, nil
+}
+
+// newSignerHTTPClient builds the *http.Client used exclusively for calls
+// to the remote signer (signerrpc.NewClient's httpClient argument). It
+// defines exactly what this process trusts when validating the signer's
+// TLS server certificate:
+//
+//   - if caFile is empty, the platform's own default CA trust store is
+//     used, unmodified -- Go's standard library behavior for any ordinary
+//     HTTPS client, appropriate when the signer's certificate is issued by
+//     a publicly-trusted CA (e.g. a cluster cert-manager configuration
+//     using a public ACME issuer);
+//   - if caFile is set, ONLY that CA (read from a local file path supplied
+//     by this process's own runtime configuration -- never from a request,
+//     a response, or any other caller-controlled input) is trusted,
+//     appropriate for a private/internal CA;
+//   - InsecureSkipVerify is never set anywhere in this function, and
+//     ServerName is never overridden -- server-name/SAN verification
+//     against the request URL's own hostname is standard net/http/crypto/tls
+//     behavior and is left entirely to it, not reimplemented here.
+//
+// This is one-way TLS (server-authenticated) only. Client authentication
+// (which caller is allowed to invoke the signer) is already independently
+// enforced, over this same TLS connection, by signerrpc's existing
+// Google-signed-ID-token bearer authentication
+// (GoogleIDTokenSource/GoogleIDTokenVerifier) -- mutual TLS would add a
+// second, redundant caller-identity check without closing any gap that
+// mechanism leaves open, so it is deliberately not added here.
+func newSignerHTTPClient(caFile string) (*http.Client, error) {
+	if caFile == "" {
+		return &http.Client{Timeout: 10 * time.Second}, nil
+	}
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("read signer CA file: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("signer CA file %q contains no usable certificate", caFile)
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    pool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
 	}, nil
 }
 

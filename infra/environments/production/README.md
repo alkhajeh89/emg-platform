@@ -35,6 +35,14 @@ Before deployment, the platform operator must:
    services without logging key material. Keep decryption material and its
    wrapper separately available to authorized restore operators; the scheduled
    backup pod does not receive either.
+9. Populate `emg/production/recovery-signer/tls-crt` and `tls-key` in the
+   approved External Secrets store with a certificate/key pair valid for
+   `emg-recovery-signer.emg-production.svc.cluster.local` (or the actual
+   in-cluster DNS name this overlay resolves to). `cmd/recovery-signer`
+   serves this natively (no service mesh); `recovery-authority` validates
+   it against its platform default CA trust store unless
+   `RECOVERY_AUTHORITY_SIGNER_CA_FILE` is also configured for a
+   private/internal CA.
 
 ## RC-E recovery scheduling contract
 

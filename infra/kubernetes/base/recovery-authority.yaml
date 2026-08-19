@@ -66,14 +66,25 @@ data:
   RECOVERY_AUTHORITY_SPANNER_DATABASE: "projects/example-authority-project/instances/example-instance/databases/example-database"
   RECOVERY_AUTHORITY_WITNESS_BUCKET: "example-witness-bucket"
   # https:// is required by signerrpc.NewClient outside allowInsecure mode
-  # (S5). This assumes the cluster's own mTLS mechanism (e.g. a service
-  # mesh sidecar) terminates TLS transparently to this application, or
-  # that TLS support is added to internal/authority/lifecycle before this
-  # manifest is used for a real deployment -- this repository does not
-  # select or provision that mechanism (S6 does not perform S7
-  # qualification).
-  RECOVERY_AUTHORITY_SIGNER_ENDPOINT: "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
-  RECOVERY_AUTHORITY_SIGNER_AUDIENCE: "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
+  # (S5). cmd/recovery-signer serves this endpoint over native TLS
+  # (internal/authority/lifecycle.RunTLS, see recovery-signer.yaml) -- no
+  # service mesh, no sidecar, no external TLS-terminating layer is
+  # required or assumed. The example-namespace placeholder below is
+  # deliberately not a real, resolvable in-cluster DNS name for ANY
+  # environment (S6 TLS fix, P1-1) -- every environment overlay patches
+  # both keys to its own real namespace via a configMapGenerator merge
+  # (see infra/environments/{staging,production}/kustomization.yaml).
+  RECOVERY_AUTHORITY_SIGNER_ENDPOINT: "https://emg-recovery-signer.example-namespace.svc.cluster.local:8443"
+  RECOVERY_AUTHORITY_SIGNER_AUDIENCE: "https://emg-recovery-signer.example-namespace.svc.cluster.local:8443"
+  # Empty (unset in this base) means: trust only this container's own
+  # default CA pool, exactly like any ordinary Go HTTPS client -- correct
+  # when the signer's certificate is issued by a CA already in that
+  # default trust store. An environment whose signer certificate is
+  # issued by a private/internal CA instead sets this to a mounted CA
+  # file path via its own overlay (newSignerHTTPClient,
+  # cmd/recovery-authority/main.go); this repository does not select a
+  # concrete CA mechanism on any environment's behalf.
+  RECOVERY_AUTHORITY_SIGNER_CA_FILE: ""
   RECOVERY_AUTHORITY_APPROVED_SIGNING_CRYPTO_KEY: "projects/example-signing-project/locations/example-location/keyRings/example-key-ring/cryptoKeys/example-key"
   RECOVERY_AUTHORITY_PINNED_KEY_STORE_DIR: "/var/lib/recovery-authority/pinned-keys"
   RECOVERY_AUTHORITY_COMPROMISE_LEDGER_FILE: "/var/lib/recovery-authority/compromise-ledger/ledger.jsonl"

@@ -10,6 +10,12 @@ func setSignerEnv(t *testing.T) {
 	t.Setenv("RECOVERY_SIGNER_SERVICE_AUDIENCE", "https://recovery-signer.example.internal")
 	t.Setenv("RECOVERY_SIGNER_ALLOWED_CALLER_EMAILS", "authority-runtime@example.iam.gserviceaccount.com")
 	t.Setenv("RECOVERY_SIGNER_ALLOW_INSECURE", "")
+	// loadConfig only checks these are non-empty (the actual file is read,
+	// and can fail closed, later -- see lifecycle.ServerTLSConfig and
+	// TestRunFailsClosedOn{Missing,Malformed}TLSConfig in tls_test.go);
+	// placeholder paths are sufficient here.
+	t.Setenv("RECOVERY_SIGNER_TLS_CERT_FILE", "/var/run/recovery-signer/tls/tls.crt")
+	t.Setenv("RECOVERY_SIGNER_TLS_KEY_FILE", "/var/run/recovery-signer/tls/tls.key")
 }
 
 // TestLoadConfigSucceedsWithCompleteValidConfig is the baseline positive
@@ -36,6 +42,8 @@ func TestLoadConfigFailsOnMissingCriticalConfig(t *testing.T) {
 		"RECOVERY_SIGNER_ALGORITHM",
 		"RECOVERY_SIGNER_SERVICE_AUDIENCE",
 		"RECOVERY_SIGNER_ALLOWED_CALLER_EMAILS",
+		"RECOVERY_SIGNER_TLS_CERT_FILE",
+		"RECOVERY_SIGNER_TLS_KEY_FILE",
 	}
 	for _, missing := range requiredVars {
 		t.Run(missing, func(t *testing.T) {
@@ -84,5 +92,32 @@ func TestLoadConfigAllowInsecureDefaultsFalse(t *testing.T) {
 	}
 	if cfg.allowInsecure {
 		t.Fatal("RECOVERY_SIGNER_ALLOW_INSECURE must default to false")
+	}
+	if cfg.tlsCertFile == "" || cfg.tlsKeyFile == "" {
+		t.Fatal("TLS cert/key file paths must be populated when allowInsecure is false")
+	}
+}
+
+// TestLoadConfigRequiresTLSFilesUnlessAllowInsecure proves TLS
+// configuration is mandatory in the (default, secure) production mode and
+// is the ONLY thing that becomes optional under RECOVERY_SIGNER_ALLOW_INSECURE=true.
+func TestLoadConfigRequiresTLSFilesUnlessAllowInsecure(t *testing.T) {
+	setSignerEnv(t)
+	t.Setenv("RECOVERY_SIGNER_TLS_CERT_FILE", "")
+	t.Setenv("RECOVERY_SIGNER_TLS_KEY_FILE", "")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("expected startup to fail when TLS cert/key files are unset and allowInsecure is false")
+	}
+
+	t.Setenv("RECOVERY_SIGNER_ALLOW_INSECURE", "true")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("expected loadConfig to succeed with allowInsecure=true and no TLS files: %v", err)
+	}
+	if !cfg.allowInsecure {
+		t.Fatal("expected allowInsecure to be true")
+	}
+	if cfg.tlsCertFile != "" || cfg.tlsKeyFile != "" {
+		t.Fatal("expected TLS file paths to remain empty when allowInsecure is true and they were never set")
 	}
 }

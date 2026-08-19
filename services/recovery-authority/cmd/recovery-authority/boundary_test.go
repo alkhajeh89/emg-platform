@@ -63,6 +63,48 @@ func TestRecoveryAuthorityHasNoSigningCapability(t *testing.T) {
 	}
 }
 
+// TestRecoveryAuthorityNeverSkipsTLSVerification is the direct TLS-fix
+// regression test: this binary's signer HTTP client must never set
+// InsecureSkipVerify, under any configuration, and must never assign a
+// VerifyPeerCertificate/VerifyConnection override -- the only TLS trust
+// knob it exposes is which CA pool to use (newSignerHTTPClient), never
+// whether to verify at all.
+func TestRecoveryAuthorityNeverSkipsTLSVerification(t *testing.T) {
+	t.Parallel()
+	forbiddenIdents := map[string]bool{
+		"InsecureSkipVerify":    true,
+		"VerifyPeerCertificate": true,
+		"VerifyConnection":      true,
+	}
+	files, err := filepath.Glob(filepath.Join(".", "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, data, parser.ParseComments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			ident, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if forbiddenIdents[ident.Name] {
+				t.Errorf("forbidden reference to %q in %s -- TLS verification must never be weakened or overridden", ident.Name, path)
+			}
+			return true
+		})
+	}
+}
+
 func TestRecoveryAuthorityContainsNoStaticCredential(t *testing.T) {
 	t.Parallel()
 	forbidden := []string{"PRIVATE KEY", "BEGIN CERTIFICATE", "AKIA", "ya29."}

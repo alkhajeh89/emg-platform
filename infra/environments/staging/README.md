@@ -7,9 +7,11 @@ set as production; it is not a second deployment architecture.
 The checked-in overlay deliberately has no ExternalSecret resources and retains
 non-routable external endpoint placeholders. Before live qualification, the
 environment owner must supply staging-only External Secrets, approved TLS endpoints,
-the `emg-studio-tls` certificate, external egress policy, PostgreSQL, Neo4j,
-Keycloak, remote backup storage, and the RC-C telemetry collector. Production
-secret paths or credentials must never be reused in staging.
+the `emg-studio-tls` certificate, the `emg-recovery-signer-tls` certificate
+(distinct from production's -- see the production overlay's README item 9),
+external egress policy, PostgreSQL, Neo4j, Keycloak, remote backup storage, and
+the RC-C telemetry collector. Production secret paths or credentials must never
+be reused in staging.
 
 The staging `emg-knowledge-graph-secrets` contract must provide distinct
 `migration-postgres-dsn` and `postgres-dsn` keys for

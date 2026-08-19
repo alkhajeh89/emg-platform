@@ -84,6 +84,20 @@ func OptionalBool(name string, defaultValue bool) (bool, error) {
 	}
 }
 
+// OptionalString reads name from the environment, returning defaultValue
+// if it is entirely unset. Unlike RequireString, an unset value is never
+// an error here -- reserved for genuinely optional, non-security-critical
+// configuration where absence has a well-defined, safe meaning (e.g. an
+// optional trust-anchor file path where empty means "use the platform's
+// default trust store" rather than "skip verification").
+func OptionalString(name string, defaultValue string) string {
+	value, set := os.LookupEnv(name)
+	if !set {
+		return defaultValue
+	}
+	return value
+}
+
 // SpannerDatabasePattern matches a well-formed Cloud Spanner database
 // resource name.
 var SpannerDatabasePattern = regexp.MustCompile(

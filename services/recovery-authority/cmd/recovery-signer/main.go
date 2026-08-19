@@ -14,10 +14,21 @@
 // resource is created by running this binary -- it only invokes
 // AsymmetricSign against an already-provisioned, already-authorized
 // CryptoKeyVersion supplied via configuration.
+//
+// It serves natively over TLS (lifecycle.RunTLS) by default -- a
+// certificate/key file path pair is mandatory startup configuration
+// unless RECOVERY_SIGNER_ALLOW_INSECURE=true, which this binary logs
+// loudly and which must never be set in production (the corresponding
+// symmetric requirement already exists client-side in
+// signerrpc.NewClient). Certificate/key material is never embedded in
+// this binary or committed to this repository -- only file paths,
+// resolved at runtime against whatever volume mount the deployment
+// supplies (see infra/kubernetes/base/recovery-signer.yaml).
 package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -42,6 +53,8 @@ type config struct {
 	serviceAudience     string
 	allowedCallerEmails []string
 	allowInsecure       bool
+	tlsCertFile         string
+	tlsKeyFile          string
 }
 
 func loadConfig() (config, error) {
@@ -72,6 +85,22 @@ func loadConfig() (config, error) {
 	}
 	if cfg.allowInsecure, err = runtimeconfig.OptionalBool("RECOVERY_SIGNER_ALLOW_INSECURE", false); err != nil {
 		return config{}, err
+	}
+	// TLS is mandatory unless the caller has explicitly opted into
+	// RECOVERY_SIGNER_ALLOW_INSECURE=true (non-production, local-development
+	// use only -- see the loud warning logged below when it is set). This
+	// reuses the existing allowInsecure toggle rather than introducing a
+	// second, parallel "skip security" flag: allowInsecure already governs
+	// the equivalent decision on the client side (signerrpc.NewClient), and
+	// giving the server its own separate switch would let the two configs
+	// disagree with each other by accident.
+	if !cfg.allowInsecure {
+		if cfg.tlsCertFile, err = runtimeconfig.RequireString("RECOVERY_SIGNER_TLS_CERT_FILE"); err != nil {
+			return config{}, fmt.Errorf("TLS is required unless RECOVERY_SIGNER_ALLOW_INSECURE=true: %w", err)
+		}
+		if cfg.tlsKeyFile, err = runtimeconfig.RequireString("RECOVERY_SIGNER_TLS_KEY_FILE"); err != nil {
+			return config{}, fmt.Errorf("TLS is required unless RECOVERY_SIGNER_ALLOW_INSECURE=true: %w", err)
+		}
 	}
 	return cfg, nil
 }
@@ -121,6 +150,17 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("construct signing RPC server: %w", err)
 	}
 
+	// TLS configuration is resolved (and, on any failure, fails startup)
+	// BEFORE readiness is ever set true -- a certificate/key problem must
+	// never be observable as "ready" for even one probe interval.
+	var tlsConfig *tls.Config
+	if !cfg.allowInsecure {
+		tlsConfig, err = lifecycle.ServerTLSConfig(cfg.tlsCertFile, cfg.tlsKeyFile)
+		if err != nil {
+			return fmt.Errorf("TLS configuration (fail-closed): %w", err)
+		}
+	}
+
 	readiness := &lifecycle.Readiness{}
 	mux := http.NewServeMux()
 	lifecycle.RegisterRoutes(mux, readiness)
@@ -128,9 +168,13 @@ func run(logger *slog.Logger) error {
 
 	// Startup validation above already fail-closed on any misconfiguration
 	// or construction failure -- reaching here means the signer, verifier,
-	// and RPC server are all known-good, so readiness may now be true.
+	// RPC server, and (unless allowInsecure) TLS configuration are all
+	// known-good, so readiness may now be true.
 	readiness.SetReady()
-	logger.Info("recovery-signer: ready", "key_version", cfg.keyVersion, "algorithm", string(cfg.algorithm))
+	logger.Info("recovery-signer: ready", "key_version", cfg.keyVersion, "algorithm", string(cfg.algorithm), "tls", !cfg.allowInsecure)
 
-	return lifecycle.Run(ctx, logger, cfg.listenAddr, mux, shutdownTimeout)
+	if cfg.allowInsecure {
+		return lifecycle.Run(ctx, logger, cfg.listenAddr, mux, shutdownTimeout)
+	}
+	return lifecycle.RunTLS(ctx, logger, cfg.listenAddr, mux, tlsConfig, shutdownTimeout)
 }

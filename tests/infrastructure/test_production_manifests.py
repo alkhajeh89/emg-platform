@@ -26,11 +26,21 @@ def _objects() -> list[dict]:
     return [document for document in yaml.safe_load_all(rendered) if document]
 
 
+def _staging_objects() -> list[dict]:
+    rendered = subprocess.run(
+        ["kubectl", "kustomize", str(STAGING_OVERLAY)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return [document for document in yaml.safe_load_all(rendered) if document]
+
+
 def test_production_manifests_render_without_literal_secrets() -> None:
     objects = _objects()
     assert objects
     assert not [obj for obj in objects if obj["kind"] == "Secret"]
-    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 9
+    assert len([obj for obj in objects if obj["kind"] == "ExternalSecret"]) == 10
 
 
 def test_staging_manifests_render_without_literal_secrets() -> None:
@@ -353,3 +363,150 @@ def test_identity_spool_uses_persistent_storage() -> None:
     assert config["data"]["EMG_IDENTITY_AUDIT_SPOOL_PATH"].startswith(
         "/var/lib/emg-identity/audit-spool/"
     )
+
+
+# --- S6 TLS fix (P0-1/P1-1): recovery-authority <-> recovery-signer -------
+
+
+def _recovery_signer_configmap(objects: list[dict]) -> dict:
+    return next(
+        obj
+        for obj in objects
+        if obj["kind"] == "ConfigMap" and obj["metadata"]["name"] == "emg-recovery-signer-config"
+    )
+
+
+def _recovery_authority_configmap(objects: list[dict]) -> dict:
+    return next(
+        obj
+        for obj in objects
+        if obj["kind"] == "ConfigMap" and obj["metadata"]["name"] == "emg-recovery-authority-config"
+    )
+
+
+def test_staging_overlay_resolves_staging_signer_dns() -> None:
+    """Adversarial-matrix item O."""
+    objects = _staging_objects()
+    signer_config = _recovery_signer_configmap(objects)
+    authority_config = _recovery_authority_configmap(objects)
+    assert (
+        signer_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+        == "https://emg-recovery-signer.emg-staging.svc.cluster.local:8443"
+    )
+    assert (
+        authority_config["data"]["RECOVERY_AUTHORITY_SIGNER_ENDPOINT"]
+        == "https://emg-recovery-signer.emg-staging.svc.cluster.local:8443"
+    )
+    assert (
+        authority_config["data"]["RECOVERY_AUTHORITY_SIGNER_AUDIENCE"]
+        == "https://emg-recovery-signer.emg-staging.svc.cluster.local:8443"
+    )
+    assert "example-namespace" not in signer_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+    assert "emg-production" not in signer_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+
+
+def test_production_overlay_resolves_production_signer_dns() -> None:
+    """Adversarial-matrix item P."""
+    objects = _objects()
+    signer_config = _recovery_signer_configmap(objects)
+    authority_config = _recovery_authority_configmap(objects)
+    assert (
+        signer_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+        == "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
+    )
+    assert (
+        authority_config["data"]["RECOVERY_AUTHORITY_SIGNER_ENDPOINT"]
+        == "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
+    )
+    assert "example-namespace" not in signer_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+    assert "emg-staging" not in signer_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+
+
+def test_staging_and_production_signer_dns_differ() -> None:
+    staging_config = _recovery_signer_configmap(_staging_objects())
+    production_config = _recovery_signer_configmap(_objects())
+    assert (
+        staging_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+        != production_config["data"]["RECOVERY_SIGNER_SERVICE_AUDIENCE"]
+    )
+
+
+def test_recovery_signer_allow_insecure_is_false_in_every_overlay() -> None:
+    """Adversarial-matrix item G: allowInsecure must never be enabled in a
+    committed environment overlay."""
+    for objects in (_objects(), _staging_objects()):
+        signer_config = _recovery_signer_configmap(objects)
+        assert signer_config["data"]["RECOVERY_SIGNER_ALLOW_INSECURE"] == "false"
+
+
+def test_recovery_signer_serves_https_and_mounts_tls_secret_by_reference_only() -> None:
+    objects = _objects()
+    deployment = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Deployment" and obj["metadata"]["name"] == "emg-recovery-signer"
+    )
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    ports = {port["name"]: port for port in container["ports"]}
+    assert "https" in ports and ports["https"]["containerPort"] == 8443
+    assert "http" not in ports
+
+    for probe_name in ("startupProbe", "livenessProbe", "readinessProbe"):
+        assert container[probe_name]["httpGet"]["scheme"] == "HTTPS"
+
+    volumes = {v["name"]: v for v in deployment["spec"]["template"]["spec"]["volumes"]}
+    assert volumes["tls"]["secret"]["secretName"] == "emg-recovery-signer-tls"
+    # Never a literal certificate/key value anywhere in the rendered
+    # manifest -- only a name reference to a Secret this repository does
+    # not create (see test_production_manifests_render_without_literal_secrets).
+    rendered = yaml.safe_dump(deployment)
+    for marker in ("BEGIN CERTIFICATE", "PRIVATE KEY"):
+        assert marker not in rendered
+
+    service = next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Service" and obj["metadata"]["name"] == "emg-recovery-signer"
+    )
+    assert service["spec"].get("type", "ClusterIP") == "ClusterIP"
+    assert service["spec"]["ports"] == [{"name": "https", "port": 8443, "targetPort": "https"}]
+
+
+def test_recovery_signer_tls_secret_is_sourced_from_external_secrets_only() -> None:
+    external_secrets = {
+        obj["metadata"]["name"]: obj for obj in _objects() if obj["kind"] == "ExternalSecret"
+    }
+    tls_secret = external_secrets["emg-recovery-signer-tls"]
+    keys = {entry["secretKey"] for entry in tls_secret["spec"]["data"]}
+    assert keys == {"tls.crt", "tls.key"}
+    assert tls_secret["spec"]["target"]["name"] == "emg-recovery-signer-tls"
+
+
+def test_recovery_signer_has_no_public_ingress() -> None:
+    """Adversarial-matrix item Q: no Ingress resource names the signer,
+    anywhere, in either overlay."""
+    for objects in (_objects(), _staging_objects()):
+        ingresses = [obj for obj in objects if obj["kind"] == "Ingress"]
+        for ingress in ingresses:
+            rendered = yaml.safe_dump(ingress)
+            assert "emg-recovery-signer" not in rendered
+
+
+def test_recovery_signer_network_policy_still_restricted_to_authority_only() -> None:
+    """Adversarial-matrix item R, re-confirmed after the TLS fix: the
+    signer's ingress NetworkPolicy is unchanged -- only the authority
+    runtime may reach it, on the same port the container/Service now
+    honestly advertise as HTTPS."""
+    policies = {
+        obj["metadata"]["name"]: obj for obj in _objects() if obj["kind"] == "NetworkPolicy"
+    }
+    signer_ingress = policies["emg-recovery-signer-ingress"]["spec"]["ingress"][0]
+    assert signer_ingress["from"] == [
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-recovery-authority"}}}
+    ]
+    assert signer_ingress["ports"] == [{"protocol": "TCP", "port": 8443}]
+
+    authority_egress = policies["emg-recovery-authority-to-signer-egress"]["spec"]["egress"][0]
+    assert authority_egress["to"] == [
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-recovery-signer"}}}
+    ]

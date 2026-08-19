@@ -88,6 +88,67 @@ func newTestServer(t *testing.T, signer signerrpc.Signer, verifier signerrpc.Ide
 	return httptest.NewServer(server.Handler())
 }
 
+func newTLSTestServer(t *testing.T, signer signerrpc.Signer, verifier signerrpc.IdentityVerifier) *httptest.Server {
+	t.Helper()
+	server, err := signerrpc.NewServer(signer, verifier, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return httptest.NewTLSServer(server.Handler())
+}
+
+// TestClientServerRoundTripOverRealTLS is the direct TLS-fix regression
+// test for adversarial-matrix item K: the exact same bearer-token
+// authentication this package already enforces over plain HTTP
+// (TestServerRejectsMissingBearerToken/TestServerRejectsWrongToken) is
+// re-exercised here over a genuine TLS connection
+// (httptest.NewTLSServer), proving TLS is additive transport security,
+// never a substitute for -- and never a bypass of -- the existing
+// caller-authentication check.
+func TestClientServerRoundTripOverRealTLS(t *testing.T) {
+	keyID := testKeyID(t)
+	signer := &fakeSigner{keyID: keyID, signature: []byte{0x01, 0x02, 0x03}, confirmed: keyID}
+	tlsTestServer := newTLSTestServer(t, signer, fakeVerifier{expectedToken: "good-token", identity: "caller@example.iam.gserviceaccount.com"})
+	defer tlsTestServer.Close()
+
+	if !strings.HasPrefix(tlsTestServer.URL, "https://") {
+		t.Fatalf("httptest.NewTLSServer URL = %q, want an https:// URL", tlsTestServer.URL)
+	}
+
+	// A correctly-authenticated client over TLS still succeeds.
+	client, err := signerrpc.NewClient(tlsTestServer.Client(), tlsTestServer.URL, fakeTokenSource{token: "good-token"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotKeyID, err := client.ActiveKeyID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotKeyID != keyID {
+		t.Fatalf("ActiveKeyID = %q, want %q", gotKeyID.String(), keyID.String())
+	}
+
+	// A missing bearer token is still rejected over TLS -- TLS never
+	// substitutes for caller authentication.
+	resp, err := tlsTestServer.Client().Get(tlsTestServer.URL + "/v1/active-key-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
+	// A wrong bearer token is still rejected over TLS.
+	wrongClient, err := signerrpc.NewClient(tlsTestServer.Client(), tlsTestServer.URL, fakeTokenSource{token: "wrong-token"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wrongClient.ActiveKeyID(context.Background()); err == nil {
+		t.Fatal("expected a wrong bearer token to be rejected even over TLS")
+	}
+}
+
 func TestClientServerRoundTrip(t *testing.T) {
 	keyID := testKeyID(t)
 	signer := &fakeSigner{keyID: keyID, signature: []byte{0x01, 0x02, 0x03}, confirmed: keyID}

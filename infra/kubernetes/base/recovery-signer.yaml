@@ -27,31 +27,49 @@ spec:
       containers:
         - name: recovery-signer
           image: registry.invalid/emg/recovery-signer@sha256:0000000000000000000000000000000000000000000000000000000000000010
-          # NOTE: cmd/recovery-signer currently serves plain HTTP
-          # (internal/authority/lifecycle has no native TLS support yet).
-          # RECOVERY_AUTHORITY_SIGNER_ENDPOINT/RECOVERY_SIGNER_SERVICE_AUDIENCE
-          # use https:// because signerrpc.Client requires it outside
-          # allowInsecure mode -- a real deployment MUST add a TLS-
-          # terminating layer in front of this container (a service-mesh
-          # mTLS sidecar is the common pattern) or add native TLS support
-          # to lifecycle.Run before this manifest is used for real
-          # traffic. Not yet built; tracked as an explicit follow-on gap
-          # (S6 REAL_KUBERNETES_DEPLOYMENT_QUALIFICATION_REQUIRED), not
-          # silently assumed solved.
-          ports: [{name: http, containerPort: 8443}]
+          # cmd/recovery-signer serves natively over TLS
+          # (internal/authority/lifecycle.RunTLS) by default -- no plaintext
+          # production fallback, no service mesh, no sidecar. The
+          # certificate/key pair below is mounted from a real Kubernetes
+          # Secret this repository never creates or populates (see the
+          # emg-recovery-signer-tls volume and
+          # infra/environments/production/external-secrets.yaml's
+          # ExternalSecret entry, which materializes it from the
+          # environment's own secret store -- the same governed mechanism
+          # every other TLS-bearing secret in this repository already
+          # uses).
+          ports: [{name: https, containerPort: 8443}]
           envFrom: [{configMapRef: {name: emg-recovery-signer-config}}]
-          # No secretKeyRef anywhere in this container: Cloud KMS is
-          # authenticated via Workload Identity Federation / ADC (ADR-045
-          # §5) -- there is no static credential for this deployment to
-          # inject, and RECOVERY_SIGNER_ALLOWED_CALLER_EMAILS is a
-          # non-secret authorization allow-list, not a credential.
+          env:
+            - {name: RECOVERY_SIGNER_TLS_CERT_FILE, value: /var/run/emg-recovery-signer/tls/tls.crt}
+            - {name: RECOVERY_SIGNER_TLS_KEY_FILE, value: /var/run/emg-recovery-signer/tls/tls.key}
+          # No secretKeyRef env var anywhere in this container: Cloud KMS
+          # is authenticated via Workload Identity Federation / ADC
+          # (ADR-045 §5), and RECOVERY_SIGNER_ALLOWED_CALLER_EMAILS is a
+          # non-secret authorization allow-list, not a credential. The TLS
+          # certificate/key pair below is the one secret material this
+          # container mounts, as files (never an env var, matching this
+          # repository's existing volume-mounted-secret convention -- see
+          # identity.yaml's recovery-authority volume), and it is
+          # transport material, not an authentication credential.
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 256Mi}}
-          volumeMounts: [{name: tmp, mountPath: /tmp}]
-          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
-          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
-          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 2}
-      volumes: [{name: tmp, emptyDir: {sizeLimit: 16Mi}}]
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: tls, mountPath: /var/run/emg-recovery-signer/tls, readOnly: true}
+          startupProbe: {httpGet: {path: /healthz, port: https, scheme: HTTPS}, periodSeconds: 2, timeoutSeconds: 1, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: https, scheme: HTTPS}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /readyz, port: https, scheme: HTTPS}, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 2}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 16Mi}}
+        # Materialized by the same governed ExternalSecret boundary as
+        # every other secret in this repository (see identity.yaml's
+        # recovery-authority volume for the identical pattern) -- never
+        # originated in-cluster, never committed here. A missing,
+        # unreadable, or malformed certificate/key pair fails
+        # cmd/recovery-signer's own startup validation closed
+        # (lifecycle.ServerTLSConfig); it is not an optional mount.
+        - {name: tls, secret: {secretName: emg-recovery-signer-tls, defaultMode: 0o440}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -63,7 +81,14 @@ data:
   # CryptoKeyVersion via its own overlay.
   RECOVERY_SIGNER_KEY_VERSION: "projects/example-signing-project/locations/example-location/keyRings/example-key-ring/cryptoKeys/example-key/cryptoKeyVersions/1"
   RECOVERY_SIGNER_ALGORITHM: "EC_SIGN_P256_SHA256"
-  RECOVERY_SIGNER_SERVICE_AUDIENCE: "https://emg-recovery-signer.emg-production.svc.cluster.local:8443"
+  # Deliberately not a real, resolvable in-cluster DNS name for ANY
+  # environment (S6 TLS fix, P1-1) -- every environment overlay patches
+  # this to its own real namespace via a configMapGenerator merge (see
+  # infra/environments/{staging,production}/kustomization.yaml), matching
+  # RECOVERY_AUTHORITY_SIGNER_AUDIENCE in recovery-authority.yaml exactly
+  # (the audience Google mints the ID token for must equal the audience
+  # this server validates it against).
+  RECOVERY_SIGNER_SERVICE_AUDIENCE: "https://emg-recovery-signer.example-namespace.svc.cluster.local:8443"
   # The sole allowed caller identity: the authority/witness runtime's own
   # Workload Identity Federation principal -- distinct from, and never
   # overlapping with, this Deployment's own service account.
@@ -81,4 +106,4 @@ spec:
   # only), this RPC is unreachable both from outside the cluster and from
   # any other in-cluster workload.
   selector: {app.kubernetes.io/name: emg-recovery-signer}
-  ports: [{name: http, port: 8443, targetPort: http}]
+  ports: [{name: https, port: 8443, targetPort: https}]

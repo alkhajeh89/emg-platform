@@ -5,3 +5,22 @@ resources:
   - ../../kubernetes/base
   - external-secrets.yaml
   - ingress.yaml
+# S6 TLS fix (P1-1): the base ConfigMaps' signer DNS values are
+# deliberately non-resolvable placeholders (example-namespace); merge in
+# this overlay's real in-cluster DNS name here rather than leaving it
+# unresolved. disableNameSuffixHash keeps the merged ConfigMaps' names
+# identical to the base's (emg-recovery-authority-config,
+# emg-recovery-signer-config), matching what the base Deployments'
+# envFrom already references.
+configMapGenerator:
+  - name: emg-recovery-authority-config
+    behavior: merge
+    literals:
+      - RECOVERY_AUTHORITY_SIGNER_ENDPOINT=https://emg-recovery-signer.emg-production.svc.cluster.local:8443
+      - RECOVERY_AUTHORITY_SIGNER_AUDIENCE=https://emg-recovery-signer.emg-production.svc.cluster.local:8443
+  - name: emg-recovery-signer-config
+    behavior: merge
+    literals:
+      - RECOVERY_SIGNER_SERVICE_AUDIENCE=https://emg-recovery-signer.emg-production.svc.cluster.local:8443
+generatorOptions:
+  disableNameSuffixHash: true

@@ -70,6 +70,50 @@ func TestRecoverySignerHasNoAuthorityWitnessCapability(t *testing.T) {
 	}
 }
 
+// TestRecoverySignerServesOnlyRealTLSOrExplicitInsecure is the direct
+// TLS-fix regression test: this binary must never construct a
+// *tls.Config with InsecureSkipVerify, ClientAuth set to a value weaker
+// than what lifecycle.RunTLS already provides by omission, or any
+// custom certificate-verification override -- the only TLS decision this
+// binary makes is which certificate/key files to load
+// (lifecycle.ServerTLSConfig) and whether TLS is skipped entirely via the
+// existing, loudly-logged RECOVERY_SIGNER_ALLOW_INSECURE escape hatch.
+func TestRecoverySignerServesOnlyRealTLSOrExplicitInsecure(t *testing.T) {
+	t.Parallel()
+	forbiddenIdents := map[string]bool{
+		"InsecureSkipVerify":    true,
+		"VerifyPeerCertificate": true,
+		"VerifyConnection":      true,
+	}
+	files, err := filepath.Glob(filepath.Join(".", "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range files {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, data, parser.ParseComments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			ident, ok := n.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if forbiddenIdents[ident.Name] {
+				t.Errorf("forbidden reference to %q in %s -- TLS verification must never be weakened or overridden", ident.Name, path)
+			}
+			return true
+		})
+	}
+}
+
 func TestRecoverySignerContainsNoStaticCredential(t *testing.T) {
 	t.Parallel()
 	forbidden := []string{"PRIVATE KEY", "BEGIN CERTIFICATE", "AKIA", "ya29."}
