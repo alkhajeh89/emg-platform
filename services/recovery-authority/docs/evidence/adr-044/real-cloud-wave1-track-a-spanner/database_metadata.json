@@ -1,0 +1,13 @@
+{
+  "createTime": "2026-08-19T18:08:03.202270Z",
+  "databaseDialect": "GOOGLE_STANDARD_SQL",
+  "earliestVersionTime": "2026-08-19T18:08:03.202270Z",
+  "encryptionInfo": [
+    {
+      "encryptionType": "GOOGLE_DEFAULT_ENCRYPTION"
+    }
+  ],
+  "name": "projects/emg-adr043-disposable-witness/instances/emg-s7-prequal/databases/authority",
+  "state": "READY",
+  "versionRetentionPeriod": "1h"
+}

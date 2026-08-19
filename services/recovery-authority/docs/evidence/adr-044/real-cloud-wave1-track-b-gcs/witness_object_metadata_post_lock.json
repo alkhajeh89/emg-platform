@@ -1,0 +1,17 @@
+{
+  "bucket": "emg-s7-prequal-witness-0a880ebc",
+  "content_type": "text/plain; charset=utf-8",
+  "crc32c_hash": "SPjpdA==",
+  "creation_time": "2026-08-19T18:24:12+0000",
+  "etag": "CLbQ15SorZYDEAE=",
+  "generation": "1787163852531766",
+  "md5_hash": "mEWTtL/yVY2cPc09hzb5eQ==",
+  "metageneration": 1,
+  "name": "realcloud-qualification/20260819T182411.809446000-66c50aab3c2af14f.json",
+  "retention_expiration": "2026-08-20T18:24:12+0000",
+  "size": 51,
+  "storage_class": "STANDARD",
+  "storage_class_update_time": "2026-08-19T18:24:12+0000",
+  "storage_url": "gs://emg-s7-prequal-witness-0a880ebc/realcloud-qualification/20260819T182411.809446000-66c50aab3c2af14f.json#1787163852531766",
+  "update_time": "2026-08-19T18:24:12+0000"
+}

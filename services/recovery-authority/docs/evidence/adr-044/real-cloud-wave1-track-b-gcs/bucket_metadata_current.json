@@ -1,0 +1,26 @@
+{
+  "creation_time": "2026-08-19T18:21:36+0000",
+  "default_storage_class": "STANDARD",
+  "generation": 1787163696044885449,
+  "labels": {
+    "disposable": "true",
+    "purpose": "adr044-s7-prequal"
+  },
+  "location": "US-CENTRAL1",
+  "location_type": "region",
+  "metageneration": 4,
+  "name": "emg-s7-prequal-witness-0a880ebc",
+  "public_access_prevention": "enforced",
+  "retention_policy": {
+    "effectiveTime": "2026-08-19T18:26:04.223000+00:00",
+    "isLocked": true,
+    "retentionPeriod": "86400"
+  },
+  "soft_delete_policy": {
+    "effectiveTime": "2026-08-19T18:21:36.164000+00:00",
+    "retentionDurationSeconds": "604800"
+  },
+  "storage_url": "gs://emg-s7-prequal-witness-0a880ebc/",
+  "uniform_bucket_level_access": true,
+  "update_time": "2026-08-19T18:26:37+0000"
+}

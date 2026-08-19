@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudGCSStoreAndLedgerComposition
+    realcloud_gcs_test.go:270: EVIDENCE: keypinning.GCSStore and compromiseledger.GCSLedger both round-tripped correctly against real GCS, composed over the real gcswitness.Adapter
+--- PASS: TestRealCloudGCSStoreAndLedgerComposition (5.39s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/gcswitness	6.257s

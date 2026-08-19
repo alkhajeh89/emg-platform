@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudGCSWitnessQualification
+    realcloud_gcs_test.go:187: EVIDENCE: key="realcloud-qualification/20260819T182822.280843000-dc480a621dfa35ad.json" generation-bearing object created, duplicate idempotent, conflict fail-closed, no overwrite, exact read/exists correct
+--- PASS: TestRealCloudGCSWitnessQualification (6.38s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/gcswitness	7.934s

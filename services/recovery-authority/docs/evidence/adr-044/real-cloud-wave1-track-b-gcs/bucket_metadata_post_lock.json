@@ -1,0 +1,40 @@
+{
+  "kind": "storage#bucket",
+  "selfLink": "https://www.googleapis.com/storage/v1/b/emg-s7-prequal-witness-0a880ebc",
+  "id": "emg-s7-prequal-witness-0a880ebc",
+  "name": "emg-s7-prequal-witness-0a880ebc",
+  "projectNumber": "617557656575",
+  "generation": "1787163696044885449",
+  "metageneration": "4",
+  "location": "US-CENTRAL1",
+  "storageClass": "STANDARD",
+  "etag": "CAQ=",
+  "timeCreated": "2026-08-19T18:21:36.164Z",
+  "updated": "2026-08-19T18:26:37.772Z",
+  "labels": {
+    "purpose": "adr044-s7-prequal",
+    "disposable": "true"
+  },
+  "retentionPolicy": {
+    "retentionPeriod": "86400",
+    "effectiveTime": "2026-08-19T18:26:04.223Z",
+    "isLocked": true
+  },
+  "softDeletePolicy": {
+    "retentionDurationSeconds": "604800",
+    "effectiveTime": "2026-08-19T18:21:36.164Z"
+  },
+  "iamConfiguration": {
+    "bucketPolicyOnly": {
+      "enabled": true,
+      "lockedTime": "2026-11-17T18:21:36.164Z"
+    },
+    "uniformBucketLevelAccess": {
+      "enabled": true,
+      "lockedTime": "2026-11-17T18:21:36.164Z"
+    },
+    "publicAccessPrevention": "enforced"
+  },
+  "locationType": "region",
+  "satisfiesPZI": true
+}

@@ -1,0 +1,33 @@
+Track B — negative-path (retention enforcement) evidence, all against real GCS
+project emg-adr043-disposable-witness, bucket emg-s7-prequal-witness-0a880ebc.
+
+=== Item 8: object delete while retained (unlocked retention, pre-lock) ===
+Command: gcloud storage rm gs://.../realcloud-qualification/...json
+Result: HTTP 403
+Message: "Object '...' is subject to bucket's retention policy or object
+retention and cannot be deleted or overwritten until 2026-08-20T11:24:12.540623-07:00."
+
+=== Item 9: object overwrite while retained (unlocked retention, pre-lock) ===
+Command: gcloud storage cp - gs://.../realcloud-qualification/...json
+Result: HTTP 403 (same retentionPolicyNotMet-shaped condition)
+Message: "Object '...' is subject to bucket's retention policy or object
+retention and cannot be deleted or overwritten until 2026-08-20T11:24:12.540623-07:00."
+
+=== Bucket Lock ===
+Method: POST https://storage.googleapis.com/storage/v1/b/{bucket}/lockRetentionPolicy?ifMetagenerationMatch=3
+Result: HTTP 200, retentionPolicy.isLocked = true, metageneration -> 4
+
+=== Item 10a: retention removal after lock (expect failure) ===
+Command: gcloud storage buckets update gs://... --clear-retention-period
+Result: exit 1
+Message: "Bucket '...' has a locked Retention Policy which cannot be removed."
+
+=== Item 10b: retention reduction after lock (expect failure) ===
+Command: gcloud storage buckets update gs://... --retention-period=1s
+Result: exit 1
+Message: "Cannot reduce retention duration of a locked Retention Policy for bucket '...'."
+
+=== Item 11: retained bytes unchanged (pre-lock vs post-lock) ===
+Pre-lock:  generation=1787163852531766 md5=mEWTtL/yVY2cPc09hzb5eQ== size=51
+Post-lock: generation=1787163852531766 md5=mEWTtL/yVY2cPc09hzb5eQ== size=51
+Result: IDENTICAL -- byte-for-byte unchanged across the entire lock transition.

@@ -1,0 +1,22 @@
+[
+  {
+    "step": "real_commit_succeeds",
+    "outcome": "UNAMBIGUOUS_SUCCESS",
+    "reason_code": 2,
+    "commit_timestamp": "2026-08-19T18:18:07.966533Z",
+    "notes": "genuine UnambiguousSuccess from real Cloud Spanner; CommittedPayload produced only after this classification"
+  },
+  {
+    "step": "duplicate_insert_fails_closed",
+    "outcome": "AMBIGUOUS_COMMIT_OUTCOME",
+    "reason_code": 0,
+    "notes": "identical GenesisRequest re-committed against real Cloud Spanner: accepted rotation context unavailable"
+  },
+  {
+    "step": "deadline_interruption",
+    "outcome": "AMBIGUOUS_COMMIT_OUTCOME",
+    "reason_code": 0,
+    "grpc_code": "Unknown",
+    "notes": "1ms client deadline against real Cloud Spanner -- classification must never be UnambiguousSuccess without a genuine, valid commit timestamp"
+  }
+]
