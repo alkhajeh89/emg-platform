@@ -216,7 +216,7 @@ func TestFileLedgerDetectsTamperedRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	tampered := append([]byte{}, raw...)
-	// Flip a byte inside the first line's effective_time_unix digits.
+	// Flip a byte inside the first line's effective_time_rfc3339 digits.
 	for i, b := range tampered {
 		if b == '2' {
 			tampered[i] = '9'

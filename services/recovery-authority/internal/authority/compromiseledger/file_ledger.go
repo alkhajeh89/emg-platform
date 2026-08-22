@@ -69,13 +69,22 @@ func NewFileLedger(path string) (*FileLedger, error) {
 	return ledger, nil
 }
 
+// fileRecord's EffectiveTime/RecordedAt fields are encoded as
+// time.RFC3339Nano strings, matching GCSLedger's gcsDistrustRecord and
+// protocol.MarshalCommittedPayloadJSON's own commit_timestamp convention --
+// see gcs_ledger.go's gcsDistrustRecord doc comment for why whole-second
+// (Unix) precision was wrong: EvaluateStatus compares EffectiveTime against
+// a record's real, sub-second-precision Spanner commit_timestamp, and
+// truncating it here silently shifted the effective distrust boundary
+// earlier by up to one second. This package has no production deployment
+// yet, so this is a clean wire-format correction, not a migration.
 type fileRecord struct {
-	Subject           string `json:"subject"`
-	EffectiveTimeUnix int64  `json:"effective_time_unix"`
-	RecordedAtUnix    int64  `json:"recorded_at_unix"`
-	Reason            string `json:"reason"`
-	RecordedBy        string `json:"recorded_by"`
-	PrevHash          string `json:"prev_hash"`
+	Subject              string `json:"subject"`
+	EffectiveTimeRFC3339 string `json:"effective_time_rfc3339"`
+	RecordedAtRFC3339    string `json:"recorded_at_rfc3339"`
+	Reason               string `json:"reason"`
+	RecordedBy           string `json:"recorded_by"`
+	PrevHash             string `json:"prev_hash"`
 }
 
 const genesisPrevHash = "GENESIS"
@@ -116,10 +125,20 @@ func (l *FileLedger) readVerifiedChain() ([]DistrustRecord, error) {
 		lineCopy := make([]byte, len(lineBytes))
 		copy(lineCopy, lineBytes)
 		expectedPrevHash = hashLine(lineCopy)
+		// Fail closed on a malformed persisted timestamp: never silently
+		// reinterpret it as the zero time.
+		effectiveTime, err := time.Parse(time.RFC3339Nano, rec.EffectiveTimeRFC3339)
+		if err != nil {
+			return nil, fmt.Errorf("compromiseledger: ledger file has a malformed effective_time_rfc3339 at line %d: %w", lineNumber, err)
+		}
+		recordedAt, err := time.Parse(time.RFC3339Nano, rec.RecordedAtRFC3339)
+		if err != nil {
+			return nil, fmt.Errorf("compromiseledger: ledger file has a malformed recorded_at_rfc3339 at line %d: %w", lineNumber, err)
+		}
 		records = append(records, DistrustRecord{
 			Subject:       rec.Subject,
-			EffectiveTime: time.Unix(rec.EffectiveTimeUnix, 0).UTC(),
-			RecordedAt:    time.Unix(rec.RecordedAtUnix, 0).UTC(),
+			EffectiveTime: effectiveTime.UTC(),
+			RecordedAt:    recordedAt.UTC(),
 			Reason:        rec.Reason,
 			RecordedBy:    rec.RecordedBy,
 		})
@@ -170,12 +189,12 @@ func (l *FileLedger) Declare(_ context.Context, record DistrustRecord) error {
 	}
 
 	fileRec := fileRecord{
-		Subject:           record.Subject,
-		EffectiveTimeUnix: record.EffectiveTime.Unix(),
-		RecordedAtUnix:    record.RecordedAt.Unix(),
-		Reason:            record.Reason,
-		RecordedBy:        record.RecordedBy,
-		PrevHash:          prevHash,
+		Subject:              record.Subject,
+		EffectiveTimeRFC3339: record.EffectiveTime.UTC().Format(time.RFC3339Nano),
+		RecordedAtRFC3339:    record.RecordedAt.UTC().Format(time.RFC3339Nano),
+		Reason:               record.Reason,
+		RecordedBy:           record.RecordedBy,
+		PrevHash:             prevHash,
 	}
 	data, err := json.Marshal(fileRec)
 	if err != nil {

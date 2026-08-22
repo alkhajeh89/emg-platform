@@ -61,12 +61,30 @@ func NewGCSLedger(witness gcswitness.ImmutableWitness) (*GCSLedger, error) {
 	return &GCSLedger{witness: witness}, nil
 }
 
+// gcsDistrustRecord's EffectiveTime/RecordedAt fields are encoded as
+// time.RFC3339Nano strings -- full nanosecond precision, deterministic,
+// unambiguous, and UTC-normalized on encode -- matching the same
+// full-precision convention protocol.MarshalCommittedPayloadJSON already
+// uses for commit_timestamp. This is a deliberate correction (not the
+// original design): EffectiveTime is compared, via Declare's own
+// conflict-resolution equality check and via EvaluateStatus's Before/asOf
+// comparison against a record's real Spanner commit_timestamp (which
+// itself carries genuine sub-second TrueTime precision), against
+// caller-supplied full-precision time.Time values -- truncating it to
+// whole seconds on the wire silently shifted the effective distrust
+// boundary earlier by up to one second and broke the documented
+// idempotent-retry guarantee for any EffectiveTime with a non-zero
+// fractional second (found via real-cloud qualification, Wave 2 Track C).
+// This package has no production deployment yet (S3, never released), so
+// this field rename is a clean wire-format correction, not a
+// backward-compatibility migration: no production-written record with the
+// old int64 Unix-second field names exists, or needs to remain readable.
 type gcsDistrustRecord struct {
-	Subject           string `json:"subject"`
-	EffectiveTimeUnix int64  `json:"effective_time_unix"`
-	RecordedAtUnix    int64  `json:"recorded_at_unix"`
-	Reason            string `json:"reason"`
-	RecordedBy        string `json:"recorded_by"`
+	Subject              string `json:"subject"`
+	EffectiveTimeRFC3339 string `json:"effective_time_rfc3339"`
+	RecordedAtRFC3339    string `json:"recorded_at_rfc3339"`
+	Reason               string `json:"reason"`
+	RecordedBy           string `json:"recorded_by"`
 }
 
 func gcsLedgerKey(subject string) string {
@@ -101,11 +119,11 @@ func (l *GCSLedger) Declare(ctx context.Context, record DistrustRecord) error {
 		return err
 	}
 	data, err := json.Marshal(gcsDistrustRecord{
-		Subject:           record.Subject,
-		EffectiveTimeUnix: record.EffectiveTime.Unix(),
-		RecordedAtUnix:    record.RecordedAt.Unix(),
-		Reason:            record.Reason,
-		RecordedBy:        record.RecordedBy,
+		Subject:              record.Subject,
+		EffectiveTimeRFC3339: record.EffectiveTime.UTC().Format(time.RFC3339Nano),
+		RecordedAtRFC3339:    record.RecordedAt.UTC().Format(time.RFC3339Nano),
+		Reason:               record.Reason,
+		RecordedBy:           record.RecordedBy,
 	})
 	if err != nil {
 		return fmt.Errorf("compromiseledger: encode record: %w", err)
@@ -145,10 +163,21 @@ func (l *GCSLedger) readSubject(ctx context.Context, subject string) (DistrustRe
 	if raw.Subject != subject {
 		return DistrustRecord{}, fmt.Errorf("stored record's subject %q does not match requested %q -- integrity check failed", raw.Subject, subject)
 	}
+	// Fail closed on a malformed persisted timestamp: never silently
+	// reinterpret it as the zero time, which could otherwise be
+	// misclassified as "before" every real EffectiveTime/asOf comparison.
+	effectiveTime, err := time.Parse(time.RFC3339Nano, raw.EffectiveTimeRFC3339)
+	if err != nil {
+		return DistrustRecord{}, fmt.Errorf("stored record has a malformed effective_time_rfc3339: %w", err)
+	}
+	recordedAt, err := time.Parse(time.RFC3339Nano, raw.RecordedAtRFC3339)
+	if err != nil {
+		return DistrustRecord{}, fmt.Errorf("stored record has a malformed recorded_at_rfc3339: %w", err)
+	}
 	return DistrustRecord{
 		Subject:       raw.Subject,
-		EffectiveTime: time.Unix(raw.EffectiveTimeUnix, 0).UTC(),
-		RecordedAt:    time.Unix(raw.RecordedAtUnix, 0).UTC(),
+		EffectiveTime: effectiveTime.UTC(),
+		RecordedAt:    recordedAt.UTC(),
 		Reason:        raw.Reason,
 		RecordedBy:    raw.RecordedBy,
 	}, nil
