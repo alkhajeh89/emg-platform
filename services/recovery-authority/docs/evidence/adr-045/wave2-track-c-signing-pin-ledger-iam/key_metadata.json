@@ -1,0 +1,14 @@
+{
+  "createTime": "2026-08-21T11:21:33.811534521Z",
+  "destroyScheduledDuration": "2592000s",
+  "labels": {
+    "disposable": "true",
+    "purpose": "adr045-s3-signing-qual"
+  },
+  "name": "projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key",
+  "purpose": "ASYMMETRIC_SIGN",
+  "versionTemplate": {
+    "algorithm": "EC_SIGN_P256_SHA256",
+    "protectionLevel": "SOFTWARE"
+  }
+}

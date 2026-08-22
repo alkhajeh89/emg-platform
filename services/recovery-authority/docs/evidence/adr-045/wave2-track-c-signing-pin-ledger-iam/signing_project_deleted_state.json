@@ -1,0 +1,15 @@
+{
+  "createTime": "2026-08-21T11:20:30.540Z",
+  "labels": {
+    "disposable": "true",
+    "purpose": "adr045-s3-signing-qual"
+  },
+  "lifecycleState": "DELETE_REQUESTED",
+  "name": "EMG RA signing qual",
+  "parent": {
+    "id": "1090730370932",
+    "type": "organization"
+  },
+  "projectId": "emg-ra-signing-qual-db77c759",
+  "projectNumber": "837486393992"
+}

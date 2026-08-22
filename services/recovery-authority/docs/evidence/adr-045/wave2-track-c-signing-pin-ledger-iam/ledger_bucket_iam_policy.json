@@ -1,0 +1,43 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "serviceAccount:ra-ledgerwriter-qual@emg-ra-ledger-qual-922b972d.iam.gserviceaccount.com"
+      ],
+      "role": "projects/emg-ra-ledger-qual-922b972d/roles/raQualLedgerWriter"
+    },
+    {
+      "members": [
+        "serviceAccount:ra-verifier-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com"
+      ],
+      "role": "projects/emg-ra-ledger-qual-922b972d/roles/raQualVerifierReader"
+    },
+    {
+      "members": [
+        "projectEditor:emg-ra-ledger-qual-922b972d",
+        "projectOwner:emg-ra-ledger-qual-922b972d"
+      ],
+      "role": "roles/storage.legacyBucketOwner"
+    },
+    {
+      "members": [
+        "projectViewer:emg-ra-ledger-qual-922b972d"
+      ],
+      "role": "roles/storage.legacyBucketReader"
+    },
+    {
+      "members": [
+        "projectEditor:emg-ra-ledger-qual-922b972d",
+        "projectOwner:emg-ra-ledger-qual-922b972d"
+      ],
+      "role": "roles/storage.legacyObjectOwner"
+    },
+    {
+      "members": [
+        "projectViewer:emg-ra-ledger-qual-922b972d"
+      ],
+      "role": "roles/storage.legacyObjectReader"
+    }
+  ],
+  "etag": "CAg="
+}

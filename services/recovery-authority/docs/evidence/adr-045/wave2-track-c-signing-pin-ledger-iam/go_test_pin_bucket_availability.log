@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudPinBucketAvailabilityDistinction
+    realcloud_pin_test.go:240: EVIDENCE: real GCS correctly distinguishes missing-key (ErrPinNotFound) from missing-bucket (keypinning: read pin: gcswitness: bucket unavailable or unreachable: storage: bucket doesn't exist: googleapi: Error 404: The specified bucket does not exist., notFound)
+--- PASS: TestRealCloudPinBucketAvailabilityDistinction (3.91s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/keypinning	5.595s

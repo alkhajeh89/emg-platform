@@ -1,0 +1,75 @@
+=== RUN   TestMatrix_A_AttackerOwnedValidKeyCannotAuthenticate
+--- PASS: TestMatrix_A_AttackerOwnedValidKeyCannotAuthenticate (0.00s)
+=== RUN   TestMatrix_B_ForeignLineageRejected
+--- PASS: TestMatrix_B_ForeignLineageRejected (0.00s)
+=== RUN   TestMatrix_C_KeyIDTamperingFails
+--- PASS: TestMatrix_C_KeyIDTamperingFails (0.00s)
+=== RUN   TestMatrix_D_UnknownSigningKeyIDFails
+--- PASS: TestMatrix_D_UnknownSigningKeyIDFails (0.00s)
+=== RUN   TestMatrix_F_OldKeyVerifiesAfterRoutineRotation
+--- PASS: TestMatrix_F_OldKeyVerifiesAfterRoutineRotation (0.00s)
+=== RUN   TestMatrix_G_OldKeyVerifiesAfterDisablementWithPin
+--- PASS: TestMatrix_G_OldKeyVerifiesAfterDisablementWithPin (0.00s)
+=== RUN   TestMatrix_H_NoPinFailsClosed
+--- PASS: TestMatrix_H_NoPinFailsClosed (0.00s)
+=== RUN   TestMatrix_I_SubstitutedPinFailsClosed
+--- PASS: TestMatrix_I_SubstitutedPinFailsClosed (0.00s)
+=== RUN   TestMatrix_J_CorrectSignatureUnderWrongKeyFails
+--- PASS: TestMatrix_J_CorrectSignatureUnderWrongKeyFails (0.00s)
+=== RUN   TestMatrix_K_NoTryAllKeysFallback
+--- PASS: TestMatrix_K_NoTryAllKeysFallback (0.00s)
+=== RUN   TestMatrix_L_CompromiseBeforeEffectiveTimeStillVerifies
+--- PASS: TestMatrix_L_CompromiseBeforeEffectiveTimeStillVerifies (0.00s)
+=== RUN   TestMatrix_M_CompromiseAtOrAfterEffectiveTimeFails
+--- PASS: TestMatrix_M_CompromiseAtOrAfterEffectiveTimeFails (0.00s)
+=== RUN   TestMatrix_N_LedgerUnavailableFailsClosed
+--- PASS: TestMatrix_N_LedgerUnavailableFailsClosed (0.00s)
+=== RUN   TestMatrix_O_LiveKMSOutageDoesNotBreakHistoricalVerification
+--- PASS: TestMatrix_O_LiveKMSOutageDoesNotBreakHistoricalVerification (0.00s)
+=== RUN   TestMatrix_P_SupersededLineageRetainsHistoricalVerification
+--- PASS: TestMatrix_P_SupersededLineageRetainsHistoricalVerification (0.00s)
+=== RUN   TestMatrix_Q_DifferentLineageCannotAuthorizeForeignPayload
+--- PASS: TestMatrix_Q_DifferentLineageCannotAuthorizeForeignPayload (0.00s)
+=== RUN   TestMatrix_W_PinnedKeyAloneCannotSubstituteForLineageAuthorization
+--- PASS: TestMatrix_W_PinnedKeyAloneCannotSubstituteForLineageAuthorization (0.00s)
+=== RUN   TestMatrix_X_LedgerClearanceCannotSubstituteForCryptoVerification
+--- PASS: TestMatrix_X_LedgerClearanceCannotSubstituteForCryptoVerification (0.00s)
+=== RUN   TestMatrix_Y_ValidSignatureCannotSubstituteForComplianceCheck
+--- PASS: TestMatrix_Y_ValidSignatureCannotSubstituteForComplianceCheck (0.00s)
+=== RUN   TestKMSVerifierHasNoSigningCapability
+=== PAUSE TestKMSVerifierHasNoSigningCapability
+=== RUN   TestRealCloudSignerIAMBoundary
+    realcloud_iam_test.go:141: SIGNER: GetPublicKey correctly denied: rpc error: code = PermissionDenied desc = Permission 'cloudkms.cryptoKeyVersions.viewPublicKey' denied on resource 'projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1' (or it may not exist).
+        error details: name = ErrorInfo reason = IAM_PERMISSION_DENIED domain = cloudkms.googleapis.com metadata = map[error_info_id:CiQwMWEwMmFhMS1iZWFlLTc0Y2EtODhhNi1hMGNiMzMyZWFjMjQSjAFwcm9qZWN0cy9lbWctcmEtc2lnbmluZy1xdWFsLWRiNzdjNzU5L2xvY2F0aW9ucy91cy1jZW50cmFsMS9rZXlSaW5ncy9yYS1zaWduaW5nLXF1YWwtcmluZy9jcnlwdG9LZXlzL3JhLXNpZ25pbmctcXVhbC1rZXkvY3J5cHRvS2V5VmVyc2lvbnMvMQ== permission:cloudkms.cryptoKeyVersions.viewPublicKey troubleshooter_url:https://console.cloud.google.com/iam-admin/troubleshooter/summary;errorId=CiQwMWEwMmFhMS1iZWFlLTc0Y2EtODhhNi1hMGNiMzMyZWFjMjQSjAFwcm9qZWN0cy9lbWctcmEtc2lnbmluZy1xdWFsLWRiNzdjNzU5L2xvY2F0aW9ucy91cy1jZW50cmFsMS9rZXlSaW5ncy9yYS1zaWduaW5nLXF1YWwtcmluZy9jcnlwdG9LZXlzL3JhLXNpZ25pbmctcXVhbC1rZXkvY3J5cHRvS2V5VmVyc2lvbnMvMQ%3D%3D]
+    realcloud_iam_test.go:150: SIGNER: key administration correctly denied: rpc error: code = PermissionDenied desc = Permission 'cloudkms.cryptoKeyVersions.update' denied on resource 'projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1' (or it may not exist).
+        error details: name = ErrorInfo reason = IAM_PERMISSION_DENIED domain = cloudkms.googleapis.com metadata = map[error_info_id:CiQwMWEwMmFhMS1iZmU5LTdmZTUtYWI1NC04MzBjNGZkODc5NjQSjAFwcm9qZWN0cy9lbWctcmEtc2lnbmluZy1xdWFsLWRiNzdjNzU5L2xvY2F0aW9ucy91cy1jZW50cmFsMS9rZXlSaW5ncy9yYS1zaWduaW5nLXF1YWwtcmluZy9jcnlwdG9LZXlzL3JhLXNpZ25pbmctcXVhbC1rZXkvY3J5cHRvS2V5VmVyc2lvbnMvMQ== permission:cloudkms.cryptoKeyVersions.update troubleshooter_url:https://console.cloud.google.com/iam-admin/troubleshooter/summary;errorId=CiQwMWEwMmFhMS1iZmU5LTdmZTUtYWI1NC04MzBjNGZkODc5NjQSjAFwcm9qZWN0cy9lbWctcmEtc2lnbmluZy1xdWFsLWRiNzdjNzU5L2xvY2F0aW9ucy91cy1jZW50cmFsMS9rZXlSaW5ncy9yYS1zaWduaW5nLXF1YWwtcmluZy9jcnlwdG9LZXlzL3JhLXNpZ25pbmctcXVhbC1rZXkvY3J5cHRvS2V5VmVyc2lvbnMvMQ%3D%3D]
+    realcloud_iam_test.go:162: SIGNER: pin-store write correctly denied: gcswitness: create failed: googleapi: Error 403: ra-signer-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com does not have storage.objects.create access to the Google Cloud Storage object. Permission 'storage.objects.create' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-signing-qual-pins-b74565b9/objects/iam-qual/signer-write-attempt.json' (or it may not exist)., forbidden
+    realcloud_iam_test.go:168: SIGNER: ledger write correctly denied: gcswitness: create failed: googleapi: Error 403: ra-signer-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com does not have storage.objects.create access to the Google Cloud Storage object. Permission 'storage.objects.create' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-ledger-qual-1978fd61/objects/iam-qual/signer-write-attempt.json' (or it may not exist)., forbidden
+    realcloud_iam_test.go:179: SIGNER: IAM mutation correctly denied: rpc error: code = PermissionDenied desc = Permission 'cloudkms.cryptoKeys.setIamPolicy' denied on resource 'projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key' (or it may not exist).
+        error details: name = ErrorInfo reason = IAM_PERMISSION_DENIED domain = cloudkms.googleapis.com metadata = map[permission:cloudkms.cryptoKeys.setIamPolicy]
+    realcloud_iam_test.go:182: EVIDENCE: SIGNER principal -- sign allowed; GetPublicKey, key admin, pin write, ledger write, IAM mutation all denied
+--- PASS: TestRealCloudSignerIAMBoundary (7.99s)
+=== RUN   TestRealCloudPinCaptureIAMBoundary
+    realcloud_iam_test.go:218: PIN_CAPTURE: signing correctly denied: rpc error: code = PermissionDenied desc = Permission 'cloudkms.cryptoKeyVersions.useToSign' denied on resource 'projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key' (or it may not exist).
+        error details: name = ErrorInfo reason = IAM_PERMISSION_DENIED domain = cloudkms.googleapis.com metadata = map[error_info_id:CiQwMWEwMmFhMS1kZmUxLTdiNjQtOTc3Ni03NDlkNDU2MTY5MDESeHByb2plY3RzL2VtZy1yYS1zaWduaW5nLXF1YWwtZGI3N2M3NTkvbG9jYXRpb25zL3VzLWNlbnRyYWwxL2tleVJpbmdzL3JhLXNpZ25pbmctcXVhbC1yaW5nL2NyeXB0b0tleXMvcmEtc2lnbmluZy1xdWFsLWtleQ== permission:cloudkms.cryptoKeyVersions.useToSign troubleshooter_url:https://console.cloud.google.com/iam-admin/troubleshooter/summary;errorId=CiQwMWEwMmFhMS1kZmUxLTdiNjQtOTc3Ni03NDlkNDU2MTY5MDESeHByb2plY3RzL2VtZy1yYS1zaWduaW5nLXF1YWwtZGI3N2M3NTkvbG9jYXRpb25zL3VzLWNlbnRyYWwxL2tleVJpbmdzL3JhLXNpZ25pbmctcXVhbC1yaW5nL2NyeXB0b0tleXMvcmEtc2lnbmluZy1xdWFsLWtleQ%3D%3D]
+    realcloud_iam_test.go:232: PIN_CAPTURE: Pin create must succeed, got: keypinning: gcs pin create did not succeed: gcswitness: create ambiguous, read-resolution failed: googleapi: Error 412: At least one of the pre-conditions you specified did not hold., conditionNotMet
+        gcswitness: open reader: googleapi: got HTTP response code 403 with body: <?xml version='1.0' encoding='UTF-8'?><Error><Code>AccessDenied</Code><Message>Access denied.</Message><Details>ra-pincapture-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com does not have storage.objects.get access to the Google Cloud Storage object. Permission 'storage.objects.get' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-signing-qual-pins-b74565b9/objects/9_OEl1j7E2CgNs7AaqKrScSkIv7sQkz85JOg2WaJUVQ.json' (or it may not exist).</Details></Error>
+--- FAIL: TestRealCloudPinCaptureIAMBoundary (6.70s)
+=== RUN   TestRealCloudLedgerWriterIAMBoundary
+    realcloud_iam_test.go:308: LEDGER_WRITER: signing correctly denied: rpc error: code = PermissionDenied desc = Cloud Key Management Service (KMS) API has not been used in project 716654426928 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudkms.googleapis.com/overview?project=716654426928 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.
+        error details: name = ErrorInfo reason = SERVICE_DISABLED domain = googleapis.com metadata = map[activationUrl:https://console.developers.google.com/apis/api/cloudkms.googleapis.com/overview?project=716654426928 consumer:projects/716654426928 containerInfo:716654426928 service:cloudkms.googleapis.com serviceTitle:Cloud Key Management Service (KMS) API]
+        error details: name = Help desc = Google developers console API activation url = https://console.developers.google.com/apis/api/cloudkms.googleapis.com/overview?project=716654426928
+        error details: name = LocalizedMessage locale = en-US msg = Cloud Key Management Service (KMS) API has not been used in project 716654426928 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/cloudkms.googleapis.com/overview?project=716654426928 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.
+    realcloud_iam_test.go:315: LEDGER_WRITER: pin-store write correctly denied (no cross-project binding): gcswitness: create failed: googleapi: Error 403: ra-ledgerwriter-qual@emg-ra-ledger-qual-922b972d.iam.gserviceaccount.com does not have storage.objects.create access to the Google Cloud Storage object. Permission 'storage.objects.create' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-signing-qual-pins-b74565b9/objects/iam-qual/ledgerwriter-write-attempt.json' (or it may not exist)., forbidden
+    realcloud_iam_test.go:327: LEDGER_WRITER: prior-record delete correctly denied: googleapi: Error 403: ra-ledgerwriter-qual@emg-ra-ledger-qual-922b972d.iam.gserviceaccount.com does not have storage.objects.delete access to the Google Cloud Storage object. Permission 'storage.objects.delete' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-ledger-qual-1978fd61/objects/distrust/35OL0gJ_oDkmNI0OJZojBR-fXwT_LI5cLpZPgyJG3YI.json' (or it may not exist)., forbidden
+    realcloud_iam_test.go:332: LEDGER_WRITER: bucket IAM read correctly denied: googleapi: Error 403: ra-ledgerwriter-qual@emg-ra-ledger-qual-922b972d.iam.gserviceaccount.com does not have storage.buckets.getIamPolicy access to the Google Cloud Storage bucket. Permission 'storage.buckets.getIamPolicy' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-ledger-qual-1978fd61' (or it may not exist)., forbidden
+    realcloud_iam_test.go:335: EVIDENCE: LEDGER_WRITER principal -- declare allowed; sign, pin write, prior-record delete, bucket-IAM-read all denied
+--- PASS: TestRealCloudLedgerWriterIAMBoundary (5.19s)
+=== RUN   TestRealCloudVerifierIAMBoundary
+    realcloud_iam_test.go:358: VERIFIER: Exists (read) on the pin bucket must succeed, got: gcswitness: bucket unavailable or unreachable: googleapi: Error 403: ra-verifier-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com does not have storage.buckets.get access to the Google Cloud Storage bucket. Permission 'storage.buckets.get' denied on resource '//storage.googleapis.com/projects/_/buckets/emg-ra-signing-qual-pins-b74565b9' (or it may not exist)., forbidden
+--- FAIL: TestRealCloudVerifierIAMBoundary (2.89s)
+=== CONT  TestKMSVerifierHasNoSigningCapability
+--- PASS: TestKMSVerifierHasNoSigningCapability (0.00s)
+FAIL
+FAIL	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/kmsverifier	24.599s
+FAIL

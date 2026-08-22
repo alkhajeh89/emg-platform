@@ -1,0 +1,24 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "serviceAccount:ra-pincapture-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com"
+      ],
+      "role": "roles/cloudkms.publicKeyViewer"
+    },
+    {
+      "members": [
+        "serviceAccount:ra-signer-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com"
+      ],
+      "role": "roles/cloudkms.signer"
+    },
+    {
+      "members": [
+        "serviceAccount:ra-pincapture-qual@emg-ra-signing-qual-db77c759.iam.gserviceaccount.com"
+      ],
+      "role": "roles/cloudkms.viewer"
+    }
+  ],
+  "etag": "BwZZpnFTILE=",
+  "version": 1
+}

@@ -271,3 +271,50 @@ func TestRealCloudGCSStoreAndLedgerComposition(t *testing.T) {
 }
 
 var _ = storage.ErrObjectNotExist // referenced only to document the real SDK error this package's ReadExact/Exists translate; never constructed here.
+
+// TestRealCloudWitnessBucketAvailabilityDistinction is the Phase 9 (P0
+// remediation) real-cloud regression test, items 5-6: proves, against real
+// GCS, that Exists correctly distinguishes "existing witness bucket, key
+// never created" (false, nil -- the ordinary, safe "genesis has not
+// happened yet" state) from "the witness bucket itself does not exist"
+// (false, non-nil error -- must never be treated as a safe empty
+// namespace). Item 5 reuses the already-existing, real, Bucket-Locked
+// Wave 1 witness bucket read-only (Exists performs no mutation, safe
+// against a locked bucket); item 6 uses a bucket name that has never been
+// created.
+func TestRealCloudWitnessBucketAvailabilityDistinction(t *testing.T) {
+	bucket := realCloudGCSBucket(t)
+	adapter := realCloudAdapter(t)
+	ctx := context.Background()
+
+	// Item 5: existing (Bucket-Locked, real, Wave 1) witness bucket + a key
+	// that was never created -> Exists false, nil.
+	neverCreatedKey := "genesis/never-created-for-availability-test-" + t.Name() + ".json"
+	exists, err := adapter.Exists(ctx, neverCreatedKey)
+	if err != nil {
+		t.Fatalf("Exists against the existing, real witness bucket must not error, got: %v", err)
+	}
+	if exists {
+		t.Fatal("expected false for a witness key that was never created")
+	}
+
+	// Item 6: a witness bucket that does not exist at all -> Exists false,
+	// non-nil error. This is the exact P0 fail-open condition: before the
+	// fix, this returned (false, nil), indistinguishable from item 5's
+	// legitimate "not yet created" state.
+	token := realCloudGCSToken(t)
+	brokenClient, err := gcswitness.NewClient(ctx, option.WithTokenSource(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})))
+	if err != nil {
+		t.Fatalf("gcswitness.NewClient: %v", err)
+	}
+	t.Cleanup(func() { brokenClient.Close() })
+	brokenAdapter := gcswitness.New(brokenClient, bucket+"-does-not-exist-for-witness-availability-test")
+	brokenExists, brokenErr := brokenAdapter.Exists(ctx, neverCreatedKey)
+	if brokenErr == nil {
+		t.Fatalf("expected a non-nil error against a nonexistent witness bucket, got (%v, nil)", brokenExists)
+	}
+	if brokenExists {
+		t.Fatal("Exists must never report true for a bucket that does not exist")
+	}
+	t.Logf("EVIDENCE: real GCS witness path correctly distinguishes missing-key (false, nil) from missing-bucket (false, %v)", brokenErr)
+}

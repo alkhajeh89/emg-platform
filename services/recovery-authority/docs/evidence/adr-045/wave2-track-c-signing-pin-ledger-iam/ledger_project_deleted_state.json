@@ -1,0 +1,15 @@
+{
+  "createTime": "2026-08-21T11:38:43.315Z",
+  "labels": {
+    "disposable": "true",
+    "purpose": "adr045-s3-ledger-qual"
+  },
+  "lifecycleState": "DELETE_REQUESTED",
+  "name": "EMG RA ledger qual",
+  "parent": {
+    "id": "1090730370932",
+    "type": "organization"
+  },
+  "projectId": "emg-ra-ledger-qual-922b972d",
+  "projectNumber": "716654426928"
+}

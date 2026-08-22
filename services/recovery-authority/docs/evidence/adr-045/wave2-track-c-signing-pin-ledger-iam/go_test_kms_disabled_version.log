@@ -1,0 +1,7 @@
+=== RUN   TestRealCloudKMSDisabledVersionFailsClosed
+    realcloud_kms_test.go:286: CRITICAL PROVIDER FINDING: AsymmetricSign against a DISABLED CryptoKeyVersion still succeeded after 15 attempts over 30s -- enforcement did not become observable within this qualification's bounded window
+    realcloud_kms_test.go:241: EVIDENCE: key version successfully restored to ENABLED after disabled-state qualification
+--- FAIL: TestRealCloudKMSDisabledVersionFailsClosed (44.24s)
+FAIL
+FAIL	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/kmssigner	45.013s
+FAIL

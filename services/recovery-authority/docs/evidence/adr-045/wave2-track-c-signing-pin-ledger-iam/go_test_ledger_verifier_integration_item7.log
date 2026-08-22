@@ -1,0 +1,6 @@
+=== RUN   TestRealCloudCompromiseLedgerVerifierIntegration
+    realcloud_ledger_verifier_integration_test.go:166: EVIDENCE: full real pipeline (KMS sign -> pin -> ledger -> kmsverifier) -- pre-distrust signature verifies (item 11), post-distrust identical signature routed to manual review (item 10)
+    realcloud_ledger_verifier_integration_test.go:191: EVIDENCE: item 7 -- full real pipeline correctly failed closed (ErrCompromiseLedgerUnavailable) when the ledger bucket was unavailable, even for a signature that would otherwise legitimately verify: kmsverifier: compromise ledger unavailable: compromiseledger: check distrust record existence: gcswitness: bucket unavailable or unreachable: storage: bucket doesn't exist: googleapi: Error 404: The specified bucket does not exist., notFound
+--- PASS: TestRealCloudCompromiseLedgerVerifierIntegration (12.48s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/compromiseledger	14.336s

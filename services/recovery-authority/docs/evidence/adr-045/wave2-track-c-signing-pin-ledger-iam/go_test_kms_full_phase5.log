@@ -1,0 +1,46 @@
+=== RUN   TestKMSSignerHasNoAdministrativeCapability
+=== PAUSE TestKMSSignerHasNoAdministrativeCapability
+=== RUN   TestKMSSignerNeverHandlesPrivateKeyMaterial
+=== PAUSE TestKMSSignerNeverHandlesPrivateKeyMaterial
+=== RUN   TestRealCloudKMSSignerQualification
+    realcloud_kms_test.go:179: EVIDENCE: key_version="projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1" activeKeyID matches, real signature len=71 bytes, verifies against real public key, fails against wrong digest and foreign key
+--- PASS: TestRealCloudKMSSignerQualification (2.39s)
+=== RUN   TestRealCloudKMSDisabledVersionFailsClosed
+    realcloud_kms_test.go:285: PROVIDER FINDING: sign against a DISABLED version succeeded for 16 attempt(s) (~48s) after the disable API call returned, before enforcement became observable; final attempt failed as required: kmssigner: AsymmetricSign: rpc error: code = FailedPrecondition desc = projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1 is not enabled, current state is: DISABLED.
+        error details: name = PreconditionFailure type = KEY_DISABLED subj = projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1 desc =
+    realcloud_kms_test.go:243: EVIDENCE: key version successfully restored to ENABLED after disabled-state qualification
+--- PASS: TestRealCloudKMSDisabledVersionFailsClosed (64.22s)
+=== RUN   TestNewValidatesKeyVersionShape
+--- PASS: TestNewValidatesKeyVersionShape (0.00s)
+=== RUN   TestNewValidatesAlgorithm
+--- PASS: TestNewValidatesAlgorithm (0.00s)
+=== RUN   TestNewRejectsNilClient
+--- PASS: TestNewRejectsNilClient (0.00s)
+=== RUN   TestActiveKeyIDMatchesConfiguredKeyVersion
+--- PASS: TestActiveKeyIDMatchesConfiguredKeyVersion (0.00s)
+=== RUN   TestSignCommittedDigestReturnsConfirmingKeyIDMatchingActiveKeyID
+--- PASS: TestSignCommittedDigestReturnsConfirmingKeyIDMatchingActiveKeyID (0.00s)
+=== RUN   TestSignCommittedDigestSendsExactConfiguredKeyVersionAndDigest
+--- PASS: TestSignCommittedDigestSendsExactConfiguredKeyVersionAndDigest (0.00s)
+=== RUN   TestSignCommittedDigestFailsOnProviderError
+--- PASS: TestSignCommittedDigestFailsOnProviderError (0.00s)
+=== RUN   TestSignCommittedDigestFailsOnEmptySignature
+--- PASS: TestSignCommittedDigestFailsOnEmptySignature (0.00s)
+=== RUN   TestSignCommittedDigestFailsOnUnconfirmedDigestChecksum
+--- PASS: TestSignCommittedDigestFailsOnUnconfirmedDigestChecksum (0.00s)
+=== RUN   TestSignCommittedDigestFailsOnMismatchedResponseName
+--- PASS: TestSignCommittedDigestFailsOnMismatchedResponseName (0.00s)
+=== RUN   TestSignCommittedDigestFailsOnSignatureChecksumMismatch
+--- PASS: TestSignCommittedDigestFailsOnSignatureChecksumMismatch (0.00s)
+=== RUN   TestSignerNeverCallsMoreThanOncePerDigest
+--- PASS: TestSignerNeverCallsMoreThanOncePerDigest (0.00s)
+=== RUN   TestKeyVersionAndAlgorithmAccessorsMatchConfiguration
+--- PASS: TestKeyVersionAndAlgorithmAccessorsMatchConfiguration (0.00s)
+=== RUN   TestSignatureVerifiesAgainstDigestUnderRealCrypto
+--- PASS: TestSignatureVerifiesAgainstDigestUnderRealCrypto (0.00s)
+=== CONT  TestKMSSignerHasNoAdministrativeCapability
+=== CONT  TestKMSSignerNeverHandlesPrivateKeyMaterial
+--- PASS: TestKMSSignerNeverHandlesPrivateKeyMaterial (0.00s)
+--- PASS: TestKMSSignerHasNoAdministrativeCapability (0.00s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/kmssigner	68.439s

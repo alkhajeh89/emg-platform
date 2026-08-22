@@ -1,0 +1,11 @@
+{
+  "etag": "BwZZpqDXgjo=",
+  "includedPermissions": [
+    "storage.buckets.get",
+    "storage.objects.create",
+    "storage.objects.get"
+  ],
+  "name": "projects/emg-ra-ledger-qual-922b972d/roles/raQualLedgerWriter",
+  "stage": "GA",
+  "title": "RA qual ledger writer"
+}

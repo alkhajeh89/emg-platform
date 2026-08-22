@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudKMSSignerQualification
+    realcloud_kms_test.go:179: EVIDENCE: key_version="projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1" activeKeyID matches, real signature len=71 bytes, verifies against real public key, fails against wrong digest and foreign key
+--- PASS: TestRealCloudKMSSignerQualification (3.27s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/kmssigner	4.852s

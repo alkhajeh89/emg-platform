@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudCompromiseLedgerVerifierIntegration
+    realcloud_ledger_verifier_integration_test.go:166: EVIDENCE: full real pipeline (KMS sign -> pin -> ledger -> kmsverifier) -- pre-distrust signature verifies (item 11), post-distrust identical signature routed to manual review (item 10)
+--- PASS: TestRealCloudCompromiseLedgerVerifierIntegration (10.57s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/compromiseledger	12.192s

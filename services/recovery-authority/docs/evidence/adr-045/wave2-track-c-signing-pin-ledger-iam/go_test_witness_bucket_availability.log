@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudWitnessBucketAvailabilityDistinction
+    realcloud_gcs_test.go:319: EVIDENCE: real GCS witness path correctly distinguishes missing-key (false, nil) from missing-bucket (false, gcswitness: bucket unavailable or unreachable: storage: bucket doesn't exist: googleapi: Error 404: The specified bucket does not exist., notFound)
+--- PASS: TestRealCloudWitnessBucketAvailabilityDistinction (4.92s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/gcswitness	6.804s

@@ -1,0 +1,10 @@
+{
+  "etag": "BwZZpxJ5PsY=",
+  "includedPermissions": [
+    "storage.buckets.get",
+    "storage.objects.get"
+  ],
+  "name": "projects/emg-ra-ledger-qual-922b972d/roles/raQualVerifierReader",
+  "stage": "GA",
+  "title": "RA qual verifier reader"
+}

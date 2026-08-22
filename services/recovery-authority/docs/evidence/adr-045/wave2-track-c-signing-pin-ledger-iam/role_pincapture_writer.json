@@ -1,0 +1,11 @@
+{
+  "etag": "BwZZpp_Y_yI=",
+  "includedPermissions": [
+    "storage.buckets.get",
+    "storage.objects.create",
+    "storage.objects.get"
+  ],
+  "name": "projects/emg-ra-signing-qual-db77c759/roles/raQualPinCaptureWriter",
+  "stage": "GA",
+  "title": "RA qual pin-capture writer"
+}

@@ -1,0 +1,124 @@
+=== RUN   TestAttackJ_DuplicateDeclareIsIdempotent
+=== PAUSE TestAttackJ_DuplicateDeclareIsIdempotent
+=== RUN   TestAttackK_ConflictingRecordedByFailsClosed
+=== PAUSE TestAttackK_ConflictingRecordedByFailsClosed
+=== RUN   TestAttackI_BackdatingEffectiveTimeFailsClosed
+=== PAUSE TestAttackI_BackdatingEffectiveTimeFailsClosed
+=== RUN   TestAttackL_UnavailableProviderFailsClosed
+=== PAUSE TestAttackL_UnavailableProviderFailsClosed
+=== RUN   TestAttackO_NoAlternateKeyCreatedAfterConflict
+=== PAUSE TestAttackO_NoAlternateKeyCreatedAfterConflict
+=== RUN   TestGCSLedgerExposesNoWritePathBeyondDeclare
+=== PAUSE TestGCSLedgerExposesNoWritePathBeyondDeclare
+=== RUN   TestStatusNotDistrustedWithNoDeclarations
+=== RUN   TestStatusNotDistrustedWithNoDeclarations/MemoryLedger
+=== RUN   TestStatusNotDistrustedWithNoDeclarations/FileLedger
+=== RUN   TestStatusNotDistrustedWithNoDeclarations/GCSLedger
+--- PASS: TestStatusNotDistrustedWithNoDeclarations (0.00s)
+    --- PASS: TestStatusNotDistrustedWithNoDeclarations/MemoryLedger (0.00s)
+    --- PASS: TestStatusNotDistrustedWithNoDeclarations/FileLedger (0.00s)
+    --- PASS: TestStatusNotDistrustedWithNoDeclarations/GCSLedger (0.00s)
+=== RUN   TestStatusBeforeEffectiveTimeRemainsTrusted
+=== RUN   TestStatusBeforeEffectiveTimeRemainsTrusted/MemoryLedger
+=== RUN   TestStatusBeforeEffectiveTimeRemainsTrusted/FileLedger
+=== RUN   TestStatusBeforeEffectiveTimeRemainsTrusted/GCSLedger
+--- PASS: TestStatusBeforeEffectiveTimeRemainsTrusted (0.02s)
+    --- PASS: TestStatusBeforeEffectiveTimeRemainsTrusted/MemoryLedger (0.00s)
+    --- PASS: TestStatusBeforeEffectiveTimeRemainsTrusted/FileLedger (0.02s)
+    --- PASS: TestStatusBeforeEffectiveTimeRemainsTrusted/GCSLedger (0.00s)
+=== RUN   TestStatusAtOrAfterEffectiveTimeRequiresManualReview
+=== RUN   TestStatusAtOrAfterEffectiveTimeRequiresManualReview/MemoryLedger
+=== RUN   TestStatusAtOrAfterEffectiveTimeRequiresManualReview/FileLedger
+=== RUN   TestStatusAtOrAfterEffectiveTimeRequiresManualReview/GCSLedger
+--- PASS: TestStatusAtOrAfterEffectiveTimeRequiresManualReview (0.01s)
+    --- PASS: TestStatusAtOrAfterEffectiveTimeRequiresManualReview/MemoryLedger (0.00s)
+    --- PASS: TestStatusAtOrAfterEffectiveTimeRequiresManualReview/FileLedger (0.01s)
+    --- PASS: TestStatusAtOrAfterEffectiveTimeRequiresManualReview/GCSLedger (0.00s)
+=== RUN   TestStatusIsSubjectScoped
+=== RUN   TestStatusIsSubjectScoped/MemoryLedger
+=== RUN   TestStatusIsSubjectScoped/FileLedger
+=== RUN   TestStatusIsSubjectScoped/GCSLedger
+--- PASS: TestStatusIsSubjectScoped (0.02s)
+    --- PASS: TestStatusIsSubjectScoped/MemoryLedger (0.00s)
+    --- PASS: TestStatusIsSubjectScoped/FileLedger (0.01s)
+    --- PASS: TestStatusIsSubjectScoped/GCSLedger (0.00s)
+=== RUN   TestDeclareRejectsIncompleteRecord
+=== RUN   TestDeclareRejectsIncompleteRecord/MemoryLedger
+=== RUN   TestDeclareRejectsIncompleteRecord/FileLedger
+=== RUN   TestDeclareRejectsIncompleteRecord/GCSLedger
+--- PASS: TestDeclareRejectsIncompleteRecord (0.00s)
+    --- PASS: TestDeclareRejectsIncompleteRecord/MemoryLedger (0.00s)
+    --- PASS: TestDeclareRejectsIncompleteRecord/FileLedger (0.00s)
+    --- PASS: TestDeclareRejectsIncompleteRecord/GCSLedger (0.00s)
+=== RUN   TestFileLedgerDetectsTamperedRecord
+--- PASS: TestFileLedgerDetectsTamperedRecord (0.01s)
+=== RUN   TestFileLedgerPersistsAcrossReopen
+--- PASS: TestFileLedgerPersistsAcrossReopen (0.01s)
+=== RUN   TestEvaluateStatusMultipleDeclarationsUsesEarliestApplicable
+--- PASS: TestEvaluateStatusMultipleDeclarationsUsesEarliestApplicable (0.00s)
+=== RUN   TestAttackA_ExactNanosecondRetryIsIdempotent
+--- PASS: TestAttackA_ExactNanosecondRetryIsIdempotent (0.00s)
+=== RUN   TestAttackB_SameSecondDifferentNanosecondsConflicts
+--- PASS: TestAttackB_SameSecondDifferentNanosecondsConflicts (0.00s)
+=== RUN   TestDifferentSecondsConflicts
+--- PASS: TestDifferentSecondsConflicts (0.00s)
+=== RUN   TestAttackE_SameNanosecondTimeDifferentRecordedByConflicts
+--- PASS: TestAttackE_SameNanosecondTimeDifferentRecordedByConflicts (0.00s)
+=== RUN   TestAttackF_NonIdentityFieldsMayDifferAtNanosecondPrecision
+--- PASS: TestAttackF_NonIdentityFieldsMayDifferAtNanosecondPrecision (0.00s)
+=== RUN   TestAttackC_TimezoneRepresentationDoesNotAffectIdentity
+--- PASS: TestAttackC_TimezoneRepresentationDoesNotAffectIdentity (0.00s)
+=== RUN   TestRoundTripPreservesNanosecondPrecision
+=== RUN   TestRoundTripPreservesNanosecondPrecision/GCSLedger
+=== RUN   TestRoundTripPreservesNanosecondPrecision/FileLedger
+--- PASS: TestRoundTripPreservesNanosecondPrecision (0.01s)
+    --- PASS: TestRoundTripPreservesNanosecondPrecision/GCSLedger (0.00s)
+    --- PASS: TestRoundTripPreservesNanosecondPrecision/FileLedger (0.01s)
+=== RUN   TestAttackG_MalformedPersistedTimestampFailsClosed
+    precision_test.go:272: EVIDENCE: legacy/malformed record correctly failed closed: stored record has a malformed effective_time_rfc3339: parsing time "" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "" as "2006"
+    precision_test.go:279: status value is StatusNotDistrusted but err is non-nil -- caller MUST check err first, exactly as ADR-045 §7 requires
+--- PASS: TestAttackG_MalformedPersistedTimestampFailsClosed (0.00s)
+=== RUN   TestAttackD_NanosecondBackdatingFailsClosed
+=== RUN   TestAttackD_NanosecondBackdatingFailsClosed/GCSLedger
+--- PASS: TestAttackD_NanosecondBackdatingFailsClosed (0.00s)
+    --- PASS: TestAttackD_NanosecondBackdatingFailsClosed/GCSLedger (0.00s)
+=== RUN   TestRealCloudCompromiseLedgerQualification
+    realcloud_ledger_test.go:111: EVIDENCE: item 5 -- real-cloud read-back preserved exact nanosecond precision: stored=281890000 ns, read-back=281890000 ns
+    realcloud_ledger_test.go:185: expected Status against a nonexistent bucket to fail closed with a non-nil error
+--- FAIL: TestRealCloudCompromiseLedgerQualification (14.27s)
+=== RUN   TestCompromiseLedgerHasNoSigningCapability
+=== PAUSE TestCompromiseLedgerHasNoSigningCapability
+=== RUN   TestCompromiseLedgerHasNoMutationMethod
+=== PAUSE TestCompromiseLedgerHasNoMutationMethod
+=== RUN   TestRealCloudCompromiseLedgerVerifierIntegration
+    realcloud_ledger_verifier_integration_test.go:166: EVIDENCE: full real pipeline (KMS sign -> pin -> ledger -> kmsverifier) -- pre-distrust signature verifies (item 11), post-distrust identical signature routed to manual review (item 10)
+--- PASS: TestRealCloudCompromiseLedgerVerifierIntegration (10.59s)
+=== CONT  TestAttackO_NoAlternateKeyCreatedAfterConflict
+=== CONT  TestAttackJ_DuplicateDeclareIsIdempotent
+=== CONT  TestAttackI_BackdatingEffectiveTimeFailsClosed
+=== CONT  TestCompromiseLedgerHasNoSigningCapability
+=== CONT  TestCompromiseLedgerHasNoMutationMethod
+--- PASS: TestAttackO_NoAlternateKeyCreatedAfterConflict (0.00s)
+--- PASS: TestAttackJ_DuplicateDeclareIsIdempotent (0.00s)
+=== CONT  TestAttackL_UnavailableProviderFailsClosed
+=== RUN   TestAttackI_BackdatingEffectiveTimeFailsClosed/earlier
+=== CONT  TestGCSLedgerExposesNoWritePathBeyondDeclare
+=== CONT  TestAttackK_ConflictingRecordedByFailsClosed
+--- PASS: TestGCSLedgerExposesNoWritePathBeyondDeclare (0.00s)
+=== PAUSE TestAttackI_BackdatingEffectiveTimeFailsClosed/earlier
+=== RUN   TestAttackI_BackdatingEffectiveTimeFailsClosed/later
+=== PAUSE TestAttackI_BackdatingEffectiveTimeFailsClosed/later
+--- PASS: TestAttackK_ConflictingRecordedByFailsClosed (0.00s)
+=== CONT  TestAttackI_BackdatingEffectiveTimeFailsClosed/earlier
+=== CONT  TestAttackI_BackdatingEffectiveTimeFailsClosed/later
+=== NAME  TestAttackL_UnavailableProviderFailsClosed
+    gcs_ledger_test.go:139: status value is StatusNotDistrusted but err is non-nil -- caller MUST check err first, exactly as ADR-045 §7 requires
+--- PASS: TestAttackI_BackdatingEffectiveTimeFailsClosed (0.00s)
+    --- PASS: TestAttackI_BackdatingEffectiveTimeFailsClosed/later (0.00s)
+    --- PASS: TestAttackI_BackdatingEffectiveTimeFailsClosed/earlier (0.00s)
+--- PASS: TestAttackL_UnavailableProviderFailsClosed (0.00s)
+--- PASS: TestCompromiseLedgerHasNoMutationMethod (0.00s)
+--- PASS: TestCompromiseLedgerHasNoSigningCapability (0.00s)
+FAIL
+FAIL	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/compromiseledger	26.750s
+FAIL

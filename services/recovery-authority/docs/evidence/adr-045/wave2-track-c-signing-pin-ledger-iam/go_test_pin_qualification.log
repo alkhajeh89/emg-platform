@@ -1,0 +1,5 @@
+=== RUN   TestRealCloudPublicKeyPinningQualification
+    realcloud_pin_test.go:189: EVIDENCE: SigningKeyID="projects/emg-ra-signing-qual-db77c759/locations/us-central1/keyRings/ra-signing-qual-ring/cryptoKeys/ra-signing-qual-key/cryptoKeyVersions/1" pinned, idempotent duplicate accepted, conflicting duplicate rejected (ErrPinConflict), no overwrite occurred, read-back fingerprint matches
+--- PASS: TestRealCloudPublicKeyPinningQualification (10.02s)
+PASS
+ok  	github.com/alkhajeh89/emg-platform/services/recovery-authority/internal/authority/keypinning	11.844s
