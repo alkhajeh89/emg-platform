@@ -24,7 +24,8 @@
         "spanner.databases.get",
         "spanner.instances.get",
         "storage.objects.create",
-        "storage.objects.get"
+        "storage.objects.get",
+        "storage.buckets.get"
       ],
       "forbidden_permissions": [
         "spanner.databases.updateDdl",
@@ -63,7 +64,7 @@
       "credential_model": "Workload Identity Federation (e.g. GKE Workload Identity) bound to the Recovery Authority runtime workload only -- no static service-account key file, ever (ADR-044 §15, ADR-045 §5).",
       "rotation_responsibility": "No credential material to rotate under Workload Identity Federation. IAM binding changes for this principal are the authority/witness administrative domain's responsibility (ADR-044 §15), reviewed independently of any signing-domain (§domain=signing) change (ADR-045 §4 property 2).",
       "implementation_status": "grounded_in_landed_code",
-      "notes": "roles/spanner.databaseUser is deliberately NOT used: independently re-verified against current official Cloud Spanner IAM documentation, that predefined role also bundles spanner.databases.updateDdl and spanner.databases.getDdl (schema mutation/read capability) alongside its data-plane permissions -- granting it would give this runtime principal DDL capability ADR-044 §15 reserves for a separate bootstrap/retention-policy administrator. This manifest therefore lists the exact custom-role permission set instead. Session/transaction orchestration above the raw Commit call (PREPARE, reads) is not yet implemented in committed code (ADR-044 §17 item 3, S5) -- the permission set above anticipates the full data-plane footprint that orchestration will need, derived from ADR-044 §5's architecture, not from a predefined role. DISCLOSED MODELING LIMITATION (P1 remediation, this task): this manifest's schema binds required_permissions as one flat list per principal, without pairing each permission to the specific resource_scope entry it applies to. In real IAM (bound per-resource, never per-principal-globally), this principal's storage.objects.create grant MUST be applied ONLY to the witness bucket ({authority_project}/{witness_bucket}) -- it must never be granted on the pin-store or compromise-ledger buckets, where this principal requires (and this manifest intends) storage.objects.get only, matching keypinning.GCSStore/compromiseledger.GCSLedger's read-only call shape when invoked from kmsverifier. This exact real-IAM per-resource distinction is a required provisioning-time precondition (see provisioning/contract.json), not something this flat manifest schema can itself enforce or machine-test -- recorded here rather than silently assumed, per this repository's established practice of disclosing rather than hiding known limitations (see iam/README.md's Attack K/L precedent). A future, separately-scoped schema change could pair permissions to specific resource_scope entries if this proves insufficient in practice."
+      "notes": "roles/spanner.databaseUser is deliberately NOT used: independently re-verified against current official Cloud Spanner IAM documentation, that predefined role also bundles spanner.databases.updateDdl and spanner.databases.getDdl (schema mutation/read capability) alongside its data-plane permissions -- granting it would give this runtime principal DDL capability ADR-044 §15 reserves for a separate bootstrap/retention-policy administrator. This manifest therefore lists the exact custom-role permission set instead. Session/transaction orchestration above the raw Commit call (PREPARE, reads) is not yet implemented in committed code (ADR-044 §17 item 3, S5) -- the permission set above anticipates the full data-plane footprint that orchestration will need, derived from ADR-044 §5's architecture, not from a predefined role. DISCLOSED MODELING LIMITATION (P1 remediation, this task): this manifest's schema binds required_permissions as one flat list per principal, without pairing each permission to the specific resource_scope entry it applies to. In real IAM (bound per-resource, never per-principal-globally), this principal's storage.objects.create grant MUST be applied ONLY to the witness bucket ({authority_project}/{witness_bucket}) -- it must never be granted on the pin-store or compromise-ledger buckets, where this principal requires (and this manifest intends) storage.objects.get only, matching keypinning.GCSStore/compromiseledger.GCSLedger's read-only call shape when invoked from kmsverifier. This exact real-IAM per-resource distinction is a required provisioning-time precondition (see provisioning/contract.json), not something this flat manifest schema can itself enforce or machine-test -- recorded here rather than silently assumed, per this repository's established practice of disclosing rather than hiding known limitations (see iam/README.md's Attack K/L precedent). A future, separately-scoped schema change could pair permissions to specific resource_scope entries if this proves insufficient in practice. storage.buckets.get (added: P0 remediation, Wave 2 Track C real-cloud qualification) grounds gcswitness.Adapter.confirmBucketExists, called whenever Exists/ReadExact observes cloud.google.com/go/storage's ErrObjectNotExist sentinel -- that sentinel is identical whether the specific object is absent or the containing bucket itself does not exist, so object-absence can only be safely concluded after an independent BucketHandle.Attrs check, which requires this permission. Real-cloud IAM qualification (impersonating this exact principal, narrowly scoped, against real GCP) confirmed a correctly-scoped read-only principal without storage.buckets.get would otherwise receive a spurious 'bucket unavailable' error on the ordinary, frequent case of a genuinely absent object -- this permission is therefore required, not merely convenient. It does not grant storage.buckets.getIamPolicy or any other bucket-administration permission, all of which remain forbidden below."
     },
     {
       "id": "recovery-signing",
@@ -118,7 +119,8 @@
         "cloudkms.cryptoKeyVersions.get",
         "cloudkms.cryptoKeyVersions.viewPublicKey",
         "storage.objects.create",
-        "storage.objects.get"
+        "storage.objects.get",
+        "storage.buckets.get"
       ],
       "forbidden_permissions": [
         "cloudkms.cryptoKeyVersions.useToSign",
@@ -149,7 +151,7 @@
       "credential_model": "Workload Identity Federation, signing-domain, a DISTINCT principal from recovery-signing -- deliberately never sharing an identity, so a compromise of one never yields the other's capability (cloudkms.cryptoKeyVersions.viewPublicKey vs. .useToSign is Cloud KMS's own documented IAM permission separation).",
       "rotation_responsibility": "Signing-domain administrators; invoked only within the §7C governed rotation procedure, not standing runtime access.",
       "implementation_status": "grounded_in_landed_code",
-      "notes": "cloudkms.cryptoKeyVersions.list is deliberately excluded even though roles/cloudkms.viewer bundles it -- keypinning.CaptureFromKMS always names one exact CryptoKeyVersion and never enumerates a CryptoKey's versions, so list is unused capability, not merely inconvenient. storage.objects.create/get (added: P1 remediation, this task) ground keypinning.GCSStore's real capability need -- CreateExactIfAbsent (create) and the read-back-on-conflict integrity check inside GCSStore.Pin (get). storage.objects.update/delete/list and every storage.buckets.* permission remain forbidden: GCSStore's own Go code never calls them (gcswitness's own boundary_test.go independently enforces this at the source level), and Bucket Lock retention/administration on the pin bucket is a separate, rare governance action, never this principal's standing capability, exactly like the witness bucket's own retention-administration exclusion."
+      "notes": "cloudkms.cryptoKeyVersions.list is deliberately excluded even though roles/cloudkms.viewer bundles it -- keypinning.CaptureFromKMS always names one exact CryptoKeyVersion and never enumerates a CryptoKey's versions, so list is unused capability, not merely inconvenient. storage.objects.create/get (added: P1 remediation, this task) ground keypinning.GCSStore's real capability need -- CreateExactIfAbsent (create) and the read-back-on-conflict integrity check inside GCSStore.Pin (get). storage.objects.update/delete/list remain forbidden: GCSStore's own Go code never calls them (gcswitness's own boundary_test.go independently enforces this at the source level), and Bucket Lock retention/administration on the pin bucket is a separate, rare governance action, never this principal's standing capability, exactly like the witness bucket's own retention-administration exclusion. storage.buckets.get (added: P0 remediation, Wave 2 Track C) is the one bucket-level permission now required, not merely convenient -- see recovery-authority-runtime's notes field for the full explanation (gcswitness.Adapter.confirmBucketExists, discovered via real-cloud IAM qualification of this exact principal). storage.buckets.getIamPolicy and every other storage.buckets.* administrative permission remain forbidden."
     },
     {
       "id": "compromise-ledger-writer",
@@ -161,7 +163,8 @@
       ],
       "required_permissions": [
         "storage.objects.create",
-        "storage.objects.get"
+        "storage.objects.get",
+        "storage.buckets.get"
       ],
       "forbidden_permissions": [
         "cloudkms.cryptoKeyVersions.useToSign",
@@ -185,7 +188,7 @@
       "credential_model": "Workload Identity Federation, in a THIRD administrative domain (project {compromise_ledger_project}) distinct from both {authority_project} and {signing_project} -- ADR-045 §7 property 2 requires this ledger be administratively independent of, and unreachable by, ordinary signing-domain administration, and symmetrically unreachable by authority/witness-domain administration (an authority administrator who could write here could fabricate a false 'not distrusted' history for signing material they do not otherwise control). Realizing this as a genuinely separate project (rather than a bucket inside either existing domain) is the deliberate, minimal design choice this task's P1 remediation selects -- see provisioning/README.md for the placement rationale shared with the signing-domain decision.",
       "rotation_responsibility": "Compromise-ledger domain administrators -- a THIRD set of human approvers, non-overlapping with both authority/witness and signing-domain administrators (see iam/README.md's administrative-independence table).",
       "implementation_status": "grounded_in_landed_code",
-      "notes": "storage.objects.create/get ground compromiseledger.GCSLedger's real capability need (CreateExactIfAbsent for Declare, ReadExact/Exists for Status's own read-back). storage.objects.update/delete remain forbidden -- GCSLedger's Go code never calls them (compromiseledger's own boundary_test.go, TestCompromiseLedgerHasNoMutationMethod, independently enforces the absence of any such method at the source level), and one-record-per-subject/create-if-absent-only is what makes 'append-only, no mutation of prior records' (ADR-045 §7) a structural property of this principal's exact permission set, not merely a documented intention."
+      "notes": "storage.objects.create/get ground compromiseledger.GCSLedger's real capability need (CreateExactIfAbsent for Declare, ReadExact/Exists for Status's own read-back). storage.objects.update/delete remain forbidden -- GCSLedger's Go code never calls them (compromiseledger's own boundary_test.go, TestCompromiseLedgerHasNoMutationMethod, independently enforces the absence of any such method at the source level), and one-record-per-subject/create-if-absent-only is what makes 'append-only, no mutation of prior records' (ADR-045 §7) a structural property of this principal's exact permission set, not merely a documented intention. storage.buckets.get (added: P0 remediation, Wave 2 Track C) is required, not merely convenient -- see recovery-authority-runtime's notes field for the full explanation (gcswitness.Adapter.confirmBucketExists, discovered via real-cloud IAM qualification of this exact principal's real-cloud analogue); storage.buckets.getIamPolicy and every other bucket-administration permission remain forbidden."
     },
     {
       "id": "recovery-verification-read",
@@ -207,7 +210,8 @@
         "spanner.databases.select",
         "spanner.databases.get",
         "spanner.instances.get",
-        "storage.objects.get"
+        "storage.objects.get",
+        "storage.buckets.get"
       ],
       "forbidden_permissions": [
         "spanner.databases.write",
@@ -227,7 +231,7 @@
       "credential_model": "Workload Identity Federation, authority/witness domain.",
       "rotation_responsibility": "Authority/witness domain administrators.",
       "implementation_status": "boundary_only_not_yet_implemented",
-      "notes": "No dedicated production Go entry point exists yet that performs these reads under a distinct runtime identity (the only current read paths are test/emulator-only, e.g. conformance/spanneradapter.ReadAuthorityHead). This principal's permission set is derived from the accepted S8 runbook's documented read-only procedure, not from landed runtime code, and is recorded so a future read entry point (S5+) is built against an already-reviewed least-privilege boundary rather than inheriting recovery-authority-runtime's write capability by convenience."
+      "notes": "No dedicated production Go entry point exists yet that performs these reads under a distinct runtime identity (the only current read paths are test/emulator-only, e.g. conformance/spanneradapter.ReadAuthorityHead). This principal's permission set is derived from the accepted S8 runbook's documented read-only procedure, not from landed runtime code, and is recorded so a future read entry point (S5+) is built against an already-reviewed least-privilege boundary rather than inheriting recovery-authority-runtime's write capability by convenience. storage.buckets.get (added: P0 remediation, Wave 2 Track C) is required, not merely convenient, for the same reason as recovery-authority-runtime's identical addition -- see that principal's notes field."
     },
     {
       "id": "recovery-bootstrap-deployment",
@@ -249,7 +253,8 @@
         "spanner.databases.get",
         "spanner.instances.get",
         "storage.objects.create",
-        "storage.objects.get"
+        "storage.objects.get",
+        "storage.buckets.get"
       ],
       "forbidden_permissions": [
         "spanner.databases.updateDdl",
@@ -288,7 +293,7 @@
       "credential_model": "Workload Identity Federation bound to a DISTINCT, temporary bootstrap workload identity -- never the same identity as recovery-authority-runtime's standing binding, and no static service-account key. Provisioned only for the duration of one genesis execution window and revoked immediately afterward (S6 Phase 2: 'no permanent bootstrap privilege retained by runtime identities'). See TestOrdinaryRuntimeBinariesNeverImportBootstrap (bootstrap package) for the corresponding Go-level structural guarantee that no ordinary runtime binary can reach this principal's capability even if it were, mistakenly, granted this binding.",
       "rotation_responsibility": "Authority/witness domain administrators provision and revoke this binding as a one-time, audited, dual-control-approved action (bootstrap.Approval -- two independent approvers, S6 Phase 2), never an ongoing rotation, because there is no standing grant to rotate.",
       "implementation_status": "grounded_in_landed_code",
-      "notes": "Permission set derived directly from S6's internal/authority/bootstrap package: GenesisSpannerClient (CreateSession + Commit, matching rotationcommit.RawCommitClient's own frozen boundary) and Dependencies.Witness (gcswitness.ImmutableWitness: CreateExactIfAbsent, ReadExact, Exists). This is narrower than recovery-authority-runtime's set: it omits beginReadOnlyTransaction/read/select, since bootstrap never performs a separate Spanner read (its idempotency check reads the GCS witness object, never authority_head, per S6 Phase 9's 'ambiguous authority state never resolved by later Spanner read'). This manifest records the intended IAM shape and its exclusions; it does not itself provision, bind, or revoke any real GCP principal (see provisioning/contract.json for the ordering this binding fits into, and README.md's 'Why this is JSON, not Terraform')."
+      "notes": "Permission set derived directly from S6's internal/authority/bootstrap package: GenesisSpannerClient (CreateSession + Commit, matching rotationcommit.RawCommitClient's own frozen boundary) and Dependencies.Witness (gcswitness.ImmutableWitness: CreateExactIfAbsent, ReadExact, Exists). This is narrower than recovery-authority-runtime's set: it omits beginReadOnlyTransaction/read/select, since bootstrap never performs a separate Spanner read (its idempotency check reads the GCS witness object, never authority_head, per S6 Phase 9's 'ambiguous authority state never resolved by later Spanner read'). This manifest records the intended IAM shape and its exclusions; it does not itself provision, bind, or revoke any real GCP principal (see provisioning/contract.json for the ordering this binding fits into, and README.md's 'Why this is JSON, not Terraform'). storage.buckets.get (added: P0 remediation, Wave 2 Track C) is required, not merely convenient, for the same reason as recovery-authority-runtime's identical addition -- see that principal's notes field."
     }
   ]
 }

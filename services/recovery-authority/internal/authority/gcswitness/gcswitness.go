@@ -244,6 +244,34 @@ func isHardFailure(err error) bool {
 	return false
 }
 
+// confirmBucketExists independently verifies, via the bucket resource
+// endpoint (BucketHandle.Attrs), that this Adapter's bucket genuinely
+// exists and is reachable. It exists solely to resolve one specific
+// ambiguity the object resource endpoint cannot: cloud.google.com/go/storage
+// returns the identical storage.ErrObjectNotExist sentinel (HTTP 404) from
+// an object-level call (ObjectHandle.Attrs / NewReader) whether the named
+// object is genuinely absent from an existing bucket, OR the bucket itself
+// does not exist at all -- confirmed empirically against real GCS (Wave 2
+// Track C real-cloud qualification) and consistent with the SDK's own
+// design: storage.ErrBucketNotExist is documented as the bucket-resource
+// endpoint's distinct sentinel, never returned by an object-resource call.
+// A missing/unreachable bucket must never be silently reported as "object
+// absent" -- ADR-044/045's fail-closed model requires provider
+// unavailability to surface as an error, never be reinterpreted as an
+// empty governance state (compromiseledger's compromise ledger, keypinning's
+// pin store, and the ADR-044 witness bucket all depend on this
+// distinction). Any non-nil result here -- bucket genuinely missing,
+// permission denied on the bucket itself, or a transient failure -- is
+// treated identically: this call cannot confirm object absence, so the
+// caller must fail closed rather than proceed as if the object were simply
+// not yet created.
+func (a *Adapter) confirmBucketExists(ctx context.Context) error {
+	if _, err := a.bucket.Attrs(ctx); err != nil {
+		return fmt.Errorf("gcswitness: bucket unavailable or unreachable: %w", err)
+	}
+	return nil
+}
+
 // ReadExact returns the exact bytes stored at key. It addresses only the
 // exact deterministic key given -- it never uses LIST for correctness. It
 // fails closed on a partial or corrupt read: the SDK's own CRC32C
@@ -253,6 +281,9 @@ func (a *Adapter) ReadExact(ctx context.Context, key string) ([]byte, error) {
 	reader, err := a.bucket.Object(key).NewReader(ctx)
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotExist) {
+			if bucketErr := a.confirmBucketExists(ctx); bucketErr != nil {
+				return nil, bucketErr
+			}
 			return nil, fmt.Errorf("gcswitness: %w", ErrNotFound)
 		}
 		return nil, fmt.Errorf("gcswitness: open reader: %w", err)
@@ -281,13 +312,18 @@ func (a *Adapter) ReadExact(ctx context.Context, key string) ([]byte, error) {
 }
 
 // Exists reports whether an object is present at key, without exposing its
-// content.
+// content. A missing/unreachable bucket is never reported as (false, nil)
+// -- see confirmBucketExists's doc comment for why that specific ambiguity
+// requires an independent bucket-resource check.
 func (a *Adapter) Exists(ctx context.Context, key string) (bool, error) {
 	_, err := a.bucket.Object(key).Attrs(ctx)
 	if err == nil {
 		return true, nil
 	}
 	if errors.Is(err, storage.ErrObjectNotExist) {
+		if bucketErr := a.confirmBucketExists(ctx); bucketErr != nil {
+			return false, bucketErr
+		}
 		return false, nil
 	}
 	return false, fmt.Errorf("gcswitness: exists: %w", err)

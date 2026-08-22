@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -260,4 +261,82 @@ func TestAuthorityImportBoundary(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestNoListMethodUsage proves this package never calls a LIST-shaped
+// method (Objects, Buckets, or anything named/prefixed List*) anywhere in
+// its own non-test source. The bucket-availability fix (confirmBucketExists,
+// gcswitness.go) resolves the bucket-vs-object-404 ambiguity via a single,
+// exact BucketHandle.Attrs(ctx) call specifically because that is the
+// narrowest possible provider call that answers "does this exact bucket
+// exist" -- never LIST, which this package has always forbidden for
+// correctness reasons unrelated to this fix (LIST results are eventually
+// consistent and would reintroduce exactly the kind of ambiguity
+// create-if-absent/exact-key reads are designed to avoid).
+func TestNoListMethodUsage(t *testing.T) {
+	t.Parallel()
+	for _, path := range nonTestGoFiles(t) {
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if sel.Sel.Name == "Objects" || sel.Sel.Name == "Buckets" || strings.HasPrefix(sel.Sel.Name, "List") {
+				t.Errorf("forbidden LIST-shaped method reference %q in %s", sel.Sel.Name, path)
+			}
+			return true
+		})
+	}
+}
+
+// TestBucketAvailabilityClassificationNeverInspectsErrorText proves the
+// bucket-vs-object-404 distinction (confirmBucketExists and its two call
+// sites in Exists/ReadExact) is decided exclusively via typed error
+// classification (errors.Is/errors.As against SDK sentinels), never by
+// inspecting an error's human-readable message text (e.g.
+// strings.Contains(err.Error(), ...)) -- provider error message wording is
+// not a documented, stable API contract, and classifying on it would
+// reintroduce exactly the kind of unreliable, string-dependent behavior
+// the P0 fix was written to avoid.
+func TestBucketAvailabilityClassificationNeverInspectsErrorText(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile("gcswitness.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "gcswitness.go", data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if sel.Sel.Name == "Contains" || sel.Sel.Name == "HasPrefix" || sel.Sel.Name == "HasSuffix" {
+			// Confirm this isn't operating on the result of err.Error() --
+			// a coarse but sufficient check given this package's small size
+			// and the absence of any legitimate reason to string-match an
+			// error message anywhere in it.
+			for _, arg := range call.Args {
+				argCall, ok := arg.(*ast.CallExpr)
+				if !ok {
+					continue
+				}
+				argSel, ok := argCall.Fun.(*ast.SelectorExpr)
+				if ok && argSel.Sel.Name == "Error" {
+					t.Errorf("forbidden error-message string inspection (%s on the result of .Error()) in gcswitness.go", sel.Sel.Name)
+				}
+			}
+		}
+		return true
+	})
 }
