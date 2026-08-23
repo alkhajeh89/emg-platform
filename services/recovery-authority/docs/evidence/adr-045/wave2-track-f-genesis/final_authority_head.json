@@ -1,0 +1,99 @@
+{
+  "metadata": {
+    "rowType": {
+      "fields": [
+        {
+          "name": "environment_id",
+          "type": {
+            "code": "STRING"
+          }
+        },
+        {
+          "name": "resource_incarnation_id",
+          "type": {
+            "code": "STRING"
+          }
+        },
+        {
+          "name": "authority_epoch",
+          "type": {
+            "code": "STRING"
+          }
+        },
+        {
+          "name": "revision_number",
+          "type": {
+            "code": "INT64"
+          }
+        },
+        {
+          "name": "operation_id",
+          "type": {
+            "code": "STRING"
+          }
+        },
+        {
+          "name": "state_digest",
+          "type": {
+            "code": "BYTES"
+          }
+        },
+        {
+          "name": "candidate_digest",
+          "type": {
+            "code": "BYTES"
+          }
+        },
+        {
+          "name": "predecessor_checkpoint_digest",
+          "type": {
+            "code": "BYTES"
+          }
+        },
+        {
+          "name": "commit_timestamp",
+          "type": {
+            "code": "TIMESTAMP"
+          }
+        }
+      ]
+    },
+    "transaction": {},
+    "undeclaredParameters": {}
+  },
+  "rows": [
+    [
+      "track-f-genesis-qual",
+      "01a030b9-0363-7101-8791-b85e1bb8234e",
+      "01a030b9-0363-70ee-81ef-7c1064c78c1b",
+      "1",
+      "01a030b9-0363-70f2-a5dc-9f55949b5a7c",
+      "2RkHRR81PbgeNFtlbyNWLITLZKHIIEQev6ROqLuavJY=",
+      "SVzCqyxx/fw/dCXlSSgP4W6JWPkwhxRREQ9HlXHGb4s=",
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "2026-08-23T22:30:47.885553Z"
+    ],
+    [
+      "track-f-genesis-qual",
+      "01a030c8-53d5-7616-a7c1-4163afedf2e4",
+      "01a030c8-53d5-7603-b46d-fb223794fbf9",
+      "1",
+      "01a030c8-53d5-7606-b1f3-7680f5d90d50",
+      "+sRDC0FKux8X/hWy0jIOyYkTuw8F9wZAVNq5EJWwpwM=",
+      "vON1eN43OOU5FQQruTNzsmLTyxHVKUY0UZHxB76AAg0=",
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "2026-08-23T22:40:57.480843Z"
+    ],
+    [
+      "track-f-genesis-qual",
+      "01a030c9-950d-79a0-8be0-712c24536a8a",
+      "01a030c9-950d-798d-88c6-6c181646f560",
+      "1",
+      "01a030c9-950d-7991-9883-33f246061f03",
+      "d4qChtw6GIRRb9zg2wSfzDQr2kSAAetmvB/TSavKjoA=",
+      "WZZnLugRnXiBMKSuYLRH9qDuaMto63Afq7jgMI5Rr0Y=",
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "2026-08-23T22:45:15.586708Z"
+    ]
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "algorithm": "EC_SIGN_P256_SHA256",
+  "createTime": "2026-08-23T21:45:51.834312366Z",
+  "generateTime": "2026-08-23T21:45:52.744667655Z",
+  "name": "projects/emg-ra-genesis-signer-4185f50f/locations/me-central1/keyRings/ra-genesis-ring/cryptoKeys/ra-genesis-key/cryptoKeyVersions/1",
+  "protectionLevel": "SOFTWARE",
+  "state": "DISABLED"
+}

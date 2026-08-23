@@ -1,0 +1,30 @@
+{
+  "environment_id": "track-f-genesis-qual",
+  "resource_incarnation": "01a030b9-0363-7101-8791-b85e1bb8234e",
+  "authority_epoch": "01a030b9-0363-70ee-81ef-7c1064c78c1b",
+  "operation_id": "01a030b9-0363-70f2-a5dc-9f55949b5a7c",
+  "spanner_database": "projects/emg-platform-staging/instances/ra-genesis-qual/databases/authority",
+  "signing_key_id": "projects/emg-ra-genesis-signer-4185f50f/locations/me-central1/keyRings/ra-genesis-ring/cryptoKeys/ra-genesis-key/cryptoKeyVersions/1",
+  "approved_signing_crypto_key": "projects/emg-ra-genesis-signer-4185f50f/locations/me-central1/keyRings/ra-genesis-ring/cryptoKeys/ra-genesis-key",
+  "witness_key": "genesis/track-f-genesis-qual/01a030b9-0363-7101-8791-b85e1bb8234e/01a030b9-0363-70ee-81ef-7c1064c78c1b/1.json",
+  "approvals": [
+    {
+      "role": "AUTHORITY",
+      "approver_id": "authority-approver@emg-governance.example",
+      "approved_at": "2026-08-23T22:30:45.261069987Z"
+    },
+    {
+      "role": "SIGNING",
+      "approver_id": "signing-approver@emg-governance.example",
+      "approved_at": "2026-08-23T22:30:45.261069987Z"
+    }
+  ],
+  "started_at": "2026-08-23T22:30:45.534628939Z",
+  "completed_at": "2026-08-23T22:30:48.443464831Z",
+  "outcome": "COMPLETED",
+  "commit_classification": "UNAMBIGUOUS_SUCCESS",
+  "witness_create_outcome": "CREATE_SUCCESS",
+  "final_epoch_state": "ACTIVE",
+  "state_digest_hex": "d91907451f353db81e345b656f23562c84cb64a1c820441ebfa44ea8bb9abc96",
+  "evidence_digest_sha256": "OxuYZAvqF2792zeoXrrjanyf45RrrV/X3T4teBIKtaU="
+}

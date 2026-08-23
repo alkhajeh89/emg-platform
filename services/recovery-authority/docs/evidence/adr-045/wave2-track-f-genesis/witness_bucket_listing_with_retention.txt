@@ -1,0 +1,145 @@
+gs://emg-ra-genesis-witness-qual/genesis/:
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/:
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030b9-0363-7101-8791-b85e1bb8234e/:
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030b9-0363-7101-8791-b85e1bb8234e/01a030b9-0363-70ee-81ef-7c1064c78c1b/:
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030b9-0363-7101-8791-b85e1bb8234e/01a030b9-0363-70ee-81ef-7c1064c78c1b/1.json:
+    Creation time:          Sun, 23 Aug 2026 22:30:48 GMT
+    Update time:            Sun, 23 Aug 2026 22:30:48 GMT
+    Storage class:          STANDARD
+    Retention Expiration:   Mon, 24 Aug 2026 22:30:48 GMT
+    Content-Length:         804
+    Content-Type:           text/plain; charset=utf-8
+    Hash (crc32c):          KURw6A==
+    Hash (md5):             LrQQF86N2EXZ5ohy5jK0gw==
+    ETag:                   CJ7o697mt5YDEAE=
+    Generation:             1787524248433694
+    Metageneration:         1
+    ACL:                    [
+  {
+    "entity": "project-owners-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "owners"
+    },
+    "role": "OWNER"
+  },
+  {
+    "entity": "project-editors-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "editors"
+    },
+    "role": "OWNER"
+  },
+  {
+    "entity": "project-viewers-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "viewers"
+    },
+    "role": "READER"
+  },
+  {
+    "email": "ra-genesis-bootstrap@emg-platform-staging.iam.gserviceaccount.com",
+    "entity": "user-ra-genesis-bootstrap@emg-platform-staging.iam.gserviceaccount.com",
+    "role": "OWNER"
+  }
+]
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030c3-2e61-74ed-92ae-18bf50ae770a/:
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030c3-2e61-74ed-92ae-18bf50ae770a/01a030c3-2e61-74de-82d1-d5fa049cfbee/:
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030c3-2e61-74ed-92ae-18bf50ae770a/01a030c3-2e61-74de-82d1-d5fa049cfbee/1.json:
+    Creation time:          Sun, 23 Aug 2026 22:39:25 GMT
+    Update time:            Sun, 23 Aug 2026 22:39:25 GMT
+    Storage class:          STANDARD
+    Retention Expiration:   Mon, 24 Aug 2026 22:39:25 GMT
+    Content-Length:         71
+    Content-Type:           application/json
+    Hash (crc32c):          Npq8pw==
+    Hash (md5):             jfFYPgTckp/4C/C0Wn+bpA==
+    ETag:                   CJ2A0NXot5YDEAE=
+    Generation:             1787524765974557
+    Metageneration:         1
+    ACL:                    [
+  {
+    "entity": "project-owners-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "owners"
+    },
+    "role": "OWNER"
+  },
+  {
+    "entity": "project-editors-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "editors"
+    },
+    "role": "OWNER"
+  },
+  {
+    "entity": "project-viewers-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "viewers"
+    },
+    "role": "READER"
+  },
+  {
+    "email": "ms.alkhaja@gmail.com",
+    "entity": "user-ms.alkhaja@gmail.com",
+    "role": "OWNER"
+  }
+]
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030c8-53d5-7616-a7c1-4163afedf2e4/:
+
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030c8-53d5-7616-a7c1-4163afedf2e4/01a030c8-53d5-7603-b46d-fb223794fbf9/:
+gs://emg-ra-genesis-witness-qual/genesis/track-f-genesis-qual/01a030c8-53d5-7616-a7c1-4163afedf2e4/01a030c8-53d5-7603-b46d-fb223794fbf9/1.json:
+    Creation time:          Sun, 23 Aug 2026 22:40:58 GMT
+    Update time:            Sun, 23 Aug 2026 22:40:58 GMT
+    Storage class:          STANDARD
+    Retention Expiration:   Mon, 24 Aug 2026 22:40:58 GMT
+    Content-Length:         806
+    Content-Type:           text/plain; charset=utf-8
+    Hash (crc32c):          vf8wdA==
+    Hash (md5):             W3DYETHknD/GrKaXMsAZug==
+    ETag:                   CMaVw4Hpt5YDEAE=
+    Generation:             1787524858038982
+    Metageneration:         1
+    ACL:                    [
+  {
+    "entity": "project-owners-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "owners"
+    },
+    "role": "OWNER"
+  },
+  {
+    "entity": "project-editors-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "editors"
+    },
+    "role": "OWNER"
+  },
+  {
+    "entity": "project-viewers-364669242152",
+    "projectTeam": {
+      "projectNumber": "364669242152",
+      "team": "viewers"
+    },
+    "role": "READER"
+  },
+  {
+    "email": "ra-genesis-bootstrap@emg-platform-staging.iam.gserviceaccount.com",
+    "entity": "user-ra-genesis-bootstrap@emg-platform-staging.iam.gserviceaccount.com",
+    "role": "OWNER"
+  }
+]
+TOTAL: 3 objects, 1681 bytes (1.64 KiB)
