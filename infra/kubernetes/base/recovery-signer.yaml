@@ -23,7 +23,17 @@ spec:
       serviceAccountName: emg-recovery-signer
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 25
-      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      # fsGroup is required, not merely conventional: Kubernetes mounts the
+      # `tls` Secret volume below as root:root regardless of defaultMode's
+      # permission bits, and only fsGroup changes a mounted Secret's group
+      # ownership so a non-root runtime user can read it via the group-read
+      # bit (empirically confirmed against the real emg-staging GKE cluster
+      # during Wave 2 Track E -- without this field, cmd/recovery-signer's
+      # fail-closed TLS startup check never succeeds anywhere, in any real
+      # cluster: "open .../tls.crt: permission denied"). fsGroup: 10001
+      # matches runAsGroup so the file is readable exactly by this
+      # container's own runtime group -- not by any other user or group.
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: recovery-signer
           image: registry.invalid/emg/recovery-signer@sha256:0000000000000000000000000000000000000000000000000000000000000010

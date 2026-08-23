@@ -510,3 +510,231 @@ def test_recovery_signer_network_policy_still_restricted_to_authority_only() -> 
     assert authority_egress["to"] == [
         {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-recovery-signer"}}}
     ]
+
+
+# --- Wave 2 Track E fsGroup fix: mounted Secret volumes must actually be
+# readable by the non-root runtime user, not merely present -------------
+#
+# Real GKE qualification (Wave 2 Track E) proved that Kubernetes mounts a
+# Secret volume as root:root regardless of defaultMode's permission bits:
+# with runAsUser/runAsGroup: 10001 and no fsGroup, cmd/recovery-signer's
+# fail-closed TLS startup check failed on every real cluster with
+# "permission denied" -- this had never been caught because no prior wave
+# had ever deployed these manifests to a real cluster (kubectl kustomize
+# rendering, which the rest of this file exercises, cannot detect a
+# runtime file-permission failure). These tests encode the fix so the
+# defect cannot silently return.
+
+
+def _recovery_signer_deployment(objects: list[dict]) -> dict:
+    return next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Deployment" and obj["metadata"]["name"] == "emg-recovery-signer"
+    )
+
+
+def _recovery_authority_deployment(objects: list[dict]) -> dict:
+    return next(
+        obj
+        for obj in objects
+        if obj["kind"] == "Deployment" and obj["metadata"]["name"] == "emg-recovery-authority"
+    )
+
+
+@pytest.mark.parametrize("objects_fn", [_objects, _staging_objects])
+def test_recovery_signer_fsgroup_matches_runtime_group(objects_fn) -> None:
+    pod = _recovery_signer_deployment(objects_fn())["spec"]["template"]["spec"]
+    security = pod["securityContext"]
+    assert security["runAsNonRoot"] is True
+    assert security["runAsUser"] == 10001
+    assert security["runAsGroup"] == 10001
+    # The load-bearing assertion: without fsGroup, the mounted `tls` Secret
+    # volume below is unreadable by this non-root runtime user on any real
+    # cluster (empirically confirmed against the real emg-staging GKE
+    # cluster during Track E) -- runAsGroup alone does not change a mounted
+    # Secret's on-disk group ownership.
+    assert security["fsGroup"] == 10001
+    assert security["fsGroup"] != 0
+    assert security["runAsUser"] != 0
+    assert security["runAsGroup"] != 0
+
+
+@pytest.mark.parametrize("objects_fn", [_objects, _staging_objects])
+def test_recovery_signer_tls_secret_mode_excludes_world_access(objects_fn) -> None:
+    """No new item 3/4: the TLS Secret volume's defaultMode must keep the
+    'other' permission bits at zero (no world-readable private key) --
+    fsGroup, not a looser defaultMode, is the correct fix for group-read
+    access (see Track E's provider fact-check: fsGroup is honored for
+    Secret volumes on this GKE/Kubernetes version)."""
+    volumes = {
+        v["name"]: v
+        for v in _recovery_signer_deployment(objects_fn())["spec"]["template"]["spec"]["volumes"]
+    }
+    mode = volumes["tls"]["secret"]["defaultMode"]
+    assert mode & 0o007 == 0, "TLS private key Secret must not be world-accessible"
+    assert mode <= 0o440
+
+
+def test_recovery_signer_has_no_chown_workaround() -> None:
+    """The fsGroup fix must not be replaced or supplemented by a
+    privileged init-container chown hack, root execution, or a permissive
+    defaultMode -- fsGroup is the only mechanism used."""
+    deployment = _recovery_signer_deployment(_objects())
+    pod = deployment["spec"]["template"]["spec"]
+    assert "initContainers" not in pod
+    for container in pod["containers"]:
+        command = " ".join(container.get("command", []) + container.get("args", []))
+        assert "chown" not in command
+        assert "chmod" not in command
+        security = container["securityContext"]
+        assert security["allowPrivilegeEscalation"] is False
+        assert security["capabilities"]["drop"] == ["ALL"]
+        assert security["readOnlyRootFilesystem"] is True
+
+
+def test_recovery_authority_does_not_mount_signer_tls_secret() -> None:
+    """Adversarial-matrix item: the authority runtime must never be able
+    to read the signer's private TLS key through its own pod spec."""
+    deployment = _recovery_authority_deployment(_objects())
+    rendered = yaml.safe_dump(deployment)
+    assert "emg-recovery-signer-tls" not in rendered
+
+
+def test_recovery_authority_secret_volumes_have_compatible_fsgroup() -> None:
+    """General invariant, scoped to recovery-authority only: if any
+    current or future overlay gives this deployment a Secret-typed
+    volume (e.g. a private CA bundle for signer TLS verification), its
+    pod must declare an fsGroup compatible with its own runAsGroup, or
+    that mount is unreadable on a real cluster exactly as recovery-signer's
+    was before the Track E fix. Currently the base manifest mounts no
+    Secret here, so this is a forward-looking regression guard, not a
+    claim that such a mount exists today."""
+    pod = _recovery_authority_deployment(_objects())["spec"]["template"]["spec"]
+    secret_volumes = [v for v in pod["volumes"] if "secret" in v]
+    if not secret_volumes:
+        return
+    security = pod["securityContext"]
+    assert security.get("fsGroup") is not None
+    assert security["fsGroup"] == security["runAsGroup"]
+
+
+def test_recovery_signer_and_authority_fsgroup_consistent_across_overlays() -> None:
+    """Item 9: staging and production must render this fix identically --
+    the fsGroup fix is a base-manifest property, not something either
+    overlay patches independently."""
+    for deployment_fn in (_recovery_signer_deployment, _recovery_authority_deployment):
+        staging_security = deployment_fn(_staging_objects())["spec"]["template"]["spec"][
+            "securityContext"
+        ]
+        production_security = deployment_fn(_objects())["spec"]["template"]["spec"][
+            "securityContext"
+        ]
+        assert staging_security == production_security
+
+
+# --- Wave 2 Track E DNS NetworkPolicy fix: kube-dns Service ClusterIP -----
+#
+# Real GKE Dataplane V2 qualification (Wave 2 Track E) proved that a
+# combined namespaceSelector+podSelector destination restriction
+# (kube-system + k8s-app: kube-dns) permits DNS traffic addressed
+# directly to the kube-dns backend pod's own IP but NOT to the kube-dns
+# Service's ClusterIP -- the address every pod's /etc/resolv.conf
+# actually uses. An ipBlock rule for that ClusterIP (any breadth, up to
+# 0.0.0.0/0) was also empirically proven not to work: ipBlock does not
+# match in-cluster-addressed traffic on this cluster. namespaceSelector
+# alone (dropping podSelector) was the only expression that empirically
+# restored real DNS resolution via the ClusterIP. These tests encode
+# that fix and its bounds so it cannot silently regress or expand.
+
+
+def _dns_egress_policy(objects: list[dict]) -> dict:
+    return next(
+        obj
+        for obj in objects
+        if obj["kind"] == "NetworkPolicy"
+        if obj["metadata"]["name"] == "emg-dns-egress"
+    )
+
+
+def test_dns_egress_uses_namespace_selector_for_kube_system() -> None:
+    rule = _dns_egress_policy(_objects())["spec"]["egress"][0]
+    destinations = rule["to"]
+    assert len(destinations) == 1
+    destination = destinations[0]
+    assert destination.get("namespaceSelector", {}).get("matchLabels") == {
+        "kubernetes.io/metadata.name": "kube-system"
+    }
+    # The load-bearing regression: no podSelector alongside the
+    # namespaceSelector. Reintroducing one reproduces the exact defect
+    # this fix corrects (Service-ClusterIP DNS resolution silently
+    # breaking under a real, enforced Dataplane V2 policy).
+    assert "podSelector" not in destination
+
+
+def test_dns_egress_allows_only_dns_ports() -> None:
+    ports = _dns_egress_policy(_objects())["spec"]["egress"][0]["ports"]
+    assert {(port["protocol"], port["port"]) for port in ports} == {("UDP", 53), ("TCP", 53)}
+
+
+def test_dns_egress_has_no_ipblock_or_wildcard_destination() -> None:
+    """The failed remediation attempts (a literal kube-dns ClusterIP
+    ipBlock, and an unrestricted 0.0.0.0/0 diagnostic) must never be
+    committed -- both were empirically proven non-functional on the real
+    cluster, and 0.0.0.0/0 would additionally be a real security
+    regression (arbitrary external DNS egress) if it ever did work."""
+    policy = _dns_egress_policy(_objects())
+    rendered = yaml.safe_dump(policy)
+    assert "ipBlock" not in rendered
+    assert "0.0.0.0/0" not in rendered
+    for destination in policy["spec"]["egress"][0]["to"]:
+        assert "ipBlock" not in destination
+
+
+def test_dns_egress_rule_is_single_and_self_contained() -> None:
+    """No second egress entry (e.g. a leftover ClusterIP-specific rule)
+    was left alongside the namespaceSelector fix."""
+    egress = _dns_egress_policy(_objects())["spec"]["egress"]
+    assert len(egress) == 1
+
+
+def test_dns_egress_does_not_broaden_other_network_policies() -> None:
+    """The DNS fix touches emg-dns-egress only -- every other policy's
+    selectors/rules are unchanged from the already-qualified model."""
+    policies = {
+        obj["metadata"]["name"]: obj for obj in _objects() if obj["kind"] == "NetworkPolicy"
+    }
+    default_deny = policies["emg-default-deny"]["spec"]
+    assert default_deny["podSelector"]["matchLabels"] == {
+        "app.kubernetes.io/part-of": "emg-platform"
+    }
+    assert "ingress" not in default_deny and "egress" not in default_deny
+    dns_policy_spec = policies["emg-dns-egress"]["spec"]
+    assert dns_policy_spec["podSelector"]["matchLabels"] == {
+        "app.kubernetes.io/part-of": "emg-platform"
+    }
+
+
+def test_authority_to_signer_restriction_unchanged_by_dns_fix() -> None:
+    """Item: the authority<->signer boundary is untouched by the DNS
+    remediation -- re-asserts the same invariant as
+    test_recovery_signer_network_policy_still_restricted_to_authority_only
+    to make the DNS-fix commit's blast radius explicit and independently
+    verifiable."""
+    policies = {
+        obj["metadata"]["name"]: obj for obj in _objects() if obj["kind"] == "NetworkPolicy"
+    }
+    signer_ingress = policies["emg-recovery-signer-ingress"]["spec"]["ingress"][0]
+    assert signer_ingress["from"] == [
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-recovery-authority"}}}
+    ]
+    authority_egress = policies["emg-recovery-authority-to-signer-egress"]["spec"]["egress"][0]
+    assert authority_egress["to"] == [
+        {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "emg-recovery-signer"}}}
+    ]
+
+
+def test_dns_egress_consistent_across_staging_and_production() -> None:
+    staging_policy = _dns_egress_policy(_staging_objects())
+    production_policy = _dns_egress_policy(_objects())
+    assert staging_policy["spec"] == production_policy["spec"]

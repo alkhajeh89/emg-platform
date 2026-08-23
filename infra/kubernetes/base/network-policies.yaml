@@ -6,6 +6,31 @@ spec:
     matchLabels: {app.kubernetes.io/part-of: emg-platform}
   policyTypes: [Ingress, Egress]
 ---
+# Wave 2 Track E (real GKE Dataplane V2 qualification against
+# emg-staging): a combined namespaceSelector+podSelector destination
+# restriction (kube-system + k8s-app: kube-dns) empirically permits
+# traffic addressed directly to the kube-dns backend pod's own IP, but
+# NOT traffic addressed to the kube-dns Service's ClusterIP -- which is
+# what every pod's /etc/resolv.conf actually uses, confirmed via a real
+# DNS query (not merely a port probe): resolution via the raw pod IP
+# succeeded, resolution via the ClusterIP timed out, on both UDP and TCP.
+# An ipBlock rule for that same ClusterIP (including the maximally broad
+# 0.0.0.0/0) was also empirically proven not to work: ipBlock rules do
+# not match in-cluster-addressed traffic at all on this cluster/dataplane
+# configuration. namespaceSelector ALONE (without podSelector) was the
+# only expression that empirically restored DNS resolution via the
+# Service ClusterIP for both UDP and TCP, confirmed not to open any
+# non-DNS port (e.g. TCP/443 to the same namespace remained denied).
+# This is reported as an empirically reproduced behavior of the qualified
+# cluster/dataplane configuration, not asserted as universal GKE Dataplane
+# V2 or Cilium behavior. This change knowingly broadens the destination
+# identity boundary from "kube-dns-labelled pods only" to "the kube-system
+# namespace as a whole," strictly on UDP/TCP port 53 -- accepted because
+# the narrower expression is empirically incompatible with Service-VIP
+# DNS resolution under this real, enforced dataplane, while default-deny,
+# namespace confinement, port confinement, and the absence of any
+# arbitrary external DNS egress or hardcoded ClusterIP are all preserved.
+# See services/recovery-authority/docs/evidence/adr-045/wave2-track-e-kubernetes-tls/DNS_NETWORKPOLICY_DEFECT.md.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: emg-dns-egress}
@@ -17,8 +42,6 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: kube-system}
-          podSelector:
-            matchLabels: {k8s-app: kube-dns}
       ports:
         - {protocol: UDP, port: 53}
         - {protocol: TCP, port: 53}
