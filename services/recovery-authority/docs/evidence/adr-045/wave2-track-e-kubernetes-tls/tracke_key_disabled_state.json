@@ -1,0 +1,8 @@
+{
+  "algorithm": "EC_SIGN_P256_SHA256",
+  "createTime": "2026-08-23T19:52:58.384524530Z",
+  "generateTime": "2026-08-23T19:52:58.453226015Z",
+  "name": "projects/emg-ra-signer-k8squal-a970703a/locations/me-central1/keyRings/ra-tracke-ring/cryptoKeys/ra-tracke-key/cryptoKeyVersions/1",
+  "protectionLevel": "SOFTWARE",
+  "state": "DISABLED"
+}

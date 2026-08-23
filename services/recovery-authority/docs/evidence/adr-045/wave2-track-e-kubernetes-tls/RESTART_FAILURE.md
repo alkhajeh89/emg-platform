@@ -1,0 +1,12 @@
+# Restart / Failure Behavior (Phase 11)
+
+| Test | Result |
+|---|---|
+| Signer pod restart (occurred multiple times live, during the wrong-SAN negative test cycle) | Each restart recovered cleanly to `1/1 Running`, re-served the correct certificate once restored via the real ExternalSecret path, and the positive signerrpc path was reconfirmed working after every restart — no state corruption observed |
+| Bad/mismatched TLS cert (server side) | Server itself does not fail to start on a cert/key pair that is merely semantically "wrong" (valid key pair, wrong SAN) — `lifecycle.ServerTLSConfig` only fails closed on a missing/unreadable/malformed/mismatched key pair, which is correct: a syntactically valid but wrong-SAN cert is a content problem the *client* must catch via hostname verification, not something the server can self-diagnose. This is exactly what `TLS_MATRIX.md` item I demonstrates. |
+| Bad CA (client side) | Confirmed fail-closed (`TLS_MATRIX.md` item H) — no retry-into-insecure fallback exists |
+| Signer temporarily unavailable (scaled to 0 replicas) | A concurrent diagnostic call to `/healthz` failed with a bounded, clean timeout (`context deadline exceeded (Client.Timeout exceeded while awaiting headers)`) after the client's own 10s timeout — not a hang, not a crash. No insecure/plaintext fallback was attempted. |
+| Authority fails closed if signer unavailable | Demonstrated by the same test: the client library (`signerrpc.Client`) surfaces a wrapped `ErrRemoteSigner`/timeout error rather than silently succeeding or falling back |
+| Certificate rotation model | Confirmed from source (`lifecycle.ServerTLSConfig`, called once at process startup via `tls.LoadX509KeyPair`): certificates are read only at process startup. This was directly observed operationally during the wrong-SAN test: patching the underlying Secret's content had **no effect** on the already-running pod until it was deleted and recreated. **Documented as an accepted, existing behavior, not a defect** — rotation requires a pod restart/rollout, consistent with the code's own documented design (no live-reload was ever claimed or required). |
+
+No insecure HTTP fallback was observed or is configurable via any default; `RECOVERY_SIGNER_ALLOW_INSECURE`/`RECOVERY_AUTHORITY_ALLOW_INSECURE` both require an explicit `"true"` to disable TLS, and both remain `"false"` throughout this qualification.
