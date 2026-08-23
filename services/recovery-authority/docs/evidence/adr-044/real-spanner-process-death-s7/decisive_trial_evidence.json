@@ -1,0 +1,47 @@
+[
+  {
+    "step": "commit_dispatched",
+    "timestamp": "2026-08-23T23:34:50.429236Z",
+    "detail": "real Commit RPC sent to real Cloud Spanner"
+  },
+  {
+    "step": "commit_succeeded_observed",
+    "timestamp": "2026-08-23T23:34:50.429239Z",
+    "detail": "child printed COMMIT_SUCCEEDED: classification was UnambiguousSuccess from a real positive-timestamp CommitResponse"
+  },
+  {
+    "step": "process_killed",
+    "timestamp": "2026-08-23T23:34:50.429278Z",
+    "detail": "child SIGKILLed immediately upon observing COMMIT_SUCCEEDED; lines observed: [SESSION session=projects/emg-ra-s7-spanner-3400f9e2/instances/s7-processdeath/databases/authority/sessions/AOX_yvS48DD-ge1z8hG8sT-CS23ji7YsZKSCg8N0fWMGiWfaAvk9OJe9FvivQg txn=QU9YX3l2Uy1jTHhVcHNlSTdSaXA1N0hwcmlmSFhHSHpVRm1TandBYVNjWm9wZ3ozWm1jeXQzYw== CALLING_COMMIT COMMIT_SUCCEEDED]"
+  },
+  {
+    "step": "ground_truth_commit_confirmed",
+    "timestamp": "2026-08-23T23:34:51.148434Z",
+    "detail": "real Spanner row exists, revision=1, commit_timestamp=2026-08-23T23:34:50.459767Z (NOT consulted in the recovery decision)"
+  },
+  {
+    "step": "witness_absent_confirmed",
+    "timestamp": "2026-08-23T23:34:51.749064Z",
+    "detail": "independently re-verified via a fresh GCS client: no witness object exists at the deterministic key"
+  },
+  {
+    "step": "decision_new_epoch_required",
+    "timestamp": "2026-08-23T23:34:51.749079Z",
+    "detail": "state=EPOCH_TERMINATED new_epoch_required=true -- computed from the zero value only"
+  },
+  {
+    "step": "restart_attempt_0",
+    "timestamp": "2026-08-23T23:34:52.640233Z",
+    "detail": "fresh process, 0s after prior attempt, converged to the identical fail-closed decision"
+  },
+  {
+    "step": "restart_attempt_1",
+    "timestamp": "2026-08-23T23:34:56.092862Z",
+    "detail": "fresh process, 2s after prior attempt, converged to the identical fail-closed decision"
+  },
+  {
+    "step": "restart_attempt_2",
+    "timestamp": "2026-08-23T23:35:02.141173Z",
+    "detail": "fresh process, 5s after prior attempt, converged to the identical fail-closed decision"
+  }
+]
