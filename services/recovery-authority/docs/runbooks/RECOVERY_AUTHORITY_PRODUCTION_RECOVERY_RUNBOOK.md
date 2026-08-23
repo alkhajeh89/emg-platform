@@ -19,11 +19,24 @@ This runbook assumes a production (or production-equivalent) Recovery Authority
 deployment exists: a real Cloud Spanner authority database, a real GCS Bucket-Locked
 witness bucket, a real, administratively independent signing trust domain (ADR-045
 §4–§5), and a real, governed compromise/distrust ledger (ADR-045 §7) and pinned
-historical public-key store (ADR-045 §7C). **As of this document's authoring, none of
-that exists** — S3 (KMS signer + pinning + ledger), S4 (IAM), S5 (deployable binary),
-S6 (bootstrap), and S7 (real-Spanner qualification) remain unimplemented (ADR-044 §17).
-This runbook is written now, in advance, precisely so it is ready when those items are
-complete — it is not itself evidence that they are.
+historical public-key store (ADR-045 §7C).
+
+**Status update (implementation-status wording only; no architecture or security
+requirement below is changed by this update):** S3 (KMS signer + pinning + ledger), S4
+(IAM), S5 (deployable binary), S6 (bootstrap), and S7 (real-Spanner process-loss/crash
+qualification, ADR-044 §17 item 7) are now implemented and have each been qualified
+against real Cloud infrastructure (see `services/recovery-authority/docs/evidence/adr-045/`
+Tracks A–F and `services/recovery-authority/docs/evidence/adr-044/real-spanner-process-death-s7/`).
+**This does not mean this runbook's precondition is satisfied.** Every one of those
+qualifications used disposable, same-organization infrastructure. The specific property
+this runbook's precondition actually requires — a real, **administratively independent**
+signing trust domain (ADR-045 §4–§5, rejecting same-organization construction alone) —
+remains unestablished, along with production realization of the compromise ledger and
+pin store in their own genuinely independent administrative domains (ADR-045 §7, §7C)
+and a completed production-approval decision (ADR-044 §22, ADR-045 §19). This runbook
+remains not itself evidence that a production-ready deployment exists; it is written now,
+in advance, so it is ready once that separate, explicit production-approval decision is
+made.
 
 ## 1. Scope
 
