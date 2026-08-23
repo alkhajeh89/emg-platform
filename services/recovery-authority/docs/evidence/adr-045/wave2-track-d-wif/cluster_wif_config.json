@@ -1,0 +1,7 @@
+{
+  "name": "emg-staging",
+  "status": "RUNNING",
+  "workloadIdentityConfig": {
+    "workloadPool": "emg-platform-staging.svc.id.goog"
+  }
+}

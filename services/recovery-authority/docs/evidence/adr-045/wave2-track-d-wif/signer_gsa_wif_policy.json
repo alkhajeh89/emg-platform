@@ -1,0 +1,12 @@
+{
+  "bindings": [
+    {
+      "members": [
+        "serviceAccount:emg-platform-staging.svc.id.goog[ra-wif-qual/ra-signer-qual]"
+      ],
+      "role": "roles/iam.workloadIdentityUser"
+    }
+  ],
+  "etag": "BwZZq3RZcyY=",
+  "version": 1
+}

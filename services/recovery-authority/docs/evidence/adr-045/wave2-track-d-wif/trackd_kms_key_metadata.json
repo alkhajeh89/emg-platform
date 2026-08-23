@@ -1,0 +1,8 @@
+{
+  "algorithm": "EC_SIGN_P256_SHA256",
+  "createTime": "2026-08-22T23:51:56.520103964Z",
+  "generateTime": "2026-08-22T23:51:57.016365974Z",
+  "name": "projects/emg-ra-signer-wifqual-8a1323ba/locations/us-central1/keyRings/ra-trackd-ring/cryptoKeys/ra-trackd-key/cryptoKeyVersions/1",
+  "protectionLevel": "SOFTWARE",
+  "state": "ENABLED"
+}
