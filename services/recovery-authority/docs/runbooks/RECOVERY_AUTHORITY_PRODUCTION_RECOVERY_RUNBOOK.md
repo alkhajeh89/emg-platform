@@ -23,20 +23,34 @@ historical public-key store (ADR-045 §7C).
 
 **Status update (implementation-status wording only; no architecture or security
 requirement below is changed by this update):** S3 (KMS signer + pinning + ledger), S4
-(IAM), S5 (deployable binary), S6 (bootstrap), and S7 (real-Spanner process-loss/crash
-qualification, ADR-044 §17 item 7) are now implemented and have each been qualified
-against real Cloud infrastructure (see `services/recovery-authority/docs/evidence/adr-045/`
+(IAM), S5 (deployable binary), S6 (bootstrap), S7 (real-Spanner process-loss/crash
+qualification, ADR-044 §17 item 7), and S8 (production PREPARE/mutation-construction
+layer for ordinary, non-genesis rotations, ADR-044 §17 items 1 and 3 — see
+`services/recovery-authority/docs/evidence/adr-044/s8-ordinary-rotation-prepare/`) are
+now implemented and have each been qualified against real Cloud infrastructure or a real
+Cloud Spanner emulator (see `services/recovery-authority/docs/evidence/adr-045/`
 Tracks A–F and `services/recovery-authority/docs/evidence/adr-044/real-spanner-process-death-s7/`).
 **This does not mean this runbook's precondition is satisfied.** Every one of those
-qualifications used disposable, same-organization infrastructure. The specific property
-this runbook's precondition actually requires — a real, **administratively independent**
-signing trust domain (ADR-045 §4–§5, rejecting same-organization construction alone) —
-remains unestablished, along with production realization of the compromise ledger and
-pin store in their own genuinely independent administrative domains (ADR-045 §7, §7C)
-and a completed production-approval decision (ADR-044 §22, ADR-045 §19). This runbook
-remains not itself evidence that a production-ready deployment exists; it is written now,
-in advance, so it is ready once that separate, explicit production-approval decision is
-made.
+qualifications used disposable, same-organization infrastructure (or, for S8's ordinary
+rotation matrix, the real Cloud Spanner emulator rather than real Cloud Spanner
+directly — see that track's own real-cloud qualification plan, described but not
+executed). The specific property this runbook's precondition actually requires — a real,
+**administratively independent** signing trust domain (ADR-045 §4–§5, rejecting
+same-organization construction alone) — remains unestablished, along with production
+realization of the compromise ledger and pin store in their own genuinely independent
+administrative domains (ADR-045 §7, §7C) and a completed production-approval decision
+(ADR-044 §22, ADR-045 §19). A concrete decision package for that independence
+requirement has been proposed for human governance review (see
+`RECOVERY_AUTHORITY_ADMINISTRATIVE_INDEPENDENCE_DECISION_PACKAGE.md`, status PROPOSED /
+AWAITING HUMAN GOVERNANCE APPROVAL) but has not been approved. This runbook remains not
+itself evidence that a production-ready deployment exists; it is written now, in advance,
+so it is ready once that separate, explicit production-approval decision is made.
+
+**S8 also discloses an open governance gap, not a code defect:** unlike genesis, no ADR
+defines a dual-control/approval requirement for ordinary rotations, and S8 did not invent
+one (`cmd/recovery-rotate`'s package doc). Whether ordinary rotations require dual
+control is tracked as an open item in the administrative-independence decision package
+above, not silently decided.
 
 ## 1. Scope
 
