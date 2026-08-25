@@ -1,15 +1,38 @@
 # Recovery Authority — Administrative Independence Decision Package (Track G)
 
-**Status: PROPOSED / AWAITING HUMAN GOVERNANCE APPROVAL.** This document is
-a governance decision *package* for a human approval body to review and
-act on — it is not itself an approval, does not amend ADR-044, ADR-045, or
-Identity ADR-043, creates or provisions no GCP resource, organization,
-Cloud Identity domain, or billing account, and does not authorize
-production provisioning, production genesis, or production approval.
-Nothing in this document becomes effective until a named human governance
-body explicitly approves it in writing, at which point this status line
-should be updated to reflect that approval and who granted it — never
-silently.
+**Status: GATE A GOVERNANCE DECISION RECORDED — design approved, 2026-08-25.
+`PRODUCTION_ADMINISTRATIVE_INDEPENDENCE_RESULT = APPROVED_DESIGN_NOT_YET_IMPLEMENTED`.**
+This document remains a governance decision *package*, now with an
+explicit human approval recorded below (Gate A Governance Decision
+Record). **Approving this design is not, and must never be read as,
+establishing production administrative independence as a technical fact.**
+It does not amend ADR-044, ADR-045, or Identity ADR-043, creates or
+provisions no GCP resource, organization, Cloud Identity domain, or
+billing account, and does not authorize production deployment, production
+genesis, production traffic, go-live, Gate B, or Gate C. Production
+administrative independence becomes technically ESTABLISHED only after the
+real, independent administrative roots this record approves are actually
+created and independently verified (Gate A's own IAM-inheritance audit,
+Decision 6) — a separate, later milestone from this approval.
+
+## Gate A Governance Decision Record
+
+**`GATE_A_GOVERNANCE_DECISION = APPROVED`** — recorded 2026-08-25, authorized
+instruction: "AUTHORIZED — RECORD GATE A HUMAN GOVERNANCE DECISION AND
+PREPARE PRODUCTION INFRASTRUCTURE PROVISIONING PLAN," citing authoritative
+head `ec16635`.
+
+| Decision | Status | Summary |
+|---|---|---|
+| 1 — Independent signing Cloud Identity/Workspace root | **APPROVED** | A separate GCP project inside the existing root is explicitly insufficient; a genuinely separate Cloud Identity/Workspace administrative root is required. |
+| 2 — Non-overlapping authority/witness vs. signing administrators | **APPROVED** | No individual or standing group may administer both domains. |
+| 3 — Compromise-ledger domain model | **APPROVED** | Domain C = third independently administered domain — the strongest realization, approved as a governance decision even though ADR-045 §7's own floor would permit a weaker minimum. Authority hierarchy preserved: ADR requirement > approved governance decision > code comment. |
+| 4 — Billing topology | **APPROVED** | Separate billing by default for the production security domains; availability/blast-radius isolation only, never described as IAM or cryptographic independence; any shared-billing exception requires its own separate written risk acceptance. |
+| 5 — Break-glass model | **APPROVED** | Two-independent-approver minimum, requester cannot self-approve, just-in-time scope, 4-hour recommended maximum with fresh approval required to extend, automatic expiry, full audit, mandatory post-event review, no standing cross-domain grant, no unilateral break-glass, no permanent KMS escalation. |
+| 6 — IAM-inheritance review methodology | **APPROVED** | The Track G 9-step (now 10-item, per the Gate A instruction's explicit list) methodology is the required pre-Gate-B audit; Gate B is forbidden until it passes against the real production hierarchy. |
+| 7 — Irreversible resource creation controls | **APPROVED** | Bucket Lock must never be locked accidentally/by default; KMS lifecycle ownership established before use; KMS destruction never routine; irreversible operations require recorded approval/evidence. |
+
+**Explicitly NOT authorized by this record:** production deployment, production genesis, production traffic, go-live, Gate B, Gate C. This record authorizes preparation for, and — contingent on the Phase 3 hard-prerequisite check in the accompanying provisioning plan — production infrastructure provisioning only (Gate A's own scope).
 
 **Derived from:** ADR-044 §14 row G, §15, §15A, §17 item 9; ADR-045 §4, §5,
 §7, §7A; `RECOVERY_AUTHORITY_PLACEMENT_AND_BILLING_GOVERNANCE_DECISION.md`
